@@ -63,11 +63,16 @@ async function pollTask(runId: string): Promise<string> {
       }
 
       const resultData = (await resultRes.json()) as {
-        output?: { content?: { output?: string } };
+        output?: { content?: { output?: string } | string };
       };
 
-      // Extract text from nested structure: output.content.output
-      const text = resultData?.output?.content?.output || '';
+      // Extract text: output.content.output (string) or output.content (string)
+      const content = resultData?.output?.content;
+      const text =
+        (typeof content === 'object' && content !== null ? content.output : undefined) ||
+        (typeof content === 'string' ? content : '') ||
+        '';
+
       return text;
     }
   }
@@ -78,6 +83,19 @@ async function pollTask(runId: string): Promise<string> {
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
   const runId = await createTask(query, processor);
   return pollTask(runId);
+}
+
+// Tries ultra first; if it fails or times out, retries with base
+async function runResearchWithFallback(query: string): Promise<string> {
+  try {
+    const result = await runResearch(query, 'ultra');
+    if (result && result.trim().length > 50) return result;
+    // Empty or tiny result — retry with base
+    console.warn('[parallelAI] ultra returned empty, retrying with base');
+  } catch (err) {
+    console.warn('[parallelAI] ultra failed, retrying with base:', (err as Error).message);
+  }
+  return runResearch(query, 'base');
 }
 
 // ── Competitor Discovery ─────────────────────────────────────────────────────
@@ -195,7 +213,7 @@ Research and report on the following dimensions. For each, cite the specific sou
 Cite every claim with a source. State "Not publicly disclosed" for any unavailable information.
 `.trim();
 
-  return runResearch(query, 'ultra');
+  return runResearchWithFallback(query);
 }
 
 // ── Parallel company research ────────────────────────────────────────────────

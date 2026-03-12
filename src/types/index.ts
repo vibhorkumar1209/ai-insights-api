@@ -46,7 +46,6 @@ export interface BenchmarkResult {
   status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
   progress: number;          // 0-100
   currentStep?: string;
-  researchBrief?: string;
   benchmarkingTable?: BenchmarkDimension[];
   gapAnalysis?: GapAnalysisRow[];
   selectedPeers?: string[];

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { BenchmarkInput, BenchmarkResult } from '../types';
 import { discoverCompetitors, researchAllCompanies } from './parallelAI';
-import { synthesizeBenchmarkingTable, synthesizeGapAnalysis, generateResearchBrief } from './claudeAI';
+import { synthesizeBenchmarkingTable, synthesizeGapAnalysis } from './claudeAI';
 
 // In-memory job store (replace with Redis for production multi-instance)
 const jobs = new Map<string, BenchmarkResult>();
@@ -103,11 +103,6 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
         step(`Researched ${researched}/${totalCompanies} companies...`, progress);
       })
     );
-
-    step('Generating research brief...', 62);
-    const researchBrief = await generateResearchBrief({ ...input, selectedCompetitors: selectedPeers }, companyResearch);
-    updateJob(jobId, { researchBrief });
-    emit(jobId, 'progress', { researchBrief, progress: 65 });
 
     step('Synthesizing benchmarking table...', 65);
     updateJob(jobId, { status: 'synthesizing' });

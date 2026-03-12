@@ -1,6 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BenchmarkInput, BenchmarkDimension, GapAnalysisRow } from '../types';
 
+// Returns true when a research string contains no real data
+function isEmptyResearch(text: string): boolean {
+  return !text || text.startsWith('Research unavailable') || text.trim().length < 50;
+}
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Token budget for Hobby plan friendliness
@@ -29,18 +34,26 @@ export async function synthesizeBenchmarkingTable(
   const safeResearch = truncateResearch(companyResearch);
   const peerNames = input.selectedCompetitors.join(', ');
 
+  // Flag companies with missing research so the prompt can instruct Claude to use training data
+  const missingResearch = Object.entries(safeResearch)
+    .filter(([, text]) => isEmptyResearch(text))
+    .map(([company]) => company);
+
   const systemPrompt = `You are a senior B2B sales intelligence analyst. You produce precise, evidence-based competitive analysis.
-Every claim must be traceable. If information is unavailable, state "Not publicly disclosed" — never speculate or fabricate.
-Output ONLY valid JSON. No markdown, no explanation outside the JSON.`;
+- Where provided research data exists, cite it specifically (systems, vendors, percentages).
+- Where research data is missing or sparse for a company, draw on your training knowledge to fill in what is publicly known — label it "(est.)" or "(based on public sources)".
+- Never leave a cell empty — always provide a meaningful best-known answer.
+- Output ONLY valid JSON. No markdown, no explanation outside the JSON.`;
 
   const userPrompt = `Synthesize the following research into a structured peer benchmarking table comparing "${input.targetCompany}" against its peers: ${peerNames}.
 
 The selling organization is "${input.userOrganization}". Industry: ${input.industryContext}.
 ${input.focusAreas ? `Focus areas: ${input.focusAreas}` : ''}
+${missingResearch.length > 0 ? `\nNOTE: Research data was unavailable for: ${missingResearch.join(', ')}. Use your training knowledge for these companies.` : ''}
 
 RESEARCH DATA:
 ${Object.entries(safeResearch)
-  .map(([company, research]) => `\n### ${company}\n${research}`)
+  .map(([company, research]) => `\n### ${company}\n${isEmptyResearch(research) ? `[No live research — use training knowledge for ${company}]` : research}`)
   .join('\n\n---\n')}
 
 Return a JSON array of benchmarking dimensions. Use EXACTLY this structure:
@@ -98,11 +111,17 @@ export async function synthesizeGapAnalysis(
   const safeResearch = truncateResearch(companyResearch, 40000);
   const peerNames = input.selectedCompetitors.join(', ');
 
+  const missingResearch2 = Object.entries(safeResearch)
+    .filter(([, text]) => isEmptyResearch(text))
+    .map(([company]) => company);
+
   const systemPrompt = `You are a senior B2B sales intelligence analyst. You produce gap analyses that directly enable enterprise sales conversations.
 The gap analysis MUST:
-- Be evidence-based, not opinion-based
-- Map specific product solutions (not generic capabilities) to each gap
-- Include verified proof points with realistic metrics
+- Draw primarily from the benchmarking table already compiled.
+- Where research data is missing for a company, use the benchmarking table and your training knowledge.
+- Map specific product solutions (not generic capabilities) to each gap.
+- Include realistic proof points or industry benchmarks.
+- Never leave a field empty — always provide a substantive answer.
 Output ONLY valid JSON. No markdown, no explanation outside the JSON.`;
 
   const userPrompt = `Create a gap analysis and opportunity map for "${input.targetCompany}" vs peers: ${peerNames}.
@@ -110,13 +129,14 @@ Output ONLY valid JSON. No markdown, no explanation outside the JSON.`;
 Selling organization: "${input.userOrganization}"
 ${input.solutionPortfolio ? `Solution portfolio to map against gaps: ${input.solutionPortfolio}` : ''}
 Industry: ${input.industryContext}
+${missingResearch2.length > 0 ? `\nNOTE: Live research unavailable for: ${missingResearch2.join(', ')}. Use training knowledge as needed.` : ''}
 
-BENCHMARKING TABLE (already compiled):
+BENCHMARKING TABLE (primary source — use this first):
 ${JSON.stringify(benchmarkingTable, null, 2)}
 
-RESEARCH DATA:
+SUPPLEMENTARY RESEARCH DATA:
 ${Object.entries(safeResearch)
-  .map(([company, research]) => `\n### ${company}\n${research.slice(0, 8000)}`)
+  .map(([company, research]) => `\n### ${company}\n${isEmptyResearch(research) ? `[No live research — use training knowledge for ${company}]` : research.slice(0, 8000)}`)
   .join('\n\n---\n')}
 
 Return a JSON array of gap analysis rows. Use EXACTLY this structure:
@@ -170,38 +190,3 @@ function parseGapAnalysis(raw: string): GapAnalysisRow[] {
   return parsed.filter((row) => row.capability && row.gapLevel);
 }
 
-// ── Research Brief ───────────────────────────────────────────────────────────
-
-export async function generateResearchBrief(
-  input: BenchmarkInput,
-  companyResearch: Record<string, string>
-): Promise<string> {
-  const safeResearch = truncateResearch(companyResearch, 30000);
-
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 1500,
-    messages: [
-      {
-        role: 'user',
-        content: `Write a concise 3-paragraph research brief (max 400 words) summarizing the competitive intelligence gathered about ${input.targetCompany} and its peers (${input.selectedCompetitors.join(', ')}) in the ${input.industryContext} sector.
-
-Structure:
-1. Target account overview (${input.targetCompany} current state, key facts)
-2. Competitive landscape summary (what peers are doing that's notable)
-3. Key opportunity signals for ${input.userOrganization}
-
-Research data:
-${Object.entries(safeResearch)
-  .map(([company, text]) => `${company}: ${text.slice(0, 5000)}`)
-  .join('\n\n')}
-
-Write in third person, analytical tone. Include specific numbers and company names.`,
-      },
-    ],
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') return 'Research brief unavailable.';
-  return content.text;
-}
