@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { Competitor, ParallelTaskResponse } from '../types';
+import { Competitor } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 5000;
@@ -24,32 +24,51 @@ async function createTask(input: string, processor: 'base' | 'ultra' = 'base'): 
     throw new Error(`Parallel.AI task creation failed (${res.status}): ${body}`);
   }
 
-  const data = (await res.json()) as ParallelTaskResponse;
+  const data = (await res.json()) as { run_id: string };
   return data.run_id;
 }
 
+// The status endpoint: GET /v1/tasks/runs/{run_id}
+// The result endpoint:  GET /v1/tasks/runs/{run_id}/result
+// Output lives at: result.output.content.output (string)
 async function pollTask(runId: string): Promise<string> {
   const deadline = Date.now() + TASK_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
     await sleep(TASK_POLL_INTERVAL_MS);
 
-    const res = await fetch(`${BASE_URL}/v1/tasks/runs/${runId}`, {
+    // Check status first (lightweight)
+    const statusRes = await fetch(`${BASE_URL}/v1/tasks/runs/${runId}`, {
       headers: headers(),
     });
 
-    if (!res.ok) {
-      throw new Error(`Parallel.AI poll failed (${res.status})`);
+    if (!statusRes.ok) {
+      throw new Error(`Parallel.AI poll failed (${statusRes.status})`);
     }
 
-    const data = (await res.json()) as ParallelTaskResponse;
+    const statusData = (await statusRes.json()) as { status: string; is_active: boolean };
 
-    if (data.status === 'completed') {
-      return data.output || '';
+    if (statusData.status === 'failed') {
+      throw new Error('Parallel.AI task failed');
     }
 
-    if (data.status === 'failed') {
-      throw new Error(`Parallel.AI task failed: ${data.error || 'unknown error'}`);
+    if (statusData.status === 'completed' || !statusData.is_active) {
+      // Fetch the actual result from the /result endpoint
+      const resultRes = await fetch(`${BASE_URL}/v1/tasks/runs/${runId}/result`, {
+        headers: headers(),
+      });
+
+      if (!resultRes.ok) {
+        throw new Error(`Parallel.AI result fetch failed (${resultRes.status})`);
+      }
+
+      const resultData = (await resultRes.json()) as {
+        output?: { content?: { output?: string } };
+      };
+
+      // Extract text from nested structure: output.content.output
+      const text = resultData?.output?.content?.output || '';
+      return text;
     }
   }
 

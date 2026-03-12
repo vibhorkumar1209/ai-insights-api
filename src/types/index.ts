@@ -61,9 +61,3 @@ export interface SSEEvent {
   data: Partial<BenchmarkResult>;
 }
 
-export interface ParallelTaskResponse {
-  run_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  output?: string;
-  error?: string;
-}
