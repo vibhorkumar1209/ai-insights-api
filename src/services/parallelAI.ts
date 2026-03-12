@@ -2,8 +2,8 @@ import fetch from 'node-fetch';
 import { Competitor, ParallelTaskResponse } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
-const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 120000; // 2 minutes per task
+const TASK_POLL_INTERVAL_MS = 5000;
+const TASK_TIMEOUT_MS = 300000; // 5 minutes per task (ultra processor needs time)
 
 function headers() {
   return {
@@ -53,7 +53,7 @@ async function pollTask(runId: string): Promise<string> {
     }
   }
 
-  throw new Error('Parallel.AI task timed out after 2 minutes');
+  throw new Error('Parallel.AI task timed out after 5 minutes');
 }
 
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
