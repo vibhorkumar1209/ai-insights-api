@@ -353,14 +353,27 @@ interface FinancialInsightsPayload {
   keyHighlights: string[];
   segmentRevenue?: FinancialSegmentRow[];
   geoRevenue?: GeoRow[];
+  // Fallback arrays extracted from Parallel.AI research when Yahoo Finance is empty
+  revenueHistoryExtracted?: RevenueDataPoint[];
+  marginHistoryExtracted?: MarginDataPoint[];
+  plStatementExtracted?: FinancialStatementRow[];
+  balanceSheetExtracted?: FinancialStatementRow[];
+  cashFlowExtracted?: FinancialStatementRow[];
 }
 
 export async function synthesizeFinancialInsights(
   input: FinancialAnalysisInput,
   yahooData: Partial<FinancialAnalysisResult>,
-  segmentResearch: string
+  parallelResearch: string
 ): Promise<FinancialInsightsPayload> {
-  const hasSegmentResearch = !isEmptyResearch(segmentResearch);
+  const hasParallelResearch = !isEmptyResearch(parallelResearch);
+
+  // Determine which arrays Yahoo Finance returned (empty = needs extraction from research)
+  const needRevenueExtract = (yahooData.revenueHistory?.length ?? 0) === 0;
+  const needMarginExtract  = (yahooData.marginHistory?.length  ?? 0) === 0;
+  const needPLExtract      = (yahooData.plStatement?.length    ?? 0) === 0;
+  const needBSExtract      = (yahooData.balanceSheet?.length   ?? 0) === 0;
+  const needCFExtract      = (yahooData.cashFlow?.length       ?? 0) === 0;
 
   const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary.
 Rules:
@@ -368,6 +381,7 @@ Rules:
 - Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
 - Key highlights must be brief bullets suitable for an executive summary.
 - For segment/geo data extraction, output precise numbers from the research.
+- When extracting financial statement rows, include 8-15 key line items per statement.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
 
   // Compact the Yahoo data for context
@@ -392,13 +406,22 @@ Rules:
 
   const userPrompt = `Analyse the financial data for "${input.companyName}" (ticker: ${yahooData.ticker || 'N/A'}) and produce structured insights.
 
-REVENUE HISTORY: ${revenueStr || 'Not available'}
-MARGIN HISTORY: ${marginStr || 'Not available'}
-P&L HIGHLIGHTS: ${plStr || 'Not available'}
-BALANCE SHEET HIGHLIGHTS: ${bsStr || 'Not available'}
-CASH FLOW HIGHLIGHTS: ${cfStr || 'Not available'}
+## Yahoo Finance Data (structured, pre-verified numbers)
+Revenue History: ${revenueStr || 'NOT AVAILABLE'}
+Margin History: ${marginStr || 'NOT AVAILABLE'}
+P&L Highlights: ${plStr || 'NOT AVAILABLE'}
+Balance Sheet Highlights: ${bsStr || 'NOT AVAILABLE'}
+Cash Flow Highlights: ${cfStr || 'NOT AVAILABLE'}
 
-${hasSegmentResearch ? `SEGMENT/GEO RESEARCH:\n${segmentResearch.slice(0, 40000)}` : '[No segment research available]'}
+## Extraction Status
+${needRevenueExtract ? '⚠ Revenue History MISSING from Yahoo — EXTRACT from research below' : '✓ Revenue History available above — set revenueHistoryExtracted: []'}
+${needMarginExtract  ? '⚠ Margin History MISSING from Yahoo — EXTRACT from research below' : '✓ Margin History available above — set marginHistoryExtracted: []'}
+${needPLExtract      ? '⚠ P&L Statement MISSING from Yahoo — EXTRACT from research below' : '✓ P&L Statement available above — set plStatementExtracted: []'}
+${needBSExtract      ? '⚠ Balance Sheet MISSING from Yahoo — EXTRACT from research below' : '✓ Balance Sheet available above — set balanceSheetExtracted: []'}
+${needCFExtract      ? '⚠ Cash Flow MISSING from Yahoo — EXTRACT from research below' : '✓ Cash Flow available above — set cashFlowExtracted: []'}
+
+## Parallel.AI Research (annual reports, investor presentations, financial news)
+${hasParallelResearch ? parallelResearch.slice(0, 48000) : '[Not available]'}
 
 Return a single JSON object with EXACTLY this structure:
 {
@@ -420,12 +443,33 @@ Return a single JSON object with EXACTLY this structure:
   "geoRevenue": [
     { "region": "Americas", "revenue": "$X.XB", "percentage": 55.0 }
   ],
-  "segmentInsight": "3-5 sentences on segment mix — which segments are growing, which are declining, and what the mix shift means strategically. Omit if no segment data available.",
-  "geoInsight": "3-5 sentences on geographic mix — regional growth rates, concentration risk, and international expansion signals. Omit if no geo data available."
+  "segmentInsight": "3-5 sentences on segment mix — which segments are growing, which are declining, and what the mix shift means strategically. Set to null if no segment data available.",
+  "geoInsight": "3-5 sentences on geographic mix — regional growth rates, concentration risk, and international expansion signals. Set to null if no geo data available.",
+  "revenueHistoryExtracted": [
+    { "year": "2023", "revenue": 383285000000, "revenueFormatted": "$383.3B", "yoyGrowth": -2.8 }
+  ],
+  "marginHistoryExtracted": [
+    { "year": "2023", "netMargin": 25.3, "operatingMargin": 29.8 }
+  ],
+  "plStatementExtracted": [
+    { "label": "Revenue", "value": "$383.3B", "yoy": "-2.8%", "isBold": true },
+    { "label": "Cost of Revenue", "value": "$214.1B", "isBold": false },
+    { "label": "Gross Profit", "value": "$169.1B", "yoy": "-1.5%", "isBold": true }
+  ],
+  "balanceSheetExtracted": [
+    { "label": "Total Assets", "value": "$352.6B", "isBold": true }
+  ],
+  "cashFlowExtracted": [
+    { "label": "Operating Cash Flow", "value": "$114.0B", "isBold": true }
+  ]
 }
 
-For segmentRevenue and geoRevenue: extract from the SEGMENT/GEO RESEARCH above. If data is not available, return empty arrays [].
-For segmentInsight and geoInsight: only include if meaningful data exists in the research. Otherwise set to null.`;
+Extraction rules:
+- revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer USD (e.g. 383285000000). Percentages as numbers not strings.
+- plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. isSection=true for category headers (value=""). isBold=true for subtotals/totals.
+- Per the Extraction Status above, set an extracted array to [] when the Yahoo Finance data is already available.
+- Always extract segmentRevenue and geoRevenue from the research regardless of Yahoo Finance data.
+- For insights: draw on BOTH Yahoo Finance data and Parallel.AI Research — be specific, cite figures.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -456,6 +500,17 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
       keyHighlights: Array.isArray(parsed.keyHighlights) ? parsed.keyHighlights : [],
       segmentRevenue: Array.isArray(parsed.segmentRevenue) ? parsed.segmentRevenue : [],
       geoRevenue: Array.isArray(parsed.geoRevenue) ? parsed.geoRevenue : [],
+      // Fallback arrays extracted from research
+      revenueHistoryExtracted: Array.isArray(parsed.revenueHistoryExtracted) && parsed.revenueHistoryExtracted.length > 0
+        ? parsed.revenueHistoryExtracted : undefined,
+      marginHistoryExtracted: Array.isArray(parsed.marginHistoryExtracted) && parsed.marginHistoryExtracted.length > 0
+        ? parsed.marginHistoryExtracted : undefined,
+      plStatementExtracted: Array.isArray(parsed.plStatementExtracted) && parsed.plStatementExtracted.length > 0
+        ? parsed.plStatementExtracted : undefined,
+      balanceSheetExtracted: Array.isArray(parsed.balanceSheetExtracted) && parsed.balanceSheetExtracted.length > 0
+        ? parsed.balanceSheetExtracted : undefined,
+      cashFlowExtracted: Array.isArray(parsed.cashFlowExtracted) && parsed.cashFlowExtracted.length > 0
+        ? parsed.cashFlowExtracted : undefined,
     };
   } catch {
     throw new Error('Failed to parse Claude financial insights JSON');

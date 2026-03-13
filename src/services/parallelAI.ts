@@ -324,7 +324,63 @@ Cite specific data points, names, and sources throughout. State "Not publicly di
   }
 }
 
-// ── Financial Segment & Geo Research ──────────────────────────────────────────
+// ── Public Company: Full Financial Profile + Public/Private Detection ─────────
+// Single comprehensive query — replaces separate ticker-detection + segment calls.
+// Returns raw research text that Claude will parse into structured arrays + insights.
+
+export async function researchPublicCompanyFinancials(
+  companyName: string,
+  domain?: string
+): Promise<string> {
+  const domainNote = domain ? ` (website: ${domain})` : '';
+  const query = `
+Research the complete financial profile for "${companyName}"${domainNote} covering all recent fiscal years available (target FY2020–FY2024 where data exists).
+
+SECTION 1 — LISTING STATUS
+- Is "${companyName}" publicly traded on a stock exchange, or is it privately held?
+- If PUBLIC: state the exact stock ticker symbol, exchange name (NYSE / NASDAQ / LSE / NSE / etc.), and current market capitalisation.
+- If PRIVATE: state the ownership structure (PE-backed, VC-backed, founder-owned, bootstrapped, etc.).
+- Confirm the listing status by checking investor relations pages, exchange filings, or financial data providers.
+
+SECTION 2 — REVENUE HISTORY (last 3–5 fiscal years)
+For EACH year: Fiscal Year label (e.g. FY2023), Total Annual Revenue in USD, Year-over-Year growth %.
+Source: annual report, 10-K, earnings release, investor presentation.
+
+SECTION 3 — MARGIN HISTORY (last 3–5 fiscal years)
+For EACH year: Fiscal Year, Gross Margin %, Operating Margin %, Net Margin %.
+
+SECTION 4 — INCOME STATEMENT (most recent full fiscal year)
+Revenue, Cost of Revenue, Gross Profit, R&D Expenses, SG&A Expenses, Total Operating Expenses, Operating Income (EBIT), Interest Expense, Income Before Tax, Income Tax Expense, Net Income.
+Provide both USD amount and % of revenue for key line items.
+
+SECTION 5 — BALANCE SHEET (most recent fiscal year-end)
+Cash & Equivalents, Short-term Investments, Accounts Receivable, Inventory, Total Current Assets, Property/Plant/Equipment (net), Total Assets, Accounts Payable, Short-term Debt, Total Current Liabilities, Long-term Debt, Total Liabilities, Total Stockholder Equity.
+
+SECTION 6 — CASH FLOW STATEMENT (most recent full fiscal year)
+Net Income, Depreciation & Amortisation, Total Cash from Operating Activities, Capital Expenditures, Total Cash from Investing Activities, Dividends Paid, Net Borrowings, Stock Repurchases, Total Cash from Financing Activities, Net Change in Cash.
+
+SECTION 7 — REVENUE BY BUSINESS SEGMENT (most recent fiscal year)
+If the company reports segment data: list each segment/division, its revenue, % of total revenue, and YoY growth if disclosed. If no segment breakdown exists, state "Not disclosed".
+
+SECTION 8 — REVENUE BY GEOGRAPHY / REGION (most recent fiscal year)
+List each major region (e.g. Americas, EMEA, APAC, or country-level): revenue, % of total, YoY growth if disclosed. If not disclosed, state so.
+
+SECTION 9 — KEY FINANCIAL METRICS
+Latest EPS (basic and diluted), Free Cash Flow, Return on Equity, Debt-to-Equity ratio, Dividend yield (if any).
+
+Cite every figure with: source document name, reporting period, and any currency conversion applied.
+For non-US companies, state original currency amounts and USD equivalent using the prevailing exchange rate.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
+// ── Financial Segment & Geo Research (legacy — kept for backwards compat) ─────
 
 export async function researchFinancialSegments(
   companyName: string,
