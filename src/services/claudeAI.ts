@@ -8,9 +8,7 @@ function isEmptyResearch(text: string): boolean {
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Token budget for Hobby plan friendliness
-const MAX_INPUT_TOKENS = 80000;
-const MAX_OUTPUT_TOKENS = 4096;
+const MAX_OUTPUT_TOKENS = 8192; // claude-sonnet-4-6 supports up to 8192
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
 
 // ── Truncate research to stay within token budget ───────────────────────────
@@ -25,6 +23,47 @@ function truncateResearch(research: Record<string, string>, maxChars = 60000): R
   );
 }
 
+// ── Robust JSON array parser — recovers complete objects from truncated output ─
+
+function safeParseJsonArray(raw: string): unknown[] | null {
+  // 1. Try a clean full parse first
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fall through to recovery
+    }
+  }
+
+  // 2. Extract every complete top-level {...} object from the raw string
+  //    Works even when the closing ] is missing or the last object is truncated
+  const objects: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try {
+          objects.push(JSON.parse(raw.slice(start, i + 1)));
+        } catch {
+          // skip malformed object
+        }
+        start = -1;
+      }
+    }
+  }
+
+  return objects.length > 0 ? objects : null;
+}
+
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
 
 export async function synthesizeBenchmarkingTable(
@@ -34,49 +73,36 @@ export async function synthesizeBenchmarkingTable(
   const safeResearch = truncateResearch(companyResearch);
   const peerNames = input.selectedCompetitors.join(', ');
 
-  // Flag companies with missing research so the prompt can instruct Claude to use training data
   const missingResearch = Object.entries(safeResearch)
     .filter(([, text]) => isEmptyResearch(text))
     .map(([company]) => company);
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst. You produce precise, evidence-based competitive analysis.
 - Where provided research data exists, cite it specifically (systems, vendors, percentages).
-- Where research data is missing or sparse for a company, draw on your training knowledge to fill in what is publicly known — label it "(est.)" or "(based on public sources)".
+- Where research data is missing or sparse for a company, draw on your training knowledge — label it "(est.)" or "(based on public sources)".
 - Never leave a cell empty — always provide a meaningful best-known answer.
-- Output ONLY valid JSON. No markdown, no explanation outside the JSON.`;
+- Keep each value field to 1-2 concise sentences.
+- Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.`;
 
-  const userPrompt = `Synthesize the following research into a structured peer benchmarking table comparing "${input.targetCompany}" against its peers: ${peerNames}.
+  const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
 
-The selling organization is "${input.userOrganization}". Industry: ${input.industryContext}.
-${input.focusAreas ? `Focus areas: ${input.focusAreas}` : ''}
-${missingResearch.length > 0 ? `\nNOTE: Research data was unavailable for: ${missingResearch.join(', ')}. Use your training knowledge for these companies.` : ''}
+Selling org: "${input.userOrganization}" | Industry: ${input.industryContext}${input.focusAreas ? ` | Focus: ${input.focusAreas}` : ''}
+${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — use training knowledge.` : ''}
 
 RESEARCH DATA:
 ${Object.entries(safeResearch)
-  .map(([company, research]) => `\n### ${company}\n${isEmptyResearch(research) ? `[No live research — use training knowledge for ${company}]` : research}`)
-  .join('\n\n---\n')}
+    .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[Use training knowledge for ${co}]` : r}`)
+    .join('\n---\n')}
 
-Return a JSON array of benchmarking dimensions. Use EXACTLY this structure:
-[
-  {
-    "dimension": "ERP & Core IT Stack",
-    "targetCompany": { "value": "concise summary", "notes": "optional detail or source" },
-    "peers": {
-      "Competitor1": { "value": "concise summary", "notes": "optional detail or source" },
-      "Competitor2": { "value": "concise summary", "notes": "optional detail or source" }
-    }
-  }
-]
+Return a JSON array with EXACTLY this shape (one object per dimension):
+[{"dimension":"ERP & Core IT Stack","targetCompany":{"value":"...","notes":"..."},"peers":{"${input.selectedCompetitors[0] ?? 'Peer1'}":{"value":"...","notes":"..."}}}]
 
-Cover ALL 5 dimensions:
+Dimensions to cover (one array element each):
 1. ERP & Core IT Stack
 2. Digital Commerce & Customer Platform
 3. AI / ML & Automation Investments
 4. Estimated Annual IT Spend
-5. Stated IT Priority / Focus Area
-${input.focusAreas ? `6. ${input.focusAreas}` : ''}
-
-Keep each value to 1-2 sentences. Be specific — name systems, vendors, percentages where available.`;
+5. Stated IT Priority / Focus Area${input.focusAreas ? `\n6. ${input.focusAreas}` : ''}`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -92,13 +118,11 @@ Keep each value to 1-2 sentences. Be specific — name systems, vendors, percent
 }
 
 function parseBenchmarkingTable(raw: string): BenchmarkDimension[] {
-  const jsonMatch = raw.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) throw new Error('Claude did not return valid JSON for benchmarking table');
-
-  const parsed = JSON.parse(jsonMatch[0]);
-  if (!Array.isArray(parsed)) throw new Error('Expected array from Claude for benchmarking table');
-
-  return parsed.filter((row) => row.dimension && row.targetCompany && row.peers);
+  const items = safeParseJsonArray(raw);
+  if (!items || items.length === 0) {
+    throw new Error('Claude did not return valid JSON for benchmarking table');
+  }
+  return (items as BenchmarkDimension[]).filter((row) => row.dimension && row.targetCompany && row.peers);
 }
 
 // ── Gap Analysis Synthesis ───────────────────────────────────────────────────
@@ -108,64 +132,48 @@ export async function synthesizeGapAnalysis(
   companyResearch: Record<string, string>,
   benchmarkingTable: BenchmarkDimension[]
 ): Promise<GapAnalysisRow[]> {
-  const safeResearch = truncateResearch(companyResearch, 40000);
+  // Keep per-company research short — the table is the primary source
+  const safeResearch = truncateResearch(companyResearch, 24000);
   const peerNames = input.selectedCompetitors.join(', ');
 
-  const missingResearch2 = Object.entries(safeResearch)
+  const missingResearch = Object.entries(safeResearch)
     .filter(([, text]) => isEmptyResearch(text))
     .map(([company]) => company);
 
-  const systemPrompt = `You are a senior B2B sales intelligence analyst. You produce gap analyses that directly enable enterprise sales conversations.
-The gap analysis MUST:
-- Draw primarily from the benchmarking table already compiled.
-- Where research data is missing for a company, use the benchmarking table and your training knowledge.
-- Map specific product solutions (not generic capabilities) to each gap.
-- Include realistic proof points or industry benchmarks.
-- Never leave a field empty — always provide a substantive answer.
-Output ONLY valid JSON. No markdown, no explanation outside the JSON.`;
+  const systemPrompt = `You are a senior B2B sales intelligence analyst producing gap analyses for enterprise sales.
+Rules:
+- Draw primarily from the benchmarking table already compiled; use research data as supplementary context.
+- Map SPECIFIC products from the selling org's portfolio to each gap (not generic capability names).
+- Include realistic proof points or analyst benchmarks for each row.
+- Never leave any field empty.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
 
-  const userPrompt = `Create a gap analysis and opportunity map for "${input.targetCompany}" vs peers: ${peerNames}.
+  const userPrompt = `Create a gap analysis for "${input.targetCompany}" vs peers: ${peerNames}.
 
-Selling organization: "${input.userOrganization}"
-${input.solutionPortfolio ? `Solution portfolio to map against gaps: ${input.solutionPortfolio}` : ''}
+Selling org: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}
 Industry: ${input.industryContext}
-${missingResearch2.length > 0 ? `\nNOTE: Live research unavailable for: ${missingResearch2.join(', ')}. Use training knowledge as needed.` : ''}
+${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — rely on benchmarking table + training knowledge.` : ''}
 
-BENCHMARKING TABLE (primary source — use this first):
-${JSON.stringify(benchmarkingTable, null, 2)}
+BENCHMARKING TABLE (compact):
+${JSON.stringify(benchmarkingTable)}
 
-SUPPLEMENTARY RESEARCH DATA:
+SUPPLEMENTARY RESEARCH (summary per company, max 4000 chars each):
 ${Object.entries(safeResearch)
-  .map(([company, research]) => `\n### ${company}\n${isEmptyResearch(research) ? `[No live research — use training knowledge for ${company}]` : research.slice(0, 8000)}`)
-  .join('\n\n---\n')}
+    .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[Use training knowledge]` : r.slice(0, 4000)}`)
+    .join('\n---\n')}
 
-Return a JSON array of gap analysis rows. Use EXACTLY this structure:
-[
-  {
-    "capability": "Capability area name",
-    "peersBestPractice": "What the leading peer is doing (name the peer)",
-    "targetStatus": "Where ${input.targetCompany} stands today",
-    "gapLevel": "RED",
-    "gapDetail": "Specific gap or strength explanation",
-    "solutionFit": "Specific ${input.userOrganization} product that addresses this gap",
-    "proofPoint": "Verified client result, case study metric, or analyst recognition"
-  }
-]
+Return a JSON array with EXACTLY this shape (one object per capability):
+[{"capability":"...","peersBestPractice":"...","targetStatus":"...","gapLevel":"RED","gapDetail":"...","solutionFit":"...","proofPoint":"..."}]
 
-Gap levels:
-- "GREEN" = ${input.targetCompany} leads or is comparable to peers
-- "AMBER" = Partial gap, some foundation exists
-- "RED" = Critical gap — ${input.targetCompany} materially lags all peers
+gapLevel must be one of: "RED" (critical gap), "AMBER" (partial gap), "GREEN" (strength/parity).
 
-Cover 6 capability areas:
+Cover these 6 capability areas (one array element each):
 1. ERP / Core Data Infrastructure
 2. Digital Commerce & Customer Experience
 3. AI / ML & Intelligent Automation
 4. Contract & Process Automation
 5. Supply Chain / Operational Execution
-6. Scale & Investment Capacity
-
-For each solutionFit, map a specific product from "${input.userOrganization}". If solution portfolio is not provided, use generic capability descriptions.`;
+6. Scale & Investment Capacity`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -181,12 +189,9 @@ For each solutionFit, map a specific product from "${input.userOrganization}". I
 }
 
 function parseGapAnalysis(raw: string): GapAnalysisRow[] {
-  const jsonMatch = raw.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) throw new Error('Claude did not return valid JSON for gap analysis');
-
-  const parsed = JSON.parse(jsonMatch[0]);
-  if (!Array.isArray(parsed)) throw new Error('Expected array from Claude for gap analysis');
-
-  return parsed.filter((row) => row.capability && row.gapLevel);
+  const items = safeParseJsonArray(raw);
+  if (!items || items.length === 0) {
+    throw new Error('Claude did not return valid JSON for gap analysis');
+  }
+  return (items as GapAnalysisRow[]).filter((row) => row.capability && row.gapLevel);
 }
-
