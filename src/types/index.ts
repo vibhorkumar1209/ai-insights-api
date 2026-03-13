@@ -117,3 +117,87 @@ export interface ChallengesGrowthResult {
   completedAt?: string;
 }
 
+// ── Financial Analysis ─────────────────────────────────────────────────────────
+
+export interface RevenueDataPoint {
+  year: string;
+  revenue: number;           // raw number (USD)
+  revenueFormatted: string;  // e.g. "$24.2B"
+  yoyGrowth?: number;        // percentage, e.g. 8.5 = 8.5%
+}
+
+export interface MarginDataPoint {
+  year: string;
+  netMargin: number;         // percentage, e.g. 22.5 = 22.5%
+  operatingMargin: number;   // percentage
+}
+
+export interface FinancialSegmentRow {
+  segment: string;
+  revenue: string;           // formatted e.g. "$12.4B"
+  percentage: number;        // 0-100
+  yoyGrowth?: string;
+}
+
+export interface GeoRow {
+  region: string;
+  revenue: string;           // formatted
+  percentage: number;        // 0-100
+}
+
+export interface FinancialStatementRow {
+  label: string;
+  value: string;
+  yoy?: string;              // e.g. "+12.3%"
+  isSection?: boolean;       // section header (no value)
+  isBold?: boolean;          // subtotal / key line
+}
+
+export interface FinancialAnalysisInput {
+  companyName: string;
+  companyDomain?: string;
+  isPublic?: boolean;        // override auto-detection
+}
+
+export interface FinancialAnalysisResult {
+  jobId: string;
+  status: 'pending' | 'detecting' | 'fetching' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName?: string;
+  ticker?: string;
+  exchange?: string;
+  isPublic?: boolean;
+
+  // ── Public company ──────────────────────────────────────────────
+  revenueHistory?: RevenueDataPoint[];
+  marginHistory?:  MarginDataPoint[];
+  segmentRevenue?: FinancialSegmentRow[];
+  geoRevenue?:     GeoRow[];
+  plStatement?:    FinancialStatementRow[];
+  balanceSheet?:   FinancialStatementRow[];
+  cashFlow?:       FinancialStatementRow[];
+
+  // ── Insights ────────────────────────────────────────────────────
+  revenueInsight?: string;
+  marginInsight?:  string;
+  segmentInsight?: string;
+  geoInsight?:     string;
+  plInsight?:      string;
+  bsInsight?:      string;
+  cfInsight?:      string;
+  keyHighlights?:  string[];
+
+  // ── Private company ─────────────────────────────────────────────
+  estimatedRevenue?:     string;
+  profitabilityMargin?:  string;
+  estimatedYoyGrowth?:   string;
+  fundingInfo?:          string;
+  lastValuation?:        string;
+  privateInsights?:      string[];
+
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+

@@ -324,6 +324,94 @@ Cite specific data points, names, and sources throughout. State "Not publicly di
   }
 }
 
+// ── Financial Segment & Geo Research ──────────────────────────────────────────
+
+export async function researchFinancialSegments(
+  companyName: string,
+  ticker?: string
+): Promise<string> {
+  const tickerNote = ticker ? ` (ticker: ${ticker})` : '';
+  const query = `
+Research the revenue breakdown by business segment/product line AND by geography/region for "${companyName}"${tickerNote} for the most recent fiscal year (FY2023 or FY2024).
+
+1. REVENUE BY SEGMENT / PRODUCT LINE
+   - List each major business segment or product line
+   - Revenue amount and percentage of total revenue for each
+   - Year-over-year growth for each segment if disclosed
+   - Source: annual report, 10-K, earnings call, investor presentation
+
+2. REVENUE BY GEOGRAPHY / REGION
+   - List each major geographic region (Americas, EMEA, APAC, or country-level if disclosed)
+   - Revenue amount and percentage of total revenue for each region
+   - Growth rate by region if disclosed
+   - Source: annual report, 10-K, earnings call, investor presentation
+
+3. KEY OBSERVATIONS
+   - Which segment or region is growing fastest?
+   - Any significant mix shifts underway?
+   - Any segments being divested, restructured, or exited?
+
+Cite all figures with the source document name and year. State "Not disclosed" for unavailable data.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
+// ── Private Company Research ──────────────────────────────────────────────────
+
+export async function researchPrivateCompany(
+  companyName: string,
+  domain?: string
+): Promise<string> {
+  const domainNote = domain ? ` (domain: ${domain})` : '';
+  const query = `
+Research the financial profile and business intelligence for private company "${companyName}"${domainNote}.
+
+Gather data from Crunchbase, Tracxn, Pitchbook references, LinkedIn, news articles, and press releases:
+
+1. ESTIMATED REVENUE
+   - Most recent revenue estimate or ARR (Annual Recurring Revenue for SaaS companies)
+   - Revenue range if exact figure is unavailable
+   - Source and year of estimate
+
+2. REVENUE GROWTH
+   - Estimated year-over-year revenue growth rate
+   - Revenue trajectory (accelerating, stable, declining)
+   - Key growth drivers
+
+3. PROFITABILITY
+   - Estimated EBITDA margin, net margin, or operating margin
+   - Whether company is profitable or burning cash
+   - Any disclosed profitability milestones
+
+4. FUNDING & VALUATION
+   - Funding stage (Seed, Series A/B/C/D, Pre-IPO, PE-backed, bootstrapped)
+   - Total funding raised and most recent round amount
+   - Most recent valuation (if disclosed)
+   - Key investors
+
+5. BUSINESS OVERVIEW
+   - Headcount estimate (from LinkedIn or reports)
+   - Primary markets and geographies served
+   - Business model (SaaS, services, product, marketplace, etc.)
+   - Recent major news (acquisitions, partnerships, leadership changes)
+
+Cite all sources with dates. State "Not publicly disclosed" where data is unavailable.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

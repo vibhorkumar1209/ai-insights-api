@@ -1,5 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BenchmarkInput, BenchmarkDimension, GapAnalysisRow, ThemeInput, ThemeRow, ChallengesGrowthInput, ChallengesGrowthRow } from '../types';
+import {
+  BenchmarkInput, BenchmarkDimension, GapAnalysisRow,
+  ThemeInput, ThemeRow,
+  ChallengesGrowthInput, ChallengesGrowthRow,
+  FinancialAnalysisInput, FinancialAnalysisResult,
+  RevenueDataPoint, MarginDataPoint, FinancialStatementRow,
+  FinancialSegmentRow, GeoRow,
+} from '../types';
 
 // Returns true when a research string contains no real data
 function isEmptyResearch(text: string): boolean {
@@ -331,4 +338,200 @@ function parseChallengesGrowth(raw: string): ChallengesGrowthRow[] {
     throw new Error('Claude did not return valid JSON for challenges & growth');
   }
   return (items as ChallengesGrowthRow[]).filter((row) => row.dimension && row.challenge && row.growthProspect);
+}
+
+// ── Financial Analysis — Public Company Insights + Segment/Geo ────────────────
+
+interface FinancialInsightsPayload {
+  revenueInsight: string;
+  marginInsight: string;
+  segmentInsight?: string;
+  geoInsight?: string;
+  plInsight: string;
+  bsInsight: string;
+  cfInsight: string;
+  keyHighlights: string[];
+  segmentRevenue?: FinancialSegmentRow[];
+  geoRevenue?: GeoRow[];
+}
+
+export async function synthesizeFinancialInsights(
+  input: FinancialAnalysisInput,
+  yahooData: Partial<FinancialAnalysisResult>,
+  segmentResearch: string
+): Promise<FinancialInsightsPayload> {
+  const hasSegmentResearch = !isEmptyResearch(segmentResearch);
+
+  const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary.
+Rules:
+- Be specific: cite figures, percentages, year-on-year changes, named programmes.
+- Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
+- Key highlights must be brief bullets suitable for an executive summary.
+- For segment/geo data extraction, output precise numbers from the research.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
+
+  // Compact the Yahoo data for context
+  const revenueStr = (yahooData.revenueHistory || [])
+    .map((r: RevenueDataPoint) => `${r.year}: ${r.revenueFormatted}${r.yoyGrowth != null ? ` (${r.yoyGrowth >= 0 ? '+' : ''}${r.yoyGrowth}% YoY)` : ''}`)
+    .join(', ');
+  const marginStr = (yahooData.marginHistory || [])
+    .map((m: MarginDataPoint) => `${m.year}: Net ${m.netMargin}% / Op ${m.operatingMargin}%`)
+    .join(', ');
+  const plStr = (yahooData.plStatement || [])
+    .filter((r: FinancialStatementRow) => r.isBold || r.isSection)
+    .map((r: FinancialStatementRow) => `${r.label}: ${r.value}${r.yoy ? ` (${r.yoy} YoY)` : ''}`)
+    .join(' | ');
+  const bsStr = (yahooData.balanceSheet || [])
+    .filter((r: FinancialStatementRow) => r.isBold || r.isSection)
+    .map((r: FinancialStatementRow) => `${r.label}: ${r.value}`)
+    .join(' | ');
+  const cfStr = (yahooData.cashFlow || [])
+    .filter((r: FinancialStatementRow) => r.isBold || r.isSection)
+    .map((r: FinancialStatementRow) => `${r.label}: ${r.value}`)
+    .join(' | ');
+
+  const userPrompt = `Analyse the financial data for "${input.companyName}" (ticker: ${yahooData.ticker || 'N/A'}) and produce structured insights.
+
+REVENUE HISTORY: ${revenueStr || 'Not available'}
+MARGIN HISTORY: ${marginStr || 'Not available'}
+P&L HIGHLIGHTS: ${plStr || 'Not available'}
+BALANCE SHEET HIGHLIGHTS: ${bsStr || 'Not available'}
+CASH FLOW HIGHLIGHTS: ${cfStr || 'Not available'}
+
+${hasSegmentResearch ? `SEGMENT/GEO RESEARCH:\n${segmentResearch.slice(0, 40000)}` : '[No segment research available]'}
+
+Return a single JSON object with EXACTLY this structure:
+{
+  "revenueInsight": "3-5 sentences analysing the revenue trend, growth rate trajectory, and what it signals about competitive positioning and market share.",
+  "marginInsight": "3-5 sentences on margin evolution — what is driving expansion or compression, how it compares to sector peers, and the path forward.",
+  "plInsight": "3-5 sentences on the P&L — the most significant items, cost structure efficiency, and any one-time items or structural shifts.",
+  "bsInsight": "3-5 sentences on balance sheet health — liquidity, leverage, capital allocation, and balance sheet flexibility.",
+  "cfInsight": "3-5 sentences on cash generation quality — operating cash conversion, capex intensity, free cash flow, and capital returns.",
+  "keyHighlights": [
+    "Bullet 1: single most important financial takeaway",
+    "Bullet 2: key risk or headwind visible in the financials",
+    "Bullet 3: significant growth driver or catalyst",
+    "Bullet 4: notable strategic capital allocation decision",
+    "Bullet 5: forward-looking signal from the financial data"
+  ],
+  "segmentRevenue": [
+    { "segment": "Segment Name", "revenue": "$X.XB", "percentage": 42.5, "yoyGrowth": "+8.2%" }
+  ],
+  "geoRevenue": [
+    { "region": "Americas", "revenue": "$X.XB", "percentage": 55.0 }
+  ],
+  "segmentInsight": "3-5 sentences on segment mix — which segments are growing, which are declining, and what the mix shift means strategically. Omit if no segment data available.",
+  "geoInsight": "3-5 sentences on geographic mix — regional growth rates, concentration risk, and international expansion signals. Omit if no geo data available."
+}
+
+For segmentRevenue and geoRevenue: extract from the SEGMENT/GEO RESEARCH above. If data is not available, return empty arrays [].
+For segmentInsight and geoInsight: only include if meaningful data exists in the research. Otherwise set to null.`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  return parseFinancialInsights(content.text);
+}
+
+function parseFinancialInsights(raw: string): FinancialInsightsPayload {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Claude did not return valid JSON for financial insights');
+  try {
+    const parsed = JSON.parse(match[0]) as FinancialInsightsPayload;
+    return {
+      revenueInsight: parsed.revenueInsight || '',
+      marginInsight: parsed.marginInsight || '',
+      segmentInsight: parsed.segmentInsight || undefined,
+      geoInsight: parsed.geoInsight || undefined,
+      plInsight: parsed.plInsight || '',
+      bsInsight: parsed.bsInsight || '',
+      cfInsight: parsed.cfInsight || '',
+      keyHighlights: Array.isArray(parsed.keyHighlights) ? parsed.keyHighlights : [],
+      segmentRevenue: Array.isArray(parsed.segmentRevenue) ? parsed.segmentRevenue : [],
+      geoRevenue: Array.isArray(parsed.geoRevenue) ? parsed.geoRevenue : [],
+    };
+  } catch {
+    throw new Error('Failed to parse Claude financial insights JSON');
+  }
+}
+
+// ── Financial Analysis — Private Company ──────────────────────────────────────
+
+interface PrivateCompanyPayload {
+  estimatedRevenue: string;
+  profitabilityMargin: string;
+  estimatedYoyGrowth: string;
+  fundingInfo?: string;
+  lastValuation?: string;
+  privateInsights: string[];
+}
+
+export async function synthesizePrivateCompany(
+  input: FinancialAnalysisInput,
+  research: string
+): Promise<PrivateCompanyPayload> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are a senior investment analyst producing concise private company financial profiles.
+Rules:
+- Use provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
+- Be specific with ranges: "$800M–$1.2B" not "high revenue".
+- Insights should be actionable intelligence, not generic descriptions.
+- Output ONLY valid JSON. No markdown fences.`;
+
+  const userPrompt = `Produce a financial profile for private company "${input.companyName}".
+
+${hasResearch ? `RESEARCH:\n${research.slice(0, 50000)}` : `[No live research — use training knowledge. Label all estimates as "(est.)"]`}
+
+Return a JSON object with EXACTLY this structure:
+{
+  "estimatedRevenue": "Revenue estimate e.g. '$800M – $1.2B ARR (est.)' or '$2.4B revenue (FY2023)'",
+  "profitabilityMargin": "Margin estimate e.g. 'EBITDA margin ~20-25% (est.)' or 'GAAP-profitable since Q3 2023'",
+  "estimatedYoyGrowth": "Growth estimate e.g. '~25-35% YoY (est.)' or '18% revenue growth (2023)'",
+  "fundingInfo": "e.g. 'Series D | $450M total raised | Last round: $150M in 2023 (Tiger Global, Andreessen Horowitz)'",
+  "lastValuation": "e.g. '$4.5B (Series D, 2023)' or 'Not publicly disclosed'",
+  "privateInsights": [
+    "3-5 sentence insight about the company's financial trajectory and competitive positioning",
+    "Key risk factor visible from the financial and funding profile",
+    "Most significant growth driver or market opportunity",
+    "Notable recent development (acquisition, partnership, product launch, leadership change)"
+  ]
+}`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  return parsePrivateCompany(content.text);
+}
+
+function parsePrivateCompany(raw: string): PrivateCompanyPayload {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Claude did not return valid JSON for private company');
+  try {
+    const parsed = JSON.parse(match[0]) as PrivateCompanyPayload;
+    return {
+      estimatedRevenue: parsed.estimatedRevenue || 'Not publicly disclosed',
+      profitabilityMargin: parsed.profitabilityMargin || 'Not publicly disclosed',
+      estimatedYoyGrowth: parsed.estimatedYoyGrowth || 'Not publicly disclosed',
+      fundingInfo: parsed.fundingInfo,
+      lastValuation: parsed.lastValuation,
+      privateInsights: Array.isArray(parsed.privateInsights) ? parsed.privateInsights : [],
+    };
+  } catch {
+    throw new Error('Failed to parse private company JSON');
+  }
 }
