@@ -3,7 +3,7 @@ import { Competitor } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 90000; // 90 seconds — base processor typically completes in 30-60s
+const TASK_TIMEOUT_MS = 180000; // 3 minutes — base processor typically 30-90s, allow headroom
 
 function headers() {
   return {
@@ -77,7 +77,7 @@ async function pollTask(runId: string): Promise<string> {
     }
   }
 
-  throw new Error('Parallel.AI task timed out after 90 seconds');
+  throw new Error('Parallel.AI task timed out after 3 minutes');
 }
 
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
