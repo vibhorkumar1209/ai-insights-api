@@ -159,6 +159,84 @@ export interface FinancialAnalysisInput {
   isPublic?: boolean;        // override auto-detection
 }
 
+// ── Sales Play & Opportunity ────────────────────────────────────────────────────
+
+export interface SalesPlayInput {
+  yourCompany: string;
+  competitorName: string;
+  targetAccount: string;
+  targetIndustry: string;
+  strategicPriorities: string[];   // 2–5 items
+  solutionAreas: string;
+  competitorWeaknesses?: string;
+}
+
+export interface SalesPlayPriorityRow {
+  priority: string;
+  companySolution: string;
+  proofPoints: string;
+  whyNotCompetitor: string;
+}
+
+export interface SalesPlayIndustrySolution {
+  name: string;
+  problemSolved: string;
+  description: string;
+}
+
+export interface SalesPlayPartner {
+  name: string;
+  capability: string;
+}
+
+export interface SalesPlayCaseStudy {
+  client: string;
+  challenge: string;
+  solution: string;
+  outcome: string;
+  testimonial?: string;
+}
+
+export interface SalesPlayPriorityMapping {
+  priority: string;
+  solution: string;
+  expectedOutcome: string;
+  timeToValue: string;
+}
+
+export interface SalesPlayObjectionRebuttal {
+  objection: string;
+  rebuttal: string;
+}
+
+export interface SalesPlayResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  // Input echo
+  yourCompany?: string;
+  competitorName?: string;
+  targetAccount?: string;
+  targetIndustry?: string;
+  // Section 1: Strategic priority alignment
+  priorityTable?: SalesPlayPriorityRow[];
+  // Section 2: Industry solutions, tech, partners, case studies
+  industrySolutions?: SalesPlayIndustrySolution[];
+  techSummary?: string;
+  technologyPartners?: SalesPlayPartner[];
+  siPartners?: SalesPlayPartner[];
+  caseStudies?: SalesPlayCaseStudy[];
+  // Section 3: Mapping, positioning, objections, CTA
+  priorityMapping?: SalesPlayPriorityMapping[];
+  competitiveStatement?: string;
+  objectionRebuttals?: SalesPlayObjectionRebuttal[];
+  callToAction?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface FinancialAnalysisResult {
   jobId: string;
   status: 'pending' | 'detecting' | 'fetching' | 'researching' | 'synthesizing' | 'complete' | 'error';

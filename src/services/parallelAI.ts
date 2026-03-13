@@ -468,6 +468,61 @@ Cite all sources with dates. State "Not publicly disclosed" where data is unavai
   }
 }
 
+// ── Sales Play Context Research ────────────────────────────────────────────────
+// Comprehensive competitive intelligence gathering for a sales play.
+// Covers: target account landscape, competitor weaknesses, your company's strengths.
+
+export async function researchSalesPlayContext(
+  yourCompany: string,
+  competitorName: string,
+  targetAccount: string,
+  targetIndustry: string,
+  strategicPriorities: string[]
+): Promise<string> {
+  const priorityList = strategicPriorities.map((p, i) => `${i + 1}. ${p}`).join('\n');
+
+  const query = `
+Research competitive intelligence for a B2B sales engagement with the following context:
+- Selling Company: "${yourCompany}"
+- Competitor: "${competitorName}"
+- Target Account: "${targetAccount}" (${targetIndustry} industry)
+- Target Account's Strategic Priorities:
+${priorityList}
+
+SECTION A — TARGET ACCOUNT: "${targetAccount}"
+1. Technology investments and IT vendor ecosystem: What ERP, CRM, cloud, and AI platforms does ${targetAccount} currently use or has publicly announced plans to adopt?
+2. Strategic digital initiatives: What digital transformation, cloud migration, AI adoption, or operational programmes has ${targetAccount} publicly announced (press releases, annual reports, earnings calls)?
+3. Known pain points and challenges: What operational, technology, or competitive challenges is ${targetAccount} known to face in the ${targetIndustry} industry?
+4. Key technology decision-makers: Who are the CIO, CTO, CDO, or SVP of Digital/IT at ${targetAccount} if publicly documented?
+5. Recent technology news: Any significant IT vendor changes, RFPs, or transformation programme announcements in the last 2 years?
+
+SECTION B — COMPETITOR: "${competitorName}" in ${targetIndustry}
+1. Product gaps and limitations: What specific product features, capabilities, or industry-specific functionality does ${competitorName} lack compared to market expectations in ${targetIndustry}?
+2. Customer reviews and complaints: What recurring weaknesses appear in G2, Gartner Peer Insights, TrustRadius, or Forrester Wave reviews of ${competitorName} in ${targetIndustry}?
+3. Pricing and commercial issues: What are the known pricing model concerns, licence costs, implementation overruns, or total-cost-of-ownership issues with ${competitorName}?
+4. Analyst findings: What have Gartner, Forrester, IDC, or Everest Group flagged as weaknesses or cautions for ${competitorName}?
+5. Failed deployments or contract losses: Are there any public cases of ${competitorName} losing contracts, failed implementations, or customer churn in ${targetIndustry}?
+6. Support and services quality: What do customers say about ${competitorName}'s post-sale support, implementation quality, or customer success?
+
+SECTION C — "${yourCompany}" STRENGTHS in ${targetIndustry}
+1. Industry-specific solutions: What solutions does ${yourCompany} offer specifically for the ${targetIndustry} sector?
+2. Published case studies and win stories: What documented client successes does ${yourCompany} have in ${targetIndustry}? Include client names, business challenges, solutions deployed, and measurable outcomes.
+3. Technology differentiation: What proprietary technology, AI/ML capabilities, cloud platforms, or patents does ${yourCompany} hold that are relevant to ${targetAccount}'s priorities?
+4. Partner ecosystem: What technology partnerships (e.g., Microsoft, AWS, SAP, Salesforce) and SI/advisory partnerships does ${yourCompany} have that are relevant to ${targetIndustry}?
+5. Industry recognition: What Gartner Magic Quadrant positions, Forrester Wave rankings, or industry awards has ${yourCompany} received relevant to ${targetIndustry}?
+6. Competitive wins: Are there any known instances of ${yourCompany} displacing ${competitorName} or winning against them in ${targetIndustry}?
+
+Provide specific, evidence-based data wherever available. Quote analyst reports and reviews directly where possible. Clearly state when information is not publicly available rather than speculating.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for sales play (${yourCompany} vs ${competitorName} at ${targetAccount}): ${msg}`;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

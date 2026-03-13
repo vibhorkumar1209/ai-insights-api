@@ -6,6 +6,9 @@ import {
   FinancialAnalysisInput, FinancialAnalysisResult,
   RevenueDataPoint, MarginDataPoint, FinancialStatementRow,
   FinancialSegmentRow, GeoRow,
+  SalesPlayInput,
+  SalesPlayPriorityRow, SalesPlayIndustrySolution, SalesPlayPartner,
+  SalesPlayCaseStudy, SalesPlayPriorityMapping, SalesPlayObjectionRebuttal,
 } from '../types';
 
 // Returns true when a research string contains no real data
@@ -588,5 +591,147 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
     };
   } catch {
     throw new Error('Failed to parse private company JSON');
+  }
+}
+
+// ── Sales Play Synthesis ───────────────────────────────────────────────────────
+
+interface SalesPlayPayload {
+  priorityTable: SalesPlayPriorityRow[];
+  industrySolutions: SalesPlayIndustrySolution[];
+  techSummary: string;
+  technologyPartners: SalesPlayPartner[];
+  siPartners: SalesPlayPartner[];
+  caseStudies: SalesPlayCaseStudy[];
+  priorityMapping: SalesPlayPriorityMapping[];
+  competitiveStatement: string;
+  objectionRebuttals: SalesPlayObjectionRebuttal[];
+  callToAction: string;
+}
+
+export async function synthesizeSalesPlay(
+  input: SalesPlayInput,
+  research: string
+): Promise<SalesPlayPayload> {
+  const hasResearch = !isEmptyResearch(research);
+  const priorityList = input.strategicPriorities
+    .map((p, i) => `${i + 1}. ${p}`)
+    .join('\n');
+
+  const systemPrompt = `You are a senior B2B sales strategist and competitive intelligence analyst.
+Rules:
+- Write in a confident, consultative tone — not salesy.
+- Use data and evidence wherever possible; avoid vague, generic claims.
+- Back every competitive differentiator with proof (case study outcome, analyst finding, review data).
+- Use [Client A, Fortune 500 ${input.targetIndustry} Company] as placeholder when real client names are unavailable.
+- Base competitor weaknesses ONLY on publicly known analyst reports, G2/Gartner reviews, or documented product gaps — never fabricate.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
+
+  const userPrompt = `Generate a comprehensive Sales Play document for the following engagement:
+
+SELLING COMPANY: "${input.yourCompany}"
+COMPETITOR TO DISPLACE: "${input.competitorName}"
+TARGET ACCOUNT: "${input.targetAccount}" (Industry: ${input.targetIndustry})
+
+TARGET'S STRATEGIC PRIORITIES:
+${priorityList}
+
+YOUR SOLUTION AREAS: ${input.solutionAreas}
+${input.competitorWeaknesses ? `KNOWN COMPETITOR WEAKNESSES (user-supplied): ${input.competitorWeaknesses}` : ''}
+
+${hasResearch ? `COMPETITIVE INTELLIGENCE RESEARCH:\n${research.slice(0, 55000)}` : '[No live research — use training knowledge. Label estimates as "(est.)"]'}
+
+Return a single JSON object with EXACTLY this structure:
+{
+  "priorityTable": [
+    {
+      "priority": "Exact priority name from the list above",
+      "companySolution": "2-3 sentences: how ${input.yourCompany}'s solution directly addresses this priority with specifics",
+      "proofPoints": "2-3 concrete proof points: cite metrics, case study outcomes, or industry recognitions",
+      "whyNotCompetitor": "2-3 evidence-backed reasons ${input.competitorName} falls short on this specific priority"
+    }
+  ],
+  "industrySolutions": [
+    {
+      "name": "Solution name",
+      "problemSolved": "Specific problem this solves for ${input.targetIndustry} companies",
+      "description": "1-2 sentence description of the solution and its key differentiator"
+    }
+  ],
+  "techSummary": "3-4 sentences on ${input.yourCompany}'s technology stack, proprietary AI/ML capabilities, cloud architecture, and what fundamentally differentiates it from ${input.competitorName}",
+  "technologyPartners": [
+    { "name": "Technology partner name", "capability": "What this partnership enables for ${input.targetIndustry} clients specifically" }
+  ],
+  "siPartners": [
+    { "name": "SI or advisory partner name", "capability": "Their relevance to ${input.targetAccount}'s industry and transformation goals" }
+  ],
+  "caseStudies": [
+    {
+      "client": "Real client name, or [Client A, Fortune 500 ${input.targetIndustry} Company] if unavailable",
+      "challenge": "Specific business challenge they faced",
+      "solution": "Which ${input.yourCompany} solution was deployed and how",
+      "outcome": "Measurable result e.g. '30% reduction in inventory costs, 18-month payback period'",
+      "testimonial": "Direct executive quote if publicly available, or null"
+    }
+  ],
+  "priorityMapping": [
+    {
+      "priority": "Priority name (same list as above)",
+      "solution": "Specific ${input.yourCompany} solution or product name",
+      "expectedOutcome": "Concrete business outcome — quantify where possible",
+      "timeToValue": "Realistic estimate e.g. '3-6 months', '6-9 months', '12-18 months'"
+    }
+  ],
+  "competitiveStatement": "3-4 sentence paragraph a sales rep can use verbally: why ${input.yourCompany} — and not ${input.competitorName} — is the right partner for ${input.targetAccount} right now. Be specific to their stated priorities and current market context.",
+  "objectionRebuttals": [
+    {
+      "objection": "A realistic, specific objection ${input.targetAccount} might raise (e.g. 'We already use ${input.competitorName}'s ecosystem')",
+      "rebuttal": "A sharp, evidence-backed response addressing the concern directly — include a proof point or reference"
+    }
+  ],
+  "callToAction": "Specific recommended next step in the sales cycle (name the format, attendees, and desired outcome e.g. 'Schedule a 90-minute executive briefing with ${input.targetAccount}'s CIO and Head of Digital to present a tailored proof-of-concept roadmap')"
+}
+
+Required counts:
+- priorityTable: EXACTLY ${input.strategicPriorities.length} rows (one per priority above)
+- industrySolutions: 3-5 solutions specific to ${input.targetIndustry}
+- technologyPartners: 2-4 partners
+- siPartners: 2-3 partners
+- caseStudies: EXACTLY 3 case studies
+- priorityMapping: EXACTLY ${input.strategicPriorities.length} rows (matching priorityTable priorities)
+- objectionRebuttals: EXACTLY 3 objections`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  return parseSalesPlay(content.text);
+}
+
+function parseSalesPlay(raw: string): SalesPlayPayload {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Claude did not return valid JSON for sales play');
+  try {
+    const p = JSON.parse(match[0]) as SalesPlayPayload;
+    return {
+      priorityTable:         Array.isArray(p.priorityTable)         ? p.priorityTable         : [],
+      industrySolutions:     Array.isArray(p.industrySolutions)     ? p.industrySolutions     : [],
+      techSummary:           p.techSummary           || '',
+      technologyPartners:    Array.isArray(p.technologyPartners)    ? p.technologyPartners    : [],
+      siPartners:            Array.isArray(p.siPartners)            ? p.siPartners            : [],
+      caseStudies:           Array.isArray(p.caseStudies)           ? p.caseStudies           : [],
+      priorityMapping:       Array.isArray(p.priorityMapping)       ? p.priorityMapping       : [],
+      competitiveStatement:  p.competitiveStatement  || '',
+      objectionRebuttals:    Array.isArray(p.objectionRebuttals)    ? p.objectionRebuttals    : [],
+      callToAction:          p.callToAction          || '',
+    };
+  } catch {
+    throw new Error('Failed to parse sales play JSON');
   }
 }
