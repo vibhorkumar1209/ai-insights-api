@@ -97,12 +97,11 @@ ${Object.entries(safeResearch)
 Return a JSON array with EXACTLY this shape (one object per dimension):
 [{"dimension":"ERP & Core IT Stack","targetCompany":{"value":"...","notes":"..."},"peers":{"${input.selectedCompetitors[0] ?? 'Peer1'}":{"value":"...","notes":"..."}}}]
 
-Dimensions to cover (one array element each):
-1. ERP & Core IT Stack
-2. Digital Commerce & Customer Platform
-3. AI / ML & Automation Investments
-4. Estimated Annual IT Spend
-5. Stated IT Priority / Focus Area${input.focusAreas ? `\n6. ${input.focusAreas}` : ''}`;
+Dimensions to cover (one array element each, in this exact order):
+1. Stated IT Priority / Focus Area
+2. AI / ML & Automation Investments
+3. ERP & Core IT Stack
+4. Digital Commerce & Customer Platform${input.focusAreas ? `\n5. ${input.focusAreas}` : ''}`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
