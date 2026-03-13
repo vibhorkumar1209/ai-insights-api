@@ -55,21 +55,32 @@ router.get('/:jobId/stream', (req: Request, res: Response): void => {
   res.flushHeaders();
 
   const send = (event: string, data: unknown) => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* closed */ }
   };
 
   // If already terminal, send immediately
   if (job.status === 'complete') { send('result', job); res.end(); return; }
   if (job.status === 'error') { send('error', job); res.end(); return; }
 
+  // Keepalive heartbeat — prevents Railway/Nginx from killing idle SSE connections
+  // during long-running operations (Yahoo Finance + Parallel.AI + Claude can take 2–3 min)
+  const keepAlive = setInterval(() => {
+    try { res.write(': keepalive\n\n'); } catch { clearInterval(keepAlive); }
+  }, 20_000);
+
+  const cleanup = () => {
+    clearInterval(keepAlive);
+    unsubscribeFromJob(req.params.jobId, cb);
+  };
+
   const cb = (event: string, data: unknown) => {
     send(event, data);
-    if (event === 'result' || event === 'error') { unsubscribeFromJob(req.params.jobId, cb); res.end(); }
+    if (event === 'result' || event === 'error') { cleanup(); res.end(); }
   };
 
   subscribeToJob(req.params.jobId, cb);
 
-  const onClose = () => unsubscribeFromJob(req.params.jobId, cb);
+  const onClose = () => cleanup();
   req.on('close', onClose);
   req.on('error', onClose);
 });
