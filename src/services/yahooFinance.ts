@@ -1,8 +1,11 @@
 import yahooFinance from 'yahoo-finance2';
+import fetch from 'node-fetch';
 import {
   RevenueDataPoint,
   MarginDataPoint,
   FinancialStatementRow,
+  CompanyInfo,
+  QuarterlyDataPoint,
 } from '../types';
 
 // Suppress yahoo-finance2 console warnings in production
@@ -11,55 +14,344 @@ try {
   (yahooFinance as any).setGlobalConfig?.({ validation: { logOptionsErrors: false } });
 } catch { /* ignore */ }
 
-// ── Format helpers ─────────────────────────────────────────────────────────────
+// ── Custom Finance API ─────────────────────────────────────────────────────────
 
-function formatCurrency(raw: number | undefined | null): string {
+const FINANCE_API_BASE = 'http://20.219.199.59/FinanceScrapper/api/ExternalApi';
+
+// Map Yahoo Finance ticker suffix → Google Finance exchange code
+const SUFFIX_TO_EXCHANGE: Record<string, string> = {
+  L:   'LON',   // London Stock Exchange
+  TO:  'TSE',   // Toronto Stock Exchange
+  HK:  'HKG',   // Hong Kong Exchange
+  PA:  'EPA',   // Euronext Paris
+  F:   'ETR',   // Frankfurt (old)
+  DE:  'ETR',   // Deutsche Börse XETRA
+  MC:  'BME',   // Madrid (Bolsa)
+  MI:  'BIT',   // Milan (Borsa Italiana)
+  AS:  'AMS',   // Euronext Amsterdam
+  SW:  'SWX',   // Swiss Exchange
+  CO:  'CPH',   // Copenhagen
+  ST:  'STO',   // Stockholm
+  OL:  'OSL',   // Oslo
+  HE:  'HEL',   // Helsinki
+  BR:  'EBR',   // Brussels
+  VI:  'VIE',   // Vienna
+  LS:  'ELI',   // Lisbon
+  WA:  'WSE',   // Warsaw
+  IS:  'BIST',  // Istanbul
+  SI:  'SGX',   // Singapore Exchange
+  AX:  'ASX',   // Australian Securities Exchange
+  NS:  'NSE',   // National Stock Exchange (India)
+  BO:  'BSE',   // Bombay Stock Exchange
+  KS:  'KRX',   // Korea Stock Exchange
+  T:   'TYO',   // Tokyo Stock Exchange
+  SS:  'SHA',   // Shanghai A-shares
+  SZ:  'SHE',   // Shenzhen A-shares
+};
+
+// Map Yahoo exchange code → Google Finance exchange (for tickers with no dot-suffix)
+function yahooExchangeToGoogle(yExchange: string): string {
+  const e = yExchange.toUpperCase();
+  if (e.includes('NASDAQ') || ['NMS', 'NGM', 'NCM', 'NASDAQGS', 'NASDAQGM', 'NASDAQCM'].includes(e)) return 'NASDAQ';
+  if (e.includes('NYSE') || ['NYQ', 'NYE', 'PCX', 'ASE'].includes(e)) return 'NYSE';
+  return 'NASDAQ'; // safe fallback for unknown US exchanges
+}
+
+/**
+ * Convert a Yahoo Finance symbol + exchange into the TICKER:EXCHANGE format
+ * expected by the custom finance scraper API (e.g. "LLOY:LON", "AAPL:NASDAQ").
+ */
+export function buildSearchString(yahooSymbol: string, yahooExchangeCode: string): string {
+  const dotIdx = yahooSymbol.indexOf('.');
+  if (dotIdx !== -1) {
+    const base   = yahooSymbol.slice(0, dotIdx);
+    const suffix = yahooSymbol.slice(dotIdx + 1).toUpperCase();
+    const exchange = SUFFIX_TO_EXCHANGE[suffix] || suffix;
+    return `${base}:${exchange}`;
+  }
+  // No dot — determine exchange from the Yahoo exchange code
+  const exchange = yahooExchangeToGoogle(yahooExchangeCode);
+  return `${yahooSymbol}:${exchange}`;
+}
+
+// ── Value parsing helpers ──────────────────────────────────────────────────────
+
+const EM_DASH = '\u2014';
+const EN_DASH = '\u2013';
+
+/**
+ * Parse finance value strings like "18.63B", "738.00M", "—" → number | null.
+ * Handles optional leading "-" and currency/whitespace noise.
+ */
+export function parseFinanceValue(val: string | undefined | null): number | null {
+  if (!val || val === EM_DASH || val === EN_DASH || val.trim() === '-' || val.trim() === 'N/A') return null;
+  const clean  = val.replace(/[$£€¥₹,\u00a0\s]/g, '').trim();
+  const isNeg  = clean.startsWith('-');
+  const digits = clean.replace(/^-/, '');
+  const m = digits.match(/^([0-9.]+)([BMKT]?)$/i);
+  if (!m) return null;
+  const num = parseFloat(m[1]);
+  if (isNaN(num)) return null;
+  const mult: Record<string, number> = { B: 1e9, M: 1e6, K: 1e3, T: 1e12 };
+  const multiplier = mult[m[2].toUpperCase()] ?? 1;
+  return (isNeg ? -1 : 1) * num * multiplier;
+}
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', GBP: '£', EUR: '€', JPY: '¥', CAD: 'CA$', AUD: 'A$',
+  INR: '₹', CHF: 'CHF ', CNY: '¥', HKD: 'HK$', SGD: 'S$', KRW: '₩',
+};
+
+function formatWithCurrency(raw: number | null, currency = 'USD'): string {
   if (raw == null || isNaN(raw)) return 'N/A';
-  const abs = Math.abs(raw);
-  const sign = raw < 0 ? '-' : '';
-  if (abs >= 1e12) return `${sign}$${(abs / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(1)}B`;
-  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
-  return `${sign}$${raw.toLocaleString()}`;
+  const abs    = Math.abs(raw);
+  const sign   = raw < 0 ? '-' : '';
+  const sym    = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? (currency + ' ');
+  if (abs >= 1e12) return `${sign}${sym}${(abs / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9)  return `${sign}${sym}${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6)  return `${sign}${sym}${(abs / 1e6).toFixed(0)}M`;
+  if (abs >= 1e3)  return `${sign}${sym}${(abs / 1e3).toFixed(0)}K`;
+  return `${sign}${sym}${raw.toLocaleString()}`;
 }
 
-function formatPct(num: number | undefined | null, denom: number | undefined | null): string {
-  if (num == null || denom == null || denom === 0 || isNaN(num) || isNaN(denom)) return 'N/A';
-  return `${((num / denom) * 100).toFixed(1)}%`;
-}
-
-function calcYoy(current: number | undefined | null, previous: number | undefined | null): string | undefined {
+function calcYoy(current: number | null, previous: number | null): string | undefined {
   if (current == null || previous == null || previous === 0) return undefined;
   const pct = ((current - previous) / Math.abs(previous)) * 100;
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 }
 
-function getYear(endDate: unknown): string {
-  try {
-    if (endDate instanceof Date) return String(endDate.getFullYear());
-    if (typeof endDate === 'object' && endDate !== null) {
-      const raw = (endDate as { raw?: number; fmt?: string }).raw;
-      if (raw) return String(new Date(raw * 1000).getFullYear());
+// ── Annual API response shapes ─────────────────────────────────────────────────
+
+interface AnnualPeriodData {
+  Revenue?:           string;
+  'Operating expense'?: string;
+  'Net income'?:      string;
+  'Net profit margin'?: string;
+  'Earnings per share'?: string;
+  EBITDA?:            string;
+  'Effective tax rate'?: string;
+}
+
+interface AnnualAPIResponse {
+  Company?: {
+    Name?:              string;
+    'PREVIOUS CLOSE'?:  string;
+    'DAY RANGE'?:       string;
+    'YEAR RANGE'?:      string;
+    'MARKET CAP'?:      string;
+    'AVG VOLUME'?:      string;
+    'P/E RATIO'?:       string;
+    'DIVIDEND YIELD'?:  string;
+    'PRIMARY EXCHANGE'?: string;
+    CEO?:               string;
+    FOUNDED?:           string;
+    HEADQUARTERS?:      string;
+    WEBSITE?:           string;
+    EMPLOYEES?:         string;
+    About?:             string;
+  };
+  Financial?: Record<string, AnnualPeriodData | { Currency: string }>;
+}
+
+interface QuarterlyAPIResponse {
+  QuarterFinancialAnalysis?: Record<string, AnnualPeriodData | { Currency: string }>;
+}
+
+// ── Fetch annual data ──────────────────────────────────────────────────────────
+
+export interface AnnualFinancialsResult {
+  companyInfo:    CompanyInfo;
+  currency:       string;
+  revenueHistory: RevenueDataPoint[];
+  marginHistory:  MarginDataPoint[];
+  plStatement:    FinancialStatementRow[];
+}
+
+export async function fetchAnnualFinancials(searchString: string): Promise<AnnualFinancialsResult> {
+  const url = `${FINANCE_API_BASE}/SearchOnPuppeteer?searchString=${encodeURIComponent(searchString)}`;
+  const res  = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`Finance API annual: HTTP ${res.status}`);
+  const data = (await res.json()) as AnnualAPIResponse;
+
+  const currency = extractCurrency(data.Financial);
+
+  // ── Company info ──────────────────────────────────────────────────────────
+  const c = data.Company || {};
+  const companyInfo: CompanyInfo = {
+    name:          c.Name,
+    exchange:      c['PRIMARY EXCHANGE'],
+    previousClose: c['PREVIOUS CLOSE'],
+    dayRange:      c['DAY RANGE'],
+    yearRange:     c['YEAR RANGE'],
+    marketCap:     c['MARKET CAP'],
+    avgVolume:     c['AVG VOLUME'],
+    peRatio:       c['P/E RATIO'],
+    dividendYield: c['DIVIDEND YIELD'],
+    ceo:           c.CEO,
+    founded:       c.FOUNDED,
+    headquarters:  c.HEADQUARTERS,
+    website:       c.WEBSITE,
+    employees:     c.EMPLOYEES,
+    about:         c.About,
+  };
+
+  // ── Annual period data ────────────────────────────────────────────────────
+  const periodsRaw = buildSortedPeriods(data.Financial || {});
+
+  const revenueHistory: RevenueDataPoint[] = [];
+  const marginHistory:  MarginDataPoint[]  = [];
+
+  periodsRaw.forEach(({ label, data: p }, idx) => {
+    const rev    = parseFinanceValue(p.Revenue);
+    const opex   = parseFinanceValue(p['Operating expense']);
+    const ni     = parseFinanceValue(p['Net income']);
+    const netMar = parseFloat(p['Net profit margin'] || '0') || 0;
+
+    if (rev == null) return;
+
+    const prevRev  = idx > 0 ? parseFinanceValue(periodsRaw[idx - 1].data.Revenue) : null;
+    const yoyNum   = prevRev ? ((rev - prevRev) / Math.abs(prevRev)) * 100 : undefined;
+
+    revenueHistory.push({
+      year: label,
+      revenue: rev,
+      revenueFormatted: formatWithCurrency(rev, currency),
+      yoyGrowth: yoyNum != null ? parseFloat(yoyNum.toFixed(1)) : undefined,
+    });
+
+    // Operating income = Revenue – Operating expense
+    const opInc    = (rev != null && opex != null) ? rev - opex : null;
+    const opMar    = (opInc != null && rev > 0) ? parseFloat(((opInc / rev) * 100).toFixed(1)) : 0;
+
+    marginHistory.push({
+      year: label,
+      netMargin:       parseFloat(netMar.toFixed(1)),
+      operatingMargin: opMar,
+    });
+  });
+
+  // ── P&L from most recent year ─────────────────────────────────────────────
+  const plStatement = buildPLFromAPI(periodsRaw, currency);
+
+  return { companyInfo, currency, revenueHistory, marginHistory, plStatement };
+}
+
+// ── Fetch quarterly data ───────────────────────────────────────────────────────
+
+export async function fetchQuarterlyFinancials(searchString: string): Promise<QuarterlyDataPoint[]> {
+  const url = `${FINANCE_API_BASE}/ScrapQuarterAnalysisData?searchString=${encodeURIComponent(searchString)}`;
+  const res  = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`Finance API quarterly: HTTP ${res.status}`);
+  const data = (await res.json()) as QuarterlyAPIResponse;
+
+  const raw      = data.QuarterFinancialAnalysis || {};
+  const currency = extractCurrency(raw);
+
+  const points: QuarterlyDataPoint[] = [];
+  for (const [period, val] of Object.entries(raw)) {
+    if (period === 'ReportedCurrency') continue;
+    const p = val as AnnualPeriodData;
+    const rev = parseFinanceValue(p.Revenue);
+    const opex = parseFinanceValue(p['Operating expense']);
+    const ni   = parseFinanceValue(p['Net income']);
+    const eps  = p['Earnings per share'];
+
+    points.push({
+      period,
+      revenue:          rev ?? undefined,
+      revenueFormatted: rev != null ? formatWithCurrency(rev, currency) : undefined,
+      operatingExpense: opex ?? undefined,
+      netIncome:        ni ?? undefined,
+      netProfitMargin:  p['Net profit margin'] ? parseFloat(p['Net profit margin']) : undefined,
+      earningsPerShare: (eps && eps !== EM_DASH && eps !== EN_DASH) ? eps : '—',
+      effectiveTaxRate: p['Effective tax rate'],
+    });
+  }
+
+  // Sort chronologically: parse "DEC 2025" → Date, oldest first
+  points.sort((a, b) => parsePeriodDate(a.period) - parsePeriodDate(b.period));
+  return points;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function extractCurrency(fin: Record<string, unknown> | undefined): string {
+  if (!fin) return 'USD';
+  const cur = fin['ReportedCurrency'] as { Currency?: string } | undefined;
+  return cur?.Currency?.toUpperCase() || 'USD';
+}
+
+interface PeriodEntry { label: string; data: AnnualPeriodData }
+
+function buildSortedPeriods(fin: Record<string, AnnualPeriodData | { Currency: string }>): PeriodEntry[] {
+  // Deduplicate: if "2022" and "2022_1" both exist, prefer "2022" (no suffix)
+  const yearMap = new Map<number, { key: string; hasSuffix: boolean }>();
+  for (const key of Object.keys(fin)) {
+    if (key === 'ReportedCurrency') continue;
+    const year = parseInt(key.split('_')[0], 10);
+    if (isNaN(year)) continue;
+    const hasSuffix = key.includes('_');
+    const existing  = yearMap.get(year);
+    if (!existing || (!hasSuffix && existing.hasSuffix)) {
+      yearMap.set(year, { key, hasSuffix });
     }
-    return String(new Date().getFullYear());
-  } catch {
-    return String(new Date().getFullYear());
   }
+  return [...yearMap.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, { key }]) => ({ label: String(parseInt(key.split('_')[0], 10)), data: fin[key] as AnnualPeriodData }));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rawVal(field: any): number | null {
-  if (field == null) return null;
-  if (typeof field === 'number') return field;
-  if (typeof field === 'object' && 'raw' in field) {
-    const v = (field as { raw: number }).raw;
-    return typeof v === 'number' ? v : null;
+function parsePeriodDate(period: string): number {
+  const MONTHS: Record<string, number> = {
+    JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5,
+    JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11,
+  };
+  const parts = period.trim().split(/\s+/);
+  if (parts.length === 2) {
+    const mon = MONTHS[parts[0].toUpperCase()];
+    const yr  = parseInt(parts[1], 10);
+    if (mon !== undefined && !isNaN(yr)) return new Date(yr, mon, 1).getTime();
   }
-  return null;
+  return 0;
 }
 
-// ── Ticker detection ───────────────────────────────────────────────────────────
+function buildPLFromAPI(periods: PeriodEntry[], currency: string): FinancialStatementRow[] {
+  if (periods.length === 0) return [];
+  const current = periods[periods.length - 1].data;
+  const prev    = periods.length > 1 ? periods[periods.length - 2].data : null;
+
+  const rev    = parseFinanceValue(current.Revenue);
+  const opex   = parseFinanceValue(current['Operating expense']);
+  const ni     = parseFinanceValue(current['Net income']);
+  const opInc  = (rev != null && opex != null) ? rev - opex : null;
+  const netMar = current['Net profit margin'];
+  const taxR   = current['Effective tax rate'];
+  const eps    = current['Earnings per share'];
+  const ebitda = parseFinanceValue(current.EBITDA);
+
+  const pRev   = prev ? parseFinanceValue(prev.Revenue) : null;
+  const pOpex  = prev ? parseFinanceValue(prev['Operating expense']) : null;
+  const pNi    = prev ? parseFinanceValue(prev['Net income']) : null;
+  const pOpInc = (pRev != null && pOpex != null) ? pRev - pOpex : null;
+
+  const rows: FinancialStatementRow[] = [
+    { label: 'INCOME SUMMARY', value: '', isSection: true },
+    { label: 'Revenue',             value: formatWithCurrency(rev, currency),   yoy: calcYoy(rev, pRev),     isBold: true },
+    { label: 'Operating Expense',   value: formatWithCurrency(opex, currency),  yoy: calcYoy(opex, pOpex) },
+    { label: 'Operating Income',    value: formatWithCurrency(opInc, currency), yoy: calcYoy(opInc, pOpInc), isBold: true },
+    ...(opInc != null && rev ? [{ label: 'Operating Margin', value: `${((opInc / rev) * 100).toFixed(1)}%` }] : []),
+    ...(ebitda != null ? [{ label: 'EBITDA', value: formatWithCurrency(ebitda, currency) }] : []),
+    { label: 'NET RESULTS', value: '', isSection: true },
+    { label: 'Net Income',          value: formatWithCurrency(ni, currency),    yoy: calcYoy(ni, pNi),       isBold: true },
+    ...(netMar && netMar !== EM_DASH ? [{ label: 'Net Profit Margin', value: `${parseFloat(netMar).toFixed(1)}%` }] : []),
+    ...(eps && eps !== EM_DASH && eps !== EN_DASH && eps !== '—' ? [{ label: 'Earnings per Share', value: eps }] : []),
+    ...(taxR && taxR !== EM_DASH ? [{ label: 'Effective Tax Rate', value: taxR }] : []),
+  ];
+
+  return rows.filter((r) => r.isSection || r.value !== 'N/A');
+}
+
+// ── Ticker detection (unchanged — still uses yahoo-finance2) ──────────────────
 
 // Exchange codes that map to US major stock exchanges
 const US_EXCHANGE_CODES = new Set([
@@ -82,7 +374,6 @@ function isEquityQuote(q: any): boolean {
   const td = (q.typeDisp || '').toLowerCase();
   if (NON_EQUITY_TYPES.has(qt)) return false;
   if (qt === 'EQUITY' || td === 'equity') return true;
-  // Accept unknown/empty type if symbol looks like a clean ticker (1-5 uppercase letters)
   if (!qt || qt === '') {
     const sym = (q.symbol || '') as string;
     return /^[A-Z]{1,5}$/.test(sym);
@@ -97,7 +388,6 @@ function isUSExchangeQuote(q: any): boolean {
   return US_EXCHANGE_CODES.has(exch);
 }
 
-// Run a single yahoo search query and return filtered equity results
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function runSearch(query: string): Promise<any[]> {
   try {
@@ -111,23 +401,22 @@ async function runSearch(query: string): Promise<any[]> {
   }
 }
 
-// Score a quote for relevance — higher = better match
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function scoreQuote(q: any, companyName: string, domainHint: string): number {
-  const qName = ((q.shortname || q.longname || '') as string).toLowerCase();
-  const qSym  = ((q.symbol || '') as string).toLowerCase();
-  const nameLower = companyName.toLowerCase();
+  const qName   = ((q.shortname || q.longname || '') as string).toLowerCase();
+  const qSym    = ((q.symbol || '') as string).toLowerCase();
+  const nameLow = companyName.toLowerCase();
   let s = 0;
 
-  if (isUSExchangeQuote(q)) s += 15;                            // US exchange bonus
+  if (isUSExchangeQuote(q)) s += 15;
 
-  if (qName === nameLower) s += 30;                              // exact name match
-  else if (qName.startsWith(nameLower.split(' ')[0])) s += 10;  // starts with first word
-  else if (qName.includes(nameLower.split(' ')[0])) s += 5;     // contains first word
+  if (qName === nameLow) s += 30;
+  else if (qName.startsWith(nameLow.split(' ')[0])) s += 10;
+  else if (qName.includes(nameLow.split(' ')[0])) s += 5;
 
   if (domainHint) {
-    if (qSym === domainHint) s += 20;                            // ticker === domain root
-    if (qName.includes(domainHint)) s += 10;                     // name contains domain root
+    if (qSym === domainHint) s += 20;
+    if (qName.includes(domainHint)) s += 10;
   }
 
   return s;
@@ -138,13 +427,11 @@ export async function detectTicker(
   domain?: string
 ): Promise<{ ticker: string; exchange: string } | null> {
   const domainHint = domain ? domain.replace(/^www\./, '').split('.')[0].toLowerCase() : '';
-  const words = companyName.trim().split(/\s+/);
+  const words      = companyName.trim().split(/\s+/);
 
-  // Build a prioritised list of search queries to try
   const queries: string[] = [companyName];
   if (words.length > 2) queries.push(words.slice(0, 2).join(' '));
   if (words.length > 1) queries.push(words[0]);
-  // If domain looks like a short ticker (≤5 chars), try it directly
   if (domainHint && domainHint.length <= 5) queries.push(domainHint.toUpperCase());
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,178 +440,13 @@ export async function detectTicker(
   for (const query of queries) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const found: any[] = await runSearch(query);
-    if (found.length > 0) {
-      equities = found;
-      break; // stop at the first query that yields equity results
-    }
+    if (found.length > 0) { equities = found; break; }
   }
   if (equities.length === 0) return null;
 
-  // Sort by score descending and pick the best
   equities.sort((a, b) => scoreQuote(b, companyName, domainHint) - scoreQuote(a, companyName, domainHint));
 
-  const best = equities[0];
-  const exchange: string = best.exchDisp || best.exchange || '';
-
-  // Sanity check: if we got results but no US equity at all, accept the best global one
+  const best     = equities[0];
+  const exchange = best.exchDisp || best.exchange || '';
   return { ticker: best.symbol as string, exchange };
-}
-
-// ── Full financial data fetch ─────────────────────────────────────────────────
-
-interface YahooFinancials {
-  revenueHistory: RevenueDataPoint[];
-  marginHistory: MarginDataPoint[];
-  plStatement: FinancialStatementRow[];
-  balanceSheet: FinancialStatementRow[];
-  cashFlow: FinancialStatementRow[];
-}
-
-export async function fetchFinancials(ticker: string): Promise<YahooFinancials> {
-  const summary = await yahooFinance.quoteSummary(ticker, {
-    modules: [
-      'incomeStatementHistory',
-      'balanceSheetHistory',
-      'cashflowStatementHistory',
-    ],
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const incomeStmts: any[] =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((summary as any).incomeStatementHistory?.incomeStatementHistory || []).slice(0, 5).reverse();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bsStmts: any[] =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((summary as any).balanceSheetHistory?.balanceSheetStatements || []);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cfStmts: any[] =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((summary as any).cashflowStatementHistory?.cashflowStatements || []);
-
-  // ── Revenue + Margin history ─────────────────────────────────────────────────
-  const revenueHistory: RevenueDataPoint[] = [];
-  const marginHistory: MarginDataPoint[] = [];
-
-  incomeStmts.forEach((stmt, idx) => {
-    const rev = rawVal(stmt.totalRevenue);
-    const ni = rawVal(stmt.netIncomeApplicableToCommonShares ?? stmt.netIncome);
-    const opInc = rawVal(stmt.operatingIncome ?? stmt.ebit);
-    const year = getYear(stmt.endDate);
-
-    if (rev != null) {
-      const prevRev = idx > 0 ? rawVal(incomeStmts[idx - 1].totalRevenue) : null;
-      const yoyNum = prevRev ? ((rev - prevRev) / Math.abs(prevRev)) * 100 : undefined;
-
-      revenueHistory.push({
-        year,
-        revenue: rev,
-        revenueFormatted: formatCurrency(rev),
-        yoyGrowth: yoyNum != null ? parseFloat(yoyNum.toFixed(1)) : undefined,
-      });
-
-      marginHistory.push({
-        year,
-        netMargin: ni != null ? parseFloat(((ni / rev) * 100).toFixed(1)) : 0,
-        operatingMargin: opInc != null ? parseFloat(((opInc / rev) * 100).toFixed(1)) : 0,
-      });
-    }
-  });
-
-  // ── P&L Statement (most recent year) ────────────────────────────────────────
-  // incomeStmts are reversed (oldest→newest), so last element is most recent
-  const currentIncome = incomeStmts[incomeStmts.length - 1];
-  const prevIncome = incomeStmts.length > 1 ? incomeStmts[incomeStmts.length - 2] : null;
-  const plStatement = buildPL(currentIncome, prevIncome);
-
-  // ── Balance Sheet (most recent) ─────────────────────────────────────────────
-  const balanceSheet = buildBS(bsStmts[0]);
-
-  // ── Cash Flow (most recent) ──────────────────────────────────────────────────
-  const cashFlow = buildCF(cfStmts[0], incomeStmts[incomeStmts.length - 1]);
-
-  return { revenueHistory, marginHistory, plStatement, balanceSheet, cashFlow };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildPL(stmt: any, prev: any): FinancialStatementRow[] {
-  if (!stmt) return [];
-  const r = (f: string) => rawVal(stmt[f]);
-  const p = (f: string) => (prev ? rawVal(prev[f]) : null);
-  const rev = r('totalRevenue');
-
-  const rows: FinancialStatementRow[] = [
-    { label: 'Revenue', value: formatCurrency(rev), yoy: calcYoy(rev, p('totalRevenue')), isBold: true },
-    { label: 'Cost of Revenue', value: formatCurrency(r('costOfRevenue')), yoy: calcYoy(r('costOfRevenue'), p('costOfRevenue')) },
-    { label: 'Gross Profit', value: formatCurrency(r('grossProfit')), yoy: calcYoy(r('grossProfit'), p('grossProfit')), isBold: true },
-    { label: 'Gross Margin', value: formatPct(r('grossProfit'), rev) },
-    { label: 'OPERATING EXPENSES', value: '', isSection: true },
-    { label: 'R&D Expenses', value: formatCurrency(r('researchDevelopment')), yoy: calcYoy(r('researchDevelopment'), p('researchDevelopment')) },
-    { label: 'SG&A Expenses', value: formatCurrency(r('sellingGeneralAdministrative')), yoy: calcYoy(r('sellingGeneralAdministrative'), p('sellingGeneralAdministrative')) },
-    { label: 'Total Operating Expenses', value: formatCurrency(r('totalOperatingExpenses')), isBold: true },
-    { label: 'Operating Income (EBIT)', value: formatCurrency(r('operatingIncome') ?? r('ebit')), yoy: calcYoy(r('operatingIncome') ?? r('ebit'), p('operatingIncome') ?? p('ebit')), isBold: true },
-    { label: 'Operating Margin', value: formatPct(r('operatingIncome') ?? r('ebit'), rev) },
-    { label: 'BELOW THE LINE', value: '', isSection: true },
-    { label: 'Interest Expense', value: formatCurrency(r('interestExpense')) },
-    { label: 'Other Income / (Expense)', value: formatCurrency(r('totalOtherIncomeExpenseNet')) },
-    { label: 'Income Before Tax', value: formatCurrency(r('incomeBeforeTax')), yoy: calcYoy(r('incomeBeforeTax'), p('incomeBeforeTax')), isBold: true },
-    { label: 'Income Tax Expense', value: formatCurrency(r('incomeTaxExpense')) },
-    { label: 'Net Income', value: formatCurrency(r('netIncomeApplicableToCommonShares') ?? r('netIncome')), yoy: calcYoy(r('netIncomeApplicableToCommonShares') ?? r('netIncome'), p('netIncomeApplicableToCommonShares') ?? p('netIncome')), isBold: true },
-    { label: 'Net Margin', value: formatPct(r('netIncomeApplicableToCommonShares') ?? r('netIncome'), rev) },
-  ];
-  return rows.filter((row) => row.value !== 'N/A' || row.isSection || row.isBold);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildBS(stmt: any): FinancialStatementRow[] {
-  if (!stmt) return [];
-  const r = (f: string) => rawVal(stmt[f]);
-
-  return [
-    { label: 'ASSETS', value: '', isSection: true },
-    { label: 'Cash & Equivalents', value: formatCurrency(r('cash')) },
-    { label: 'Short-term Investments', value: formatCurrency(r('shortTermInvestments')) },
-    { label: 'Accounts Receivable', value: formatCurrency(r('netReceivables')) },
-    { label: 'Inventory', value: formatCurrency(r('inventory')) },
-    { label: 'Total Current Assets', value: formatCurrency(r('totalCurrentAssets')), isBold: true },
-    { label: 'Property, Plant & Equipment', value: formatCurrency(r('propertyPlantEquipment')) },
-    { label: 'Long-term Investments', value: formatCurrency(r('longTermInvestments')) },
-    { label: 'Total Assets', value: formatCurrency(r('totalAssets')), isBold: true },
-    { label: 'LIABILITIES & EQUITY', value: '', isSection: true },
-    { label: 'Accounts Payable', value: formatCurrency(r('accountsPayable')) },
-    { label: 'Short-term Debt', value: formatCurrency(r('shortLongTermDebt')) },
-    { label: 'Total Current Liabilities', value: formatCurrency(r('totalCurrentLiabilities')), isBold: true },
-    { label: 'Long-term Debt', value: formatCurrency(r('longTermDebt')) },
-    { label: 'Total Liabilities', value: formatCurrency(r('totalLiab')), isBold: true },
-    { label: 'Retained Earnings', value: formatCurrency(r('retainedEarnings')) },
-    { label: 'Total Stockholder Equity', value: formatCurrency(r('totalStockholderEquity')), isBold: true },
-    { label: 'Total Liab. & Equity', value: formatCurrency(r('totalAssets')), isBold: true },
-  ].filter((row) => row.value !== 'N/A' || row.isSection || row.isBold);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildCF(stmt: any, income: any): FinancialStatementRow[] {
-  if (!stmt) return [];
-  const r = (f: string) => rawVal(stmt[f]);
-  const ri = (f: string) => (income ? rawVal(income[f]) : null);
-
-  return [
-    { label: 'OPERATING ACTIVITIES', value: '', isSection: true },
-    { label: 'Net Income', value: formatCurrency(r('netIncome') ?? ri('netIncomeApplicableToCommonShares')) },
-    { label: 'Depreciation & Amortisation', value: formatCurrency(r('depreciation')) },
-    { label: 'Change in Working Capital', value: formatCurrency(r('changeToOperatingActivities')) },
-    { label: 'Total Cash from Operations', value: formatCurrency(r('totalCashFromOperatingActivities')), isBold: true },
-    { label: 'INVESTING ACTIVITIES', value: '', isSection: true },
-    { label: 'Capital Expenditures', value: formatCurrency(r('capitalExpenditures')) },
-    { label: 'Investments', value: formatCurrency(r('investments')) },
-    { label: 'Total Cash from Investing', value: formatCurrency(r('totalCashflowsFromInvestingActivities')), isBold: true },
-    { label: 'FINANCING ACTIVITIES', value: '', isSection: true },
-    { label: 'Dividends Paid', value: formatCurrency(r('dividendsPaid')) },
-    { label: 'Net Borrowings', value: formatCurrency(r('netBorrowings')) },
-    { label: 'Stock Repurchases', value: formatCurrency(r('repurchaseOfStock')) },
-    { label: 'Total Cash from Financing', value: formatCurrency(r('totalCashFromFinancingActivities')), isBold: true },
-    { label: 'Net Change in Cash', value: formatCurrency(r('changeInCash')), isBold: true },
-  ].filter((row) => row.value !== 'N/A' || row.isSection || row.isBold);
 }

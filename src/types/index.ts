@@ -119,10 +119,39 @@ export interface ChallengesGrowthResult {
 
 // ── Financial Analysis ─────────────────────────────────────────────────────────
 
+export interface CompanyInfo {
+  name?: string;
+  exchange?: string;
+  previousClose?: string;
+  dayRange?: string;
+  yearRange?: string;
+  marketCap?: string;
+  avgVolume?: string;
+  peRatio?: string;
+  dividendYield?: string;
+  ceo?: string;
+  founded?: string;
+  headquarters?: string;
+  website?: string;
+  employees?: string;
+  about?: string;
+}
+
+export interface QuarterlyDataPoint {
+  period: string;            // e.g. "DEC 2025"
+  revenue?: number;          // raw number
+  revenueFormatted?: string; // e.g. "£4.99B"
+  operatingExpense?: number;
+  netIncome?: number;
+  netProfitMargin?: number;  // percentage, e.g. 28.07
+  earningsPerShare?: string; // "0.02" or "—"
+  effectiveTaxRate?: string; // "27.63%"
+}
+
 export interface RevenueDataPoint {
   year: string;
-  revenue: number;           // raw number (USD)
-  revenueFormatted: string;  // e.g. "$24.2B"
+  revenue: number;           // raw number
+  revenueFormatted: string;  // e.g. "£24.2B"
   yoyGrowth?: number;        // percentage, e.g. 8.5 = 8.5%
 }
 
@@ -248,13 +277,16 @@ export interface FinancialAnalysisResult {
   isPublic?: boolean;
 
   // ── Public company ──────────────────────────────────────────────
-  revenueHistory?: RevenueDataPoint[];
-  marginHistory?:  MarginDataPoint[];
-  segmentRevenue?: FinancialSegmentRow[];
-  geoRevenue?:     GeoRow[];
-  plStatement?:    FinancialStatementRow[];
-  balanceSheet?:   FinancialStatementRow[];
-  cashFlow?:       FinancialStatementRow[];
+  companyInfo?:      CompanyInfo;
+  currency?:         string;             // e.g. "GBP", "USD"
+  revenueHistory?:   RevenueDataPoint[];
+  marginHistory?:    MarginDataPoint[];
+  quarterlyHistory?: QuarterlyDataPoint[];
+  segmentRevenue?:   FinancialSegmentRow[];
+  geoRevenue?:       GeoRow[];
+  plStatement?:      FinancialStatementRow[];
+  balanceSheet?:     FinancialStatementRow[];
+  cashFlow?:         FinancialStatementRow[];
 
   // ── Insights ────────────────────────────────────────────────────
   revenueInsight?: string;

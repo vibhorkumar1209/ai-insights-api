@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '../types';
-import { detectTicker, fetchFinancials } from './yahooFinance';
+import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
 import { researchPublicCompanyFinancials, researchPrivateCompany } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany } from './claudeAI';
 
@@ -193,31 +193,56 @@ export async function runFinancialAnalysis(
 
     // ── PUBLIC PATH ────────────────────────────────────────────────────────────
     if (isPublic) {
-      // Step 2: Fetch Yahoo Finance structured data (for clean chart arrays)
-      // Run only if we have a confirmed ticker; failures are silently skipped —
-      // Parallel.AI research is the safety net.
-      let yahooData: Partial<FinancialAnalysisResult> = {};
+      // Step 2: Build the TICKER:EXCHANGE search string for the custom Finance API
+      // Then fetch annual + quarterly data in parallel alongside Parallel.AI research
+      let apiData: Partial<FinancialAnalysisResult> = {};
+      let searchString: string | undefined;
+
       if (ticker) {
+        searchString = buildSearchString(ticker, exchange || '');
         job = update(jobId, {
           status: 'fetching',
           progress: 35,
-          currentStep: `Fetching structured financial data for ${ticker}…`,
+          currentStep: `Fetching financial data for ${searchString}…`,
         });
         emit(jobId, 'progress', job);
 
         try {
-          const fetched = await fetchFinancials(ticker);
-          yahooData = fetched;
-          // Stream partial data (charts become visible early)
-          job = update(jobId, { ...fetched, progress: 55 });
+          // Fetch annual + quarterly in parallel
+          const [annualResult, quarterlyResult] = await Promise.allSettled([
+            fetchAnnualFinancials(searchString),
+            fetchQuarterlyFinancials(searchString),
+          ]);
+
+          if (annualResult.status === 'fulfilled') {
+            const a = annualResult.value;
+            apiData = {
+              companyInfo:    a.companyInfo,
+              currency:       a.currency,
+              revenueHistory: a.revenueHistory,
+              marginHistory:  a.marginHistory,
+              plStatement:    a.plStatement,
+            };
+          } else {
+            console.error(`[financialAnalysis] Annual API failed for ${searchString}:`, annualResult.reason);
+          }
+
+          if (quarterlyResult.status === 'fulfilled') {
+            apiData.quarterlyHistory = quarterlyResult.value;
+          } else {
+            console.error(`[financialAnalysis] Quarterly API failed for ${searchString}:`, quarterlyResult.reason);
+          }
+
+          // Stream partial data so charts appear early
+          job = update(jobId, { ...apiData, progress: 55 });
           emit(jobId, 'progress', job);
         } catch (err) {
-          console.error(`[financialAnalysis] Yahoo Finance fetch failed for ${ticker}:`, err);
+          console.error(`[financialAnalysis] Finance API fetch failed for ${searchString}:`, err);
         }
       }
 
-      // Step 3: Claude synthesis — merges Yahoo structured data + Parallel.AI research
-      // If Yahoo data is sparse/empty, Claude extracts chart arrays from the research text
+      // Step 3: Claude synthesis — enriches with segment/geo + key highlights + insights
+      // Parallel.AI research text is the source for segment/geo data and narrative context
       job = update(jobId, {
         status: 'synthesizing',
         progress: 65,
@@ -225,41 +250,40 @@ export async function runFinancialAnalysis(
       });
       emit(jobId, 'progress', job);
 
-      const insights = await synthesizeFinancialInsights(input, yahooData, parallelResearch);
+      const insights = await synthesizeFinancialInsights(input, apiData, parallelResearch);
 
-      // Merge: prefer Yahoo structured arrays (accurate numbers) over Claude-extracted ones,
-      // but fill in any that are empty with what Claude extracted from the research
+      // Prefer API structured arrays; fall back to Claude-extracted arrays if API returned nothing
       const finalRevenueHistory =
-        (yahooData.revenueHistory?.length ?? 0) > 0
-          ? yahooData.revenueHistory
+        (apiData.revenueHistory?.length ?? 0) > 0
+          ? apiData.revenueHistory
           : insights.revenueHistoryExtracted?.length
             ? insights.revenueHistoryExtracted
             : undefined;
 
       const finalMarginHistory =
-        (yahooData.marginHistory?.length ?? 0) > 0
-          ? yahooData.marginHistory
+        (apiData.marginHistory?.length ?? 0) > 0
+          ? apiData.marginHistory
           : insights.marginHistoryExtracted?.length
             ? insights.marginHistoryExtracted
             : undefined;
 
       const finalPlStatement =
-        (yahooData.plStatement?.length ?? 0) > 0
-          ? yahooData.plStatement
+        (apiData.plStatement?.length ?? 0) > 0
+          ? apiData.plStatement
           : insights.plStatementExtracted?.length
             ? insights.plStatementExtracted
             : undefined;
 
       const finalBalanceSheet =
-        (yahooData.balanceSheet?.length ?? 0) > 0
-          ? yahooData.balanceSheet
+        (apiData.balanceSheet?.length ?? 0) > 0
+          ? apiData.balanceSheet
           : insights.balanceSheetExtracted?.length
             ? insights.balanceSheetExtracted
             : undefined;
 
       const finalCashFlow =
-        (yahooData.cashFlow?.length ?? 0) > 0
-          ? yahooData.cashFlow
+        (apiData.cashFlow?.length ?? 0) > 0
+          ? apiData.cashFlow
           : insights.cashFlowExtracted?.length
             ? insights.cashFlowExtracted
             : undefined;
@@ -270,6 +294,9 @@ export async function runFinancialAnalysis(
         progress: 100,
         currentStep: 'Complete',
         completedAt,
+        companyInfo:     apiData.companyInfo,
+        currency:        apiData.currency,
+        quarterlyHistory: apiData.quarterlyHistory?.length ? apiData.quarterlyHistory : undefined,
         revenueHistory:  finalRevenueHistory,
         marginHistory:   finalMarginHistory,
         plStatement:     finalPlStatement,
