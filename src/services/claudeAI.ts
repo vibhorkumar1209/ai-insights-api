@@ -613,10 +613,26 @@ export async function synthesizeSalesPlay(
   input: SalesPlayInput,
   research: string
 ): Promise<SalesPlayPayload> {
-  const hasResearch = !isEmptyResearch(research);
-  const priorityList = input.strategicPriorities
-    .map((p, i) => `${i + 1}. ${p}`)
-    .join('\n');
+  const hasResearch    = !isEmptyResearch(research);
+  const hasPriorities  = input.strategicPriorities && input.strategicPriorities.length > 0;
+  const hasSolutions   = input.solutionAreas && input.solutionAreas.trim().length > 0;
+
+  const priorityBlock = hasPriorities
+    ? `TARGET'S STRATEGIC PRIORITIES (user-supplied — use these exactly):\n${input.strategicPriorities!.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : `TARGET'S STRATEGIC PRIORITIES: NOT PROVIDED BY USER.
+If the research below contains a "DISCOVERED STRATEGIC PRIORITIES" section, extract those priorities and use them as your priority list (4–5 items).
+If no discovered priorities are in the research, derive 4–5 realistic strategic priorities for ${input.targetAccount} based on their industry, size, and any context in the research.
+Use whatever priorities you identify consistently across priorityTable and priorityMapping.`;
+
+  const solutionBlock = hasSolutions
+    ? `YOUR SOLUTION AREAS (user-supplied): ${input.solutionAreas}`
+    : `YOUR SOLUTION AREAS: NOT PROVIDED BY USER.
+If the research below contains a "DISCOVERED SOLUTION AREAS" section, extract those as the solution portfolio.
+Otherwise, identify ${input.yourCompany}'s most relevant solutions for ${input.targetIndustry} from your training knowledge.`;
+
+  const priorityCountNote = hasPriorities
+    ? `- priorityTable: EXACTLY ${input.strategicPriorities!.length} rows (one per priority above)\n- priorityMapping: EXACTLY ${input.strategicPriorities!.length} rows (matching priorityTable priorities)`
+    : `- priorityTable: 4–5 rows (one per discovered/derived priority)\n- priorityMapping: same number of rows as priorityTable`;
 
   const systemPrompt = `You are a senior B2B sales strategist and competitive intelligence analyst.
 Rules:
@@ -625,6 +641,7 @@ Rules:
 - Back every competitive differentiator with proof (case study outcome, analyst finding, review data).
 - Use [Client A, Fortune 500 ${input.targetIndustry} Company] as placeholder when real client names are unavailable.
 - Base competitor weaknesses ONLY on publicly known analyst reports, G2/Gartner reviews, or documented product gaps — never fabricate.
+- When strategic priorities or solution areas were not user-supplied, derive them from research and use them consistently throughout.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
 
   const userPrompt = `Generate a comprehensive Sales Play document for the following engagement:
@@ -633,11 +650,10 @@ SELLING COMPANY: "${input.yourCompany}"
 COMPETITOR TO DISPLACE: "${input.competitorName}"
 TARGET ACCOUNT: "${input.targetAccount}" (Industry: ${input.targetIndustry})
 
-TARGET'S STRATEGIC PRIORITIES:
-${priorityList}
+${priorityBlock}
 
-YOUR SOLUTION AREAS: ${input.solutionAreas}
-${input.competitorWeaknesses ? `KNOWN COMPETITOR WEAKNESSES (user-supplied): ${input.competitorWeaknesses}` : ''}
+${solutionBlock}
+${input.competitorWeaknesses ? `\nKNOWN COMPETITOR WEAKNESSES (user-supplied): ${input.competitorWeaknesses}` : ''}
 
 ${hasResearch ? `COMPETITIVE INTELLIGENCE RESEARCH:\n${research.slice(0, 55000)}` : '[No live research — use training knowledge. Label estimates as "(est.)"]'}
 
@@ -645,7 +661,7 @@ Return a single JSON object with EXACTLY this structure:
 {
   "priorityTable": [
     {
-      "priority": "Exact priority name from the list above",
+      "priority": "Priority name (from user-supplied list, or discovered/derived — be consistent)",
       "companySolution": "2-3 sentences: how ${input.yourCompany}'s solution directly addresses this priority with specifics",
       "proofPoints": "2-3 concrete proof points: cite metrics, case study outcomes, or industry recognitions",
       "whyNotCompetitor": "2-3 evidence-backed reasons ${input.competitorName} falls short on this specific priority"
@@ -676,7 +692,7 @@ Return a single JSON object with EXACTLY this structure:
   ],
   "priorityMapping": [
     {
-      "priority": "Priority name (same list as above)",
+      "priority": "Priority name (same list as priorityTable — must match exactly)",
       "solution": "Specific ${input.yourCompany} solution or product name",
       "expectedOutcome": "Concrete business outcome — quantify where possible",
       "timeToValue": "Realistic estimate e.g. '3-6 months', '6-9 months', '12-18 months'"
@@ -693,12 +709,11 @@ Return a single JSON object with EXACTLY this structure:
 }
 
 Required counts:
-- priorityTable: EXACTLY ${input.strategicPriorities.length} rows (one per priority above)
+${priorityCountNote}
 - industrySolutions: 3-5 solutions specific to ${input.targetIndustry}
 - technologyPartners: 2-4 partners
 - siPartners: 2-3 partners
 - caseStudies: EXACTLY 3 case studies
-- priorityMapping: EXACTLY ${input.strategicPriorities.length} rows (matching priorityTable priorities)
 - objectionRebuttals: EXACTLY 3 objections`;
 
   const message = await client.messages.create({

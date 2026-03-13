@@ -477,17 +477,27 @@ export async function researchSalesPlayContext(
   competitorName: string,
   targetAccount: string,
   targetIndustry: string,
-  strategicPriorities: string[]
+  strategicPriorities?: string[],
+  solutionAreas?: string
 ): Promise<string> {
-  const priorityList = strategicPriorities.map((p, i) => `${i + 1}. ${p}`).join('\n');
+  const hasPriorities = strategicPriorities && strategicPriorities.length > 0;
+  const hasSolutions  = solutionAreas && solutionAreas.trim().length > 0;
+
+  const prioritySection = hasPriorities
+    ? `- Target Account's Strategic Priorities (user-supplied):\n${strategicPriorities!.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : `- Target Account's Strategic Priorities: NOT PROVIDED — you MUST discover and list 4–5 top strategic IT/digital priorities for ${targetAccount} in SECTION A item 6.`;
+
+  const solutionSection = hasSolutions
+    ? `- Selling Company's Key Solution Areas (user-supplied): ${solutionAreas}`
+    : `- Selling Company's Key Solution Areas: NOT PROVIDED — you MUST identify and list ${yourCompany}'s key solution portfolio for ${targetIndustry} in SECTION C item 1.`;
 
   const query = `
 Research competitive intelligence for a B2B sales engagement with the following context:
 - Selling Company: "${yourCompany}"
 - Competitor: "${competitorName}"
 - Target Account: "${targetAccount}" (${targetIndustry} industry)
-- Target Account's Strategic Priorities:
-${priorityList}
+${prioritySection}
+${solutionSection}
 
 SECTION A — TARGET ACCOUNT: "${targetAccount}"
 1. Technology investments and IT vendor ecosystem: What ERP, CRM, cloud, and AI platforms does ${targetAccount} currently use or has publicly announced plans to adopt?
@@ -495,6 +505,11 @@ SECTION A — TARGET ACCOUNT: "${targetAccount}"
 3. Known pain points and challenges: What operational, technology, or competitive challenges is ${targetAccount} known to face in the ${targetIndustry} industry?
 4. Key technology decision-makers: Who are the CIO, CTO, CDO, or SVP of Digital/IT at ${targetAccount} if publicly documented?
 5. Recent technology news: Any significant IT vendor changes, RFPs, or transformation programme announcements in the last 2 years?
+${!hasPriorities ? `6. STRATEGIC PRIORITIES DISCOVERY (REQUIRED): Based on ${targetAccount}'s public statements, annual reports, investor presentations, and ${targetIndustry} industry context — identify and list their top 4–5 strategic IT and digital transformation priorities. Format as:
+DISCOVERED STRATEGIC PRIORITIES:
+1. [Priority name]: [1-sentence explanation]
+2. [Priority name]: [1-sentence explanation]
+...` : ''}
 
 SECTION B — COMPETITOR: "${competitorName}" in ${targetIndustry}
 1. Product gaps and limitations: What specific product features, capabilities, or industry-specific functionality does ${competitorName} lack compared to market expectations in ${targetIndustry}?
@@ -505,7 +520,12 @@ SECTION B — COMPETITOR: "${competitorName}" in ${targetIndustry}
 6. Support and services quality: What do customers say about ${competitorName}'s post-sale support, implementation quality, or customer success?
 
 SECTION C — "${yourCompany}" STRENGTHS in ${targetIndustry}
-1. Industry-specific solutions: What solutions does ${yourCompany} offer specifically for the ${targetIndustry} sector?
+1. ${!hasSolutions ? `SOLUTION AREAS DISCOVERY (REQUIRED): Identify and list ${yourCompany}'s key solutions, products, and service areas relevant to ${targetIndustry}. Format as:
+DISCOVERED SOLUTION AREAS:
+- [Solution/Product Name]: [1-sentence description]
+- [Solution/Product Name]: [1-sentence description]
+...
+Then continue with:` : ''} Industry-specific solutions: What solutions does ${yourCompany} offer specifically for the ${targetIndustry} sector?
 2. Published case studies and win stories: What documented client successes does ${yourCompany} have in ${targetIndustry}? Include client names, business challenges, solutions deployed, and measurable outcomes.
 3. Technology differentiation: What proprietary technology, AI/ML capabilities, cloud platforms, or patents does ${yourCompany} hold that are relevant to ${targetAccount}'s priorities?
 4. Partner ecosystem: What technology partnerships (e.g., Microsoft, AWS, SAP, Salesforce) and SI/advisory partnerships does ${yourCompany} have that are relevant to ${targetIndustry}?

@@ -195,8 +195,8 @@ export interface SalesPlayInput {
   competitorName: string;
   targetAccount: string;
   targetIndustry: string;
-  strategicPriorities: string[];   // 2–5 items
-  solutionAreas: string;
+  strategicPriorities?: string[];  // optional — AI auto-discovers if empty
+  solutionAreas?: string;          // optional — AI auto-discovers if empty
   competitorWeaknesses?: string;
 }
 

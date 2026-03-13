@@ -28,24 +28,26 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     !yourCompany?.trim() ||
     !competitorName?.trim() ||
     !targetAccount?.trim() ||
-    !targetIndustry?.trim() ||
-    !Array.isArray(strategicPriorities) ||
-    strategicPriorities.length < 1 ||
-    !solutionAreas?.trim()
+    !targetIndustry?.trim()
   ) {
     res.status(400).json({
-      error: 'yourCompany, competitorName, targetAccount, targetIndustry, strategicPriorities (array), and solutionAreas are required',
+      error: 'yourCompany, competitorName, targetAccount, and targetIndustry are required',
     });
     return;
   }
+
+  // strategicPriorities and solutionAreas are optional — AI auto-discovers if absent
+  const parsedPriorities: string[] = Array.isArray(strategicPriorities)
+    ? strategicPriorities.map((p: string) => p.trim()).filter(Boolean)
+    : [];
 
   const input: SalesPlayInput = {
     yourCompany:          yourCompany.trim(),
     competitorName:       competitorName.trim(),
     targetAccount:        targetAccount.trim(),
     targetIndustry:       targetIndustry.trim(),
-    strategicPriorities:  strategicPriorities.map((p: string) => p.trim()).filter(Boolean),
-    solutionAreas:        solutionAreas.trim(),
+    strategicPriorities:  parsedPriorities.length > 0 ? parsedPriorities : undefined,
+    solutionAreas:        solutionAreas?.trim() || undefined,
     competitorWeaknesses: competitorWeaknesses?.trim() || undefined,
   };
 

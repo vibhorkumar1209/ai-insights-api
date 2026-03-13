@@ -78,7 +78,8 @@ export async function runSalesPlay(
         input.competitorName,
         input.targetAccount,
         input.targetIndustry,
-        input.strategicPriorities
+        input.strategicPriorities,
+        input.solutionAreas
       );
     } catch (err) {
       console.error('[salesPlay] Research failed, continuing with training knowledge:', err);
