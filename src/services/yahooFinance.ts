@@ -61,48 +61,113 @@ function rawVal(field: any): number | null {
 
 // ── Ticker detection ───────────────────────────────────────────────────────────
 
+// Exchange codes that map to US major stock exchanges
+const US_EXCHANGE_CODES = new Set([
+  'NMS', 'NGM', 'NCM', // NASDAQ variants
+  'NYQ', 'NYE',         // NYSE
+  'PCX',                // NYSE ARCA
+  'ASE',                // NYSE American
+  'BTS', 'CBOE',        // BATS/CBOE
+]);
+
+// Quote types that are NOT equities
+const NON_EQUITY_TYPES = new Set([
+  'MUTUALFUND', 'ETF', 'INDEX', 'CURRENCY',
+  'FUTURE', 'OPTION', 'CRYPTOCURRENCY', 'MONEYMARKET',
+]);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isEquityQuote(q: any): boolean {
+  const qt = (q.quoteType || '').toUpperCase();
+  const td = (q.typeDisp || '').toLowerCase();
+  if (NON_EQUITY_TYPES.has(qt)) return false;
+  if (qt === 'EQUITY' || td === 'equity') return true;
+  // Accept unknown/empty type if symbol looks like a clean ticker (1-5 uppercase letters)
+  if (!qt || qt === '') {
+    const sym = (q.symbol || '') as string;
+    return /^[A-Z]{1,5}$/.test(sym);
+  }
+  return false;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isUSExchangeQuote(q: any): boolean {
+  const exch = ((q.exchDisp || q.exchange || '') as string).toUpperCase();
+  if (exch.includes('NASDAQ') || exch.includes('NYSE')) return true;
+  return US_EXCHANGE_CODES.has(exch);
+}
+
+// Run a single yahoo search query and return filtered equity results
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runSearch(query: string): Promise<any[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = await yahooFinance.search(query, {} as any, { validateResult: false } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const quotes: any[] = (results as any).quotes || [];
+    return quotes.filter(isEquityQuote);
+  } catch {
+    return [];
+  }
+}
+
+// Score a quote for relevance — higher = better match
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function scoreQuote(q: any, companyName: string, domainHint: string): number {
+  const qName = ((q.shortname || q.longname || '') as string).toLowerCase();
+  const qSym  = ((q.symbol || '') as string).toLowerCase();
+  const nameLower = companyName.toLowerCase();
+  let s = 0;
+
+  if (isUSExchangeQuote(q)) s += 15;                            // US exchange bonus
+
+  if (qName === nameLower) s += 30;                              // exact name match
+  else if (qName.startsWith(nameLower.split(' ')[0])) s += 10;  // starts with first word
+  else if (qName.includes(nameLower.split(' ')[0])) s += 5;     // contains first word
+
+  if (domainHint) {
+    if (qSym === domainHint) s += 20;                            // ticker === domain root
+    if (qName.includes(domainHint)) s += 10;                     // name contains domain root
+  }
+
+  return s;
+}
+
 export async function detectTicker(
   companyName: string,
   domain?: string
 ): Promise<{ ticker: string; exchange: string } | null> {
-  try {
+  const domainHint = domain ? domain.replace(/^www\./, '').split('.')[0].toLowerCase() : '';
+  const words = companyName.trim().split(/\s+/);
+
+  // Build a prioritised list of search queries to try
+  const queries: string[] = [companyName];
+  if (words.length > 2) queries.push(words.slice(0, 2).join(' '));
+  if (words.length > 1) queries.push(words[0]);
+  // If domain looks like a short ticker (≤5 chars), try it directly
+  if (domainHint && domainHint.length <= 5) queries.push(domainHint.toUpperCase());
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let equities: any[] = [];
+
+  for (const query of queries) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const results = await yahooFinance.search(companyName, {}, { validateResult: false } as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const quotes: any[] = (results as any).quotes || [];
-
-    // Only equity instruments
-    const equities = quotes.filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (q: any) => q.quoteType === 'EQUITY' || q.typeDisp === 'Equity'
-    );
-
-    if (equities.length === 0) return null;
-
-    // If domain hint given, try name matching first
-    if (domain) {
-      const hint = domain.replace(/^www\./, '').split('.')[0].toLowerCase();
-      const nameWords = companyName.toLowerCase().split(/\s+/).slice(0, 2);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const match = equities.find((q: any) => {
-        const name = ((q.shortname || q.longname || '') as string).toLowerCase();
-        return nameWords.some((w) => name.includes(w)) || name.includes(hint);
-      });
-      if (match) return { ticker: match.symbol, exchange: match.exchDisp || match.exchange || '' };
+    const found: any[] = await runSearch(query);
+    if (found.length > 0) {
+      equities = found;
+      break; // stop at the first query that yields equity results
     }
-
-    // Prefer US exchanges (NASDAQ/NYSE)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const usEquity = equities.find((q: any) => {
-      const exch = ((q.exchDisp || q.exchange || '') as string).toUpperCase();
-      return exch.includes('NASDAQ') || exch.includes('NYSE') || exch.includes('NMS');
-    });
-
-    const best = usEquity || equities[0];
-    return { ticker: best.symbol, exchange: best.exchDisp || best.exchange || '' };
-  } catch {
-    return null;
   }
+  if (equities.length === 0) return null;
+
+  // Sort by score descending and pick the best
+  equities.sort((a, b) => scoreQuote(b, companyName, domainHint) - scoreQuote(a, companyName, domainHint));
+
+  const best = equities[0];
+  const exchange: string = best.exchDisp || best.exchange || '';
+
+  // Sanity check: if we got results but no US equity at all, accept the best global one
+  return { ticker: best.symbol as string, exchange };
 }
 
 // ── Full financial data fetch ─────────────────────────────────────────────────
