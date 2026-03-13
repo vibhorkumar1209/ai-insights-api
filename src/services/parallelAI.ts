@@ -287,6 +287,43 @@ State "Not publicly disclosed" for anything unavailable. Cite every factual clai
   }
 }
 
+// ── Challenges & Growth Research ─────────────────────────────────────────────
+
+export async function researchCompanyChallengesGrowth(
+  companyName: string
+): Promise<string> {
+  const query = `
+Research the major challenges and key growth opportunities facing "${companyName}" in 2024-2025.
+
+For EACH of the following dimensions, provide specific evidence-based findings — cite earnings calls, analyst reports, news articles, regulatory filings, or industry data:
+
+1. MACROECONOMICS — How do interest rates, inflation, currency movements, GDP trends, and geopolitical factors affect ${companyName}'s business? What macro tailwinds or headwinds are most material?
+
+2. SUPPLY CHAIN & OPERATIONS — What are the key supply constraints, sourcing risks, logistics challenges, or input cost pressures? Where are the operational vulnerabilities and efficiency opportunities?
+
+3. DEMAND & CUSTOMER — What demand trends (volume, mix, geography) are emerging? Are there shifts in customer behaviour, market saturation, or penetration opportunities?
+
+4. REGULATORY & COMPLIANCE — What regulations are pending or recently enacted that create compliance cost or risk? What policy changes (tariffs, ESG mandates, sector-specific rules) are material?
+
+5. PRICING & MARGIN — What are the key pressures on pricing power and gross margin? Where can ${companyName} improve pricing, product mix, or cost efficiency?
+
+6. COMPETITION — Who are the most threatening competitors and why? What market share shifts or new entrant threats are most significant? Where does ${companyName} have competitive moat?
+
+7. TECHNOLOGY & INNOVATION — What technology disruptions threaten the current business model? Where is digital investment creating growth? What AI or automation opportunities exist?
+
+8. TALENT & WORKFORCE — What are the key hiring challenges, skills gaps, or labour cost pressures? Where is talent a competitive advantage or risk?
+
+Cite specific data points, names, and sources throughout. State "Not publicly disclosed" where information is unavailable.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

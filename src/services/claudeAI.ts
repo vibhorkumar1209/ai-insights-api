@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BenchmarkInput, BenchmarkDimension, GapAnalysisRow, ThemeInput, ThemeRow } from '../types';
+import { BenchmarkInput, BenchmarkDimension, GapAnalysisRow, ThemeInput, ThemeRow, ChallengesGrowthInput, ChallengesGrowthRow } from '../types';
 
 // Returns true when a research string contains no real data
 function isEmptyResearch(text: string): boolean {
@@ -262,4 +262,73 @@ function parseThemes(raw: string): ThemeRow[] {
     throw new Error('Claude did not return valid JSON for themes');
   }
   return (items as ThemeRow[]).filter((row) => row.theme && row.description);
+}
+
+// ── Challenges & Growth Synthesis ─────────────────────────────────────────────
+
+export async function synthesizeChallengesGrowth(
+  input: ChallengesGrowthInput,
+  research: string
+): Promise<ChallengesGrowthRow[]> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are a senior B2B sales intelligence analyst producing executive-grade competitive analysis.
+Rules:
+- Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
+- Be specific: cite programmes, metrics, named initiatives, competitor names, and market data.
+- Every cell must have substantive content — no vague generalities, no empty fields.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
+
+  const userPrompt = `Analyse the following research on "${input.companyName}" and produce a Challenges & Growth analysis.
+
+Cover EXACTLY these 8 dimensions (one array element each, in this order):
+1. Macroeconomics
+2. Supply Chain & Operations
+3. Demand & Customer
+4. Regulatory & Compliance
+5. Pricing & Margin
+6. Competition
+7. Technology & Innovation
+8. Talent & Workforce
+
+${hasResearch
+  ? `RESEARCH:\n${research.slice(0, 60000)}`
+  : `[No live research available — use training knowledge about ${input.companyName}. Label estimates as "(est.)".]`}
+
+${input.userOrganization
+  ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}`
+  : ''}
+
+Return a JSON array with EXACTLY this shape (8 objects):
+[
+  {
+    "dimension": "Macroeconomics",
+    "challenge": "2-3 sentences describing the most material macroeconomic challenge facing ${input.companyName} — be specific: name rates, geographies, FX pairs, or economic indicators.",
+    "growthProspect": "2-3 sentences describing the macro or structural tailwind that creates the biggest growth opportunity — cite specific markets, demographics, or policy drivers."
+  }
+]
+
+For EACH dimension:
+- "challenge": The single most material, specific challenge — cite data, name the threat, quantify where possible.
+- "growthProspect": The most compelling growth opportunity in that dimension — forward-looking, specific, actionable insight.`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  return parseChallengesGrowth(content.text);
+}
+
+function parseChallengesGrowth(raw: string): ChallengesGrowthRow[] {
+  const items = safeParseJsonArray(raw);
+  if (!items || items.length === 0) {
+    throw new Error('Claude did not return valid JSON for challenges & growth');
+  }
+  return (items as ChallengesGrowthRow[]).filter((row) => row.dimension && row.challenge && row.growthProspect);
 }

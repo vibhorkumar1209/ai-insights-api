@@ -91,3 +91,29 @@ export interface ThemeResult {
   completedAt?: string;
 }
 
+// ── Challenges & Growth Analysis ──────────────────────────────────────────────
+
+export interface ChallengesGrowthInput {
+  companyName: string;
+  userOrganization?: string;
+  solutionPortfolio?: string;
+}
+
+export interface ChallengesGrowthRow {
+  dimension: string;      // e.g. "Macroeconomics", "Supply Chain", "Regulatory"
+  challenge: string;      // Major challenge for this dimension
+  growthProspect: string; // Key growth opportunity for this dimension
+}
+
+export interface ChallengesGrowthResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  rows?: ChallengesGrowthRow[];
+  companyName?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+

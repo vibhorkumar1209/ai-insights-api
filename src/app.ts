@@ -5,6 +5,7 @@ import { apiLimiter } from './middleware/rateLimiter';
 import competitorsRouter from './routes/competitors';
 import benchmarkRouter from './routes/benchmark';
 import themesRouter from './routes/themes';
+import challengesGrowthRouter from './routes/challengesGrowth';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -23,6 +24,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/competitors', competitorsRouter);
 app.use('/api/benchmark', benchmarkRouter);
 app.use('/api/themes', themesRouter);
+app.use('/api/challenges-growth', challengesGrowthRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
