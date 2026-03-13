@@ -2,8 +2,8 @@ import fetch from 'node-fetch';
 import { Competitor } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
-const TASK_POLL_INTERVAL_MS = 5000;
-const TASK_TIMEOUT_MS = 300000; // 5 minutes per task (ultra processor needs time)
+const TASK_POLL_INTERVAL_MS = 4000;
+const TASK_TIMEOUT_MS = 90000; // 90 seconds — base processor typically completes in 30-60s
 
 function headers() {
   return {
@@ -77,7 +77,7 @@ async function pollTask(runId: string): Promise<string> {
     }
   }
 
-  throw new Error('Parallel.AI task timed out after 5 minutes');
+  throw new Error('Parallel.AI task timed out after 90 seconds');
 }
 
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
@@ -85,18 +85,6 @@ async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'):
   return pollTask(runId);
 }
 
-// Tries ultra first; if it fails or times out, retries with base
-async function runResearchWithFallback(query: string): Promise<string> {
-  try {
-    const result = await runResearch(query, 'ultra');
-    if (result && result.trim().length > 50) return result;
-    // Empty or tiny result — retry with base
-    console.warn('[parallelAI] ultra returned empty, retrying with base');
-  } catch (err) {
-    console.warn('[parallelAI] ultra failed, retrying with base:', (err as Error).message);
-  }
-  return runResearch(query, 'base');
-}
 
 // ── Competitor Discovery ─────────────────────────────────────────────────────
 
@@ -213,7 +201,7 @@ Research and report on the following dimensions. For each, cite the specific sou
 Cite every claim with a source. State "Not publicly disclosed" for any unavailable information.
 `.trim();
 
-  return runResearchWithFallback(query);
+  return runResearch(query, 'base');
 }
 
 // ── Parallel company research ────────────────────────────────────────────────
