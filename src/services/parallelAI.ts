@@ -223,6 +223,70 @@ export async function researchAllCompanies(
   return results;
 }
 
+// ── Themes Research ───────────────────────────────────────────────────────────
+
+export async function researchCompanyThemes(
+  companyName: string,
+  themeType: 'business' | 'technology' | 'sustainability'
+): Promise<string> {
+  const queries: Record<string, string> = {
+    business: `
+Research the strategic business priorities and growth initiatives of "${companyName}" for 2024-2025.
+
+Report on the following areas, citing specific sources (annual reports, earnings calls, investor days, press releases, news):
+1. Revenue growth strategy and key markets or geographies being pursued
+2. M&A, strategic partnerships and alliance activity
+3. Major operational transformation or restructuring programmes
+4. Customer experience, go-to-market and commercial model changes
+5. Workforce strategy, talent priorities and organisational changes
+6. Risk management, regulatory or compliance focus areas
+7. Capital allocation and investment priorities
+8. Key executive statements on strategic direction (CEO/CFO/COO)
+
+State "Not publicly disclosed" for anything unavailable. Cite every factual claim.
+`.trim(),
+
+    technology: `
+Research the technology strategy and digital transformation priorities of "${companyName}" for 2024-2025.
+
+Report on the following areas, citing specific sources (annual reports, CIO interviews, conference presentations, job postings, vendor press releases):
+1. Digital transformation programmes and key initiatives underway
+2. Cloud strategy — providers (AWS/Azure/GCP), workloads migrated, multi-cloud approach
+3. AI and ML investments — named platforms, vendors, use cases deployed or in development
+4. Data and analytics — data platform strategy, BI tools, data governance
+5. Cybersecurity — key investments, frameworks, recent incidents or certifications
+6. Core systems modernisation — ERP, CRM, SCM upgrades or migrations
+7. Automation — RPA, intelligent document processing, workflow automation deployments
+8. Technology hiring signals — job postings that reveal planned technology investments
+
+State "Not publicly disclosed" for anything unavailable. Cite every factual claim.
+`.trim(),
+
+    sustainability: `
+Research the sustainability, ESG and environmental strategy of "${companyName}" for 2024-2025.
+
+Report on the following areas, citing specific sources (sustainability reports, ESG disclosures, press releases, CDP submissions, news):
+1. Net Zero and carbon reduction targets — scope 1/2/3, timelines, progress to date
+2. Renewable energy commitments and actual percentage of renewables used
+3. Supply chain sustainability — supplier standards, traceability, responsible sourcing
+4. ESG reporting frameworks adopted (GRI, SASB, TCFD, ISSB, CDP)
+5. Circular economy, waste reduction and product lifecycle initiatives
+6. Social impact programmes — DEI commitments, community investment, labour standards
+7. Water and resource management — targets, reduction programmes
+8. Governance — board oversight of ESG, executive pay linked to ESG metrics
+
+State "Not publicly disclosed" for anything unavailable. Cite every factual claim.
+`.trim(),
+  };
+
+  try {
+    return await runResearch(queries[themeType], 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

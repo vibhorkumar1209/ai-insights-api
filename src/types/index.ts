@@ -60,3 +60,34 @@ export interface SSEEvent {
   data: Partial<BenchmarkResult>;
 }
 
+// ── Themes Analysis ───────────────────────────────────────────────────────────
+
+export type ThemeType = 'business' | 'technology' | 'sustainability';
+
+export interface ThemeInput {
+  companyName: string;
+  themeType: ThemeType;
+  userOrganization?: string;
+  solutionPortfolio?: string;
+}
+
+export interface ThemeRow {
+  theme: string;
+  description: string;
+  examples: string;        // pipe-separated use cases
+  strategicImpact: string;
+}
+
+export interface ThemeResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  rows?: ThemeRow[];
+  themeType?: ThemeType;
+  companyName?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
