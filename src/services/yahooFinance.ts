@@ -157,6 +157,18 @@ interface QuarterlyAPIResponse {
   QuarterFinancialAnalysis?: Record<string, AnnualPeriodData | { Currency: string }>;
 }
 
+// ── node-fetch v2 compatible timeout helper ────────────────────────────────────
+// AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
+// node-fetch v2.  Use a manual AbortController + setTimeout instead.
+
+function fetchWithTimeout(url: string, timeoutMs: number): Promise<import('node-fetch').Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // node-fetch v2 accepts AbortSignal; cast needed to satisfy TS overloads
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return fetch(url, { signal: controller.signal as any }).finally(() => clearTimeout(timer));
+}
+
 // ── Fetch annual data ──────────────────────────────────────────────────────────
 
 export interface AnnualFinancialsResult {
@@ -169,7 +181,8 @@ export interface AnnualFinancialsResult {
 
 export async function fetchAnnualFinancials(searchString: string): Promise<AnnualFinancialsResult> {
   const url = `${FINANCE_API_BASE}/SearchOnPuppeteer?searchString=${encodeURIComponent(searchString)}`;
-  const res  = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  // 60 s timeout — Puppeteer-based API can be slow to launch the browser
+  const res  = await fetchWithTimeout(url, 60_000);
   if (!res.ok) throw new Error(`Finance API annual: HTTP ${res.status}`);
   const data = (await res.json()) as AnnualAPIResponse;
 
@@ -240,7 +253,8 @@ export async function fetchAnnualFinancials(searchString: string): Promise<Annua
 
 export async function fetchQuarterlyFinancials(searchString: string): Promise<QuarterlyDataPoint[]> {
   const url = `${FINANCE_API_BASE}/ScrapQuarterAnalysisData?searchString=${encodeURIComponent(searchString)}`;
-  const res  = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  // 60 s timeout — Puppeteer-based API can be slow to launch the browser
+  const res  = await fetchWithTimeout(url, 60_000);
   if (!res.ok) throw new Error(`Finance API quarterly: HTTP ${res.status}`);
   const data = (await res.json()) as QuarterlyAPIResponse;
 
