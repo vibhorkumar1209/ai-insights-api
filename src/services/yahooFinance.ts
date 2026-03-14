@@ -1,4 +1,4 @@
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 import fetch from 'node-fetch';
 import {
   RevenueDataPoint,
@@ -7,6 +7,9 @@ import {
   CompanyInfo,
   QuarterlyDataPoint,
 } from '../types';
+
+// yahoo-finance2 v3 requires instantiation
+const yahooFinance = new YahooFinance();
 
 // Suppress yahoo-finance2 console warnings in production
 try {
