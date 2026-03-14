@@ -591,7 +591,7 @@ SOURCES TO RESEARCH (check ALL of these):
 FOR EACH INSIGHT FOUND, provide:
 1. EXECUTIVE: Full name, exact job title, and department/function (e.g. "Jane Smith, Chief Technology Officer, Technology")
 2. THEME: The strategic business focus area the executive is discussing (e.g. "AI-driven Supply Chain Optimisation", "Cloud-first Digital Transformation", "Sustainability & ESG Reporting")
-3. REFERENCE: A brief phrase describing the event/source (e.g. "Keynote at Gartner IT Symposium 2024", "LinkedIn post, March 2025", "FY2024 Earnings Call Q&A", "Interview with CNBC, Jan 2025")
+3. REFERENCE: The EVENT or OCCASION where the executive made this statement (e.g. "Annual General Meeting 2024", "Investor Day Keynote, Nov 2024", "World Economic Forum Panel, Jan 2025", "Q3 FY2025 Earnings Call", "NASSCOM Technology Leadership Forum 2024", "Banking Technology Summit, Feb 2025"). This should be the event/forum/occasion — NOT the publication or website.
 4. EXCERPT: The most relevant direct quote from the executive if available, OR a close paraphrase of their key statement. Prefer direct quotes in quotation marks.
 
 IMPORTANT RULES:

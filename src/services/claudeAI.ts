@@ -779,10 +779,10 @@ ${hasResearch
 Return a JSON array with 10-15 rows, EXACTLY this shape:
 [
   {
+    "keyExecutive": "Full Name, Exact Title, Department (e.g. 'John Smith, Chief Technology Officer, Technology')",
     "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
-    "reference": "Brief phrase describing the source (e.g. 'Keynote at Gartner IT Symposium 2024', 'LinkedIn post, March 2025', 'FY2024 Earnings Call', 'Interview with CNBC, Jan 2025')",
-    "excerpt": "A direct quote from the executive if available (in quotation marks), OR a close paraphrase of their key statement. Keep it concise — 1-2 sentences max.",
-    "keyExecutive": "Full Name, Exact Title, Department (e.g. 'John Smith, Chief Technology Officer, Technology')"
+    "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting 2024', 'Investor Day Keynote, Nov 2024', 'World Economic Forum Panel, Jan 2025', 'Q3 FY2025 Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
+    "excerpt": "A direct quote from the executive if available (in quotation marks), OR a close paraphrase of their key statement. Keep it concise — 1-2 sentences max."
   }
 ]
 
@@ -792,7 +792,7 @@ IMPORTANT:
 - If multiple executives speak to the same theme, include both — this shows organisational alignment.
 - Prioritise recent sources (2024-2025).
 - Each row should represent a unique, actionable insight for sales pitching.
-- The "reference" field should be specific enough that someone could look up the source.
+- The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting 2024", "NASSCOM Technology Leadership Forum", "Q2 FY2025 Earnings Call", "Banking Technology Summit, Feb 2025". NOT: "LinkedIn post", "Company website", "Press release".
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".`;
 
   const message = await client.messages.create({
