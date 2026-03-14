@@ -8,6 +8,7 @@ import themesRouter from './routes/themes';
 import challengesGrowthRouter from './routes/challengesGrowth';
 import financialAnalysisRouter from './routes/financialAnalysis';
 import salesPlayRouter from './routes/salesPlay';
+import keyBuyersRouter from './routes/keyBuyers';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -29,6 +30,7 @@ app.use('/api/themes', themesRouter);
 app.use('/api/challenges-growth', challengesGrowthRouter);
 app.use('/api/financial-analysis', financialAnalysisRouter);
 app.use('/api/sales-play', salesPlayRouter);
+app.use('/api/key-buyers', keyBuyersRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {

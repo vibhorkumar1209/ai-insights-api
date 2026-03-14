@@ -266,6 +266,34 @@ export interface SalesPlayResult {
   completedAt?: string;
 }
 
+// ── Key Prospective Buyers ───────────────────────────────────────────────────
+
+export interface KeyBuyersInput {
+  companyName: string;
+  companyDomain?: string;
+}
+
+export interface KeyBuyerRow {
+  theme: string;          // Business focus area derived from sources
+  reference: string;      // Event / reason — brief phrase
+  excerpt: string;        // Direct quote or brief excerpt from the source
+  keyExecutive: string;   // "Name, Title, Department"
+}
+
+export interface KeyBuyersResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  rows?: KeyBuyerRow[];
+  companyName?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// ── Financial Analysis ─────────────────────────────────────────────────────────
+
 export interface FinancialAnalysisResult {
   jobId: string;
   status: 'pending' | 'detecting' | 'fetching' | 'researching' | 'synthesizing' | 'complete' | 'error';

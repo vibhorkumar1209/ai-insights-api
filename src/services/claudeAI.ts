@@ -9,6 +9,7 @@ import {
   SalesPlayInput,
   SalesPlayPriorityRow, SalesPlayIndustrySolution, SalesPlayPartner,
   SalesPlayCaseStudy, SalesPlayPriorityMapping, SalesPlayObjectionRebuttal,
+  KeyBuyersInput, KeyBuyerRow,
 } from '../types';
 
 // Returns true when a research string contains no real data
@@ -749,4 +750,70 @@ function parseSalesPlay(raw: string): SalesPlayPayload {
   } catch {
     throw new Error('Failed to parse sales play JSON');
   }
+}
+
+// ── Key Prospective Buyers — Synthesis ───────────────────────────────────────
+
+export async function synthesizeKeyBuyers(
+  input: KeyBuyersInput,
+  research: string
+): Promise<KeyBuyerRow[]> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are a senior B2B sales intelligence analyst who specialises in executive-level stakeholder mapping.
+Rules:
+- Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
+- Focus on C-suite and SVP/VP level executives — the decision-makers.
+- Every row must have substantive, specific content — no vague generalities, no empty fields.
+- Prefer direct quotes in the excerpt field when available — use quotation marks.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
+
+  const userPrompt = `Analyse the following research on "${input.companyName}" and produce a Key Prospective Buyers table.
+
+The table should map senior executives to their publicly stated business focus areas, making it easy for a sales team to tailor their pitch.
+
+${hasResearch
+  ? `RESEARCH:\n${research.slice(0, 60000)}`
+  : `[No live research available — use training knowledge about ${input.companyName}'s key executives and their known strategic priorities. Label estimates as "(est.)".]`}
+
+Return a JSON array with 10-15 rows, EXACTLY this shape:
+[
+  {
+    "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
+    "reference": "Brief phrase describing the source (e.g. 'Keynote at Gartner IT Symposium 2024', 'LinkedIn post, March 2025', 'FY2024 Earnings Call', 'Interview with CNBC, Jan 2025')",
+    "excerpt": "A direct quote from the executive if available (in quotation marks), OR a close paraphrase of their key statement. Keep it concise — 1-2 sentences max.",
+    "keyExecutive": "Full Name, Exact Title, Department (e.g. 'John Smith, Chief Technology Officer, Technology')"
+  }
+]
+
+IMPORTANT:
+- Cover DIVERSE themes: technology strategy, operations, growth, sustainability, talent, M&A, innovation, customer experience, cost optimisation, digital transformation, AI/ML, cybersecurity, etc.
+- Include executives from DIFFERENT functions (CEO, CFO, CTO, CIO, CDO, CMO, COO, SVP/VP levels).
+- If multiple executives speak to the same theme, include both — this shows organisational alignment.
+- Prioritise recent sources (2024-2025).
+- Each row should represent a unique, actionable insight for sales pitching.
+- The "reference" field should be specific enough that someone could look up the source.
+- The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  return parseKeyBuyers(content.text);
+}
+
+function parseKeyBuyers(raw: string): KeyBuyerRow[] {
+  const items = safeParseJsonArray(raw);
+  if (!items || items.length === 0) {
+    throw new Error('Claude did not return valid JSON for key prospective buyers');
+  }
+  return (items as KeyBuyerRow[]).filter(
+    (row) => row.theme && row.reference && row.excerpt && row.keyExecutive
+  );
 }

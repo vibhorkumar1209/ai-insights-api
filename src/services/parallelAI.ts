@@ -562,6 +562,58 @@ Provide specific, evidence-based data wherever available. Quote analyst reports 
   }
 }
 
+// ── Key Prospective Buyers Research ──────────────────────────────────────────
+// Deep research on senior executives' public statements, interviews, posts,
+// annual reports, LinkedIn activity, press releases, YouTube appearances,
+// and X/Twitter commentary to surface business focus areas for pitching.
+
+export async function researchKeyBuyers(
+  companyName: string,
+  domain?: string
+): Promise<string> {
+  const domainNote = domain ? ` (website: ${domain})` : '';
+  const query = `
+Research the key senior executives of "${companyName}"${domainNote} and their publicly expressed business priorities, strategic focus areas, and thought leadership.
+
+Your goal is to identify 10-15 insights that a B2B sales team can use to tailor their pitch to specific executives based on their stated priorities.
+
+SOURCES TO RESEARCH (check ALL of these):
+1. Company website — leadership page, blog posts, press releases, investor presentations
+2. LinkedIn — executive profiles, posts, articles, and activity (CEO, CFO, CTO, CIO, CDO, CMO, COO, SVPs, VPs)
+3. Annual reports and quarterly earnings call transcripts — executive commentary
+4. Press releases and media interviews — quotes from executives on strategy
+5. Conference keynotes and panel appearances — executive presentations (Gartner, CES, Davos, industry events)
+6. YouTube — executive interviews, company channel keynotes, fireside chats
+7. X (Twitter) — executive posts and commentary on business topics
+8. Podcasts — executive guest appearances
+9. Testimonials and customer events — executive statements about partnerships or technology
+
+FOR EACH INSIGHT FOUND, provide:
+1. EXECUTIVE: Full name, exact job title, and department/function (e.g. "Jane Smith, Chief Technology Officer, Technology")
+2. THEME: The strategic business focus area the executive is discussing (e.g. "AI-driven Supply Chain Optimisation", "Cloud-first Digital Transformation", "Sustainability & ESG Reporting")
+3. REFERENCE: A brief phrase describing the event/source (e.g. "Keynote at Gartner IT Symposium 2024", "LinkedIn post, March 2025", "FY2024 Earnings Call Q&A", "Interview with CNBC, Jan 2025")
+4. EXCERPT: The most relevant direct quote from the executive if available, OR a close paraphrase of their key statement. Prefer direct quotes in quotation marks.
+
+IMPORTANT RULES:
+- Focus on C-suite and SVP/VP level executives — the decision-makers
+- Each insight should surface a different business focus area or angle
+- Prioritise recent statements (2024-2025)
+- Include the executive's EXACT title as listed on LinkedIn or the company website
+- If a direct quote is available, use it verbatim in quotation marks
+- Cover a diverse range of themes: technology, operations, growth, sustainability, talent, M&A, innovation, customer experience, cost optimisation, etc.
+- If multiple executives speak to the same theme, include both — this shows organisational alignment
+
+Format your response as structured text with clear sections per insight so it can be parsed into a table.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
