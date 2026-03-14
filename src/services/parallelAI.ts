@@ -5,6 +5,20 @@ const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
 const TASK_TIMEOUT_MS = 180000; // 3 minutes — base processor typically 30-90s, allow headroom
 
+// ── node-fetch v2 compatible timeout helper ────────────────────────────────────
+// AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
+// node-fetch v2.  Use a manual AbortController + setTimeout instead.
+function fetchWithTimeout(
+  url: string,
+  options: import('node-fetch').RequestInit,
+  timeoutMs: number
+): Promise<import('node-fetch').Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return fetch(url, { ...options, signal: controller.signal as any }).finally(() => clearTimeout(timer));
+}
+
 function headers() {
   return {
     'Content-Type': 'application/json',
@@ -13,11 +27,12 @@ function headers() {
 }
 
 async function createTask(input: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
-  const res = await fetch(`${BASE_URL}/v1/tasks/runs`, {
+  // 15 s — this is just a lightweight POST to enqueue the task
+  const res = await fetchWithTimeout(`${BASE_URL}/v1/tasks/runs`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({ input, processor }),
-  });
+  }, 15_000);
 
   if (!res.ok) {
     const body = await res.text();
@@ -37,10 +52,12 @@ async function pollTask(runId: string): Promise<string> {
   while (Date.now() < deadline) {
     await sleep(TASK_POLL_INTERVAL_MS);
 
-    // Check status first (lightweight)
-    const statusRes = await fetch(`${BASE_URL}/v1/tasks/runs/${runId}`, {
-      headers: headers(),
-    });
+    // Check status first (lightweight) — 20 s per poll call
+    const statusRes = await fetchWithTimeout(
+      `${BASE_URL}/v1/tasks/runs/${runId}`,
+      { headers: headers() },
+      20_000
+    );
 
     if (!statusRes.ok) {
       throw new Error(`Parallel.AI poll failed (${statusRes.status})`);
@@ -53,10 +70,12 @@ async function pollTask(runId: string): Promise<string> {
     }
 
     if (statusData.status === 'completed' || !statusData.is_active) {
-      // Fetch the actual result from the /result endpoint
-      const resultRes = await fetch(`${BASE_URL}/v1/tasks/runs/${runId}/result`, {
-        headers: headers(),
-      });
+      // Fetch the actual result from the /result endpoint — 30 s (result payload can be large)
+      const resultRes = await fetchWithTimeout(
+        `${BASE_URL}/v1/tasks/runs/${runId}/result`,
+        { headers: headers() },
+        30_000
+      );
 
       if (!resultRes.ok) {
         throw new Error(`Parallel.AI result fetch failed (${resultRes.status})`);
