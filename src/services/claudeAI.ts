@@ -383,7 +383,7 @@ Rules:
 - Be specific: cite figures, percentages, year-on-year changes, named programmes.
 - Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
 - Key highlights must be brief bullets suitable for an executive summary.
-- For segment/geo data extraction, output precise numbers from the research.
+- For segment/geo data: extract from research if provided; otherwise use your training knowledge to populate these arrays for well-known companies — never leave both empty if you know the answer.
 - When extracting financial statement rows, include 8-15 key line items per statement.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
 
@@ -409,7 +409,7 @@ Rules:
 
   const userPrompt = `Analyse the financial data for "${input.companyName}" (ticker: ${yahooData.ticker || 'N/A'}) and produce structured insights.
 
-## Yahoo Finance Data (structured, pre-verified numbers)
+## Google Finance Data (structured, pre-verified numbers)
 Revenue History: ${revenueStr || 'NOT AVAILABLE'}
 Margin History: ${marginStr || 'NOT AVAILABLE'}
 P&L Highlights: ${plStr || 'NOT AVAILABLE'}
@@ -417,14 +417,14 @@ Balance Sheet Highlights: ${bsStr || 'NOT AVAILABLE'}
 Cash Flow Highlights: ${cfStr || 'NOT AVAILABLE'}
 
 ## Extraction Status
-${needRevenueExtract ? '⚠ Revenue History MISSING from Yahoo — EXTRACT from research below' : '✓ Revenue History available above — set revenueHistoryExtracted: []'}
-${needMarginExtract  ? '⚠ Margin History MISSING from Yahoo — EXTRACT from research below' : '✓ Margin History available above — set marginHistoryExtracted: []'}
-${needPLExtract      ? '⚠ P&L Statement MISSING from Yahoo — EXTRACT from research below' : '✓ P&L Statement available above — set plStatementExtracted: []'}
-${needBSExtract      ? '⚠ Balance Sheet MISSING from Yahoo — EXTRACT from research below' : '✓ Balance Sheet available above — set balanceSheetExtracted: []'}
-${needCFExtract      ? '⚠ Cash Flow MISSING from Yahoo — EXTRACT from research below' : '✓ Cash Flow available above — set cashFlowExtracted: []'}
+${needRevenueExtract ? '⚠ Revenue History MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Revenue History available above — set revenueHistoryExtracted: []'}
+${needMarginExtract  ? '⚠ Margin History MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Margin History available above — set marginHistoryExtracted: []'}
+${needPLExtract      ? '⚠ P&L Statement MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ P&L Statement available above — set plStatementExtracted: []'}
+${needBSExtract      ? '⚠ Balance Sheet MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Balance Sheet available above — set balanceSheetExtracted: []'}
+${needCFExtract      ? '⚠ Cash Flow MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Cash Flow available above — set cashFlowExtracted: []'}
 
-## Parallel.AI Research (annual reports, investor presentations, financial news)
-${hasParallelResearch ? parallelResearch.slice(0, 48000) : '[Not available]'}
+## Additional Research (annual reports, investor presentations, financial news)
+${hasParallelResearch ? parallelResearch.slice(0, 48000) : '[Not available — use the Google Finance data above and your training knowledge]'}
 
 Return a single JSON object with EXACTLY this structure:
 {
@@ -470,9 +470,9 @@ Return a single JSON object with EXACTLY this structure:
 Extraction rules:
 - revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer USD (e.g. 383285000000). Percentages as numbers not strings.
 - plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. isSection=true for category headers (value=""). isBold=true for subtotals/totals.
-- Per the Extraction Status above, set an extracted array to [] when the Yahoo Finance data is already available.
-- Always extract segmentRevenue and geoRevenue from the research regardless of Yahoo Finance data.
-- For insights: draw on BOTH Yahoo Finance data and Parallel.AI Research — be specific, cite figures.`;
+- Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
+- For segmentRevenue and geoRevenue: populate from research if available, otherwise populate from your training knowledge for this company. Return [] only if you genuinely don't know the segment/geo breakdown.
+- For insights: draw on BOTH the Finance API data above and your training knowledge — be specific, cite figures.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
