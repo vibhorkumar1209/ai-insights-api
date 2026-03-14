@@ -180,7 +180,7 @@ export interface AnnualFinancialsResult {
 }
 
 export async function fetchAnnualFinancials(searchString: string): Promise<AnnualFinancialsResult> {
-  const url = `${FINANCE_API_BASE}/SearchOnPuppeteer?searchString=${encodeURIComponent(searchString)}`;
+  const url = `${FINANCE_API_BASE}/SearchOnPuppeteer?searchString=${searchString}`;
   // 60 s timeout — Puppeteer-based API can be slow to launch the browser
   const res  = await fetchWithTimeout(url, 60_000);
   if (!res.ok) throw new Error(`Finance API annual: HTTP ${res.status}`);
@@ -252,7 +252,7 @@ export async function fetchAnnualFinancials(searchString: string): Promise<Annua
 // ── Fetch quarterly data ───────────────────────────────────────────────────────
 
 export async function fetchQuarterlyFinancials(searchString: string): Promise<QuarterlyDataPoint[]> {
-  const url = `${FINANCE_API_BASE}/ScrapQuarterAnalysisData?searchString=${encodeURIComponent(searchString)}`;
+  const url = `${FINANCE_API_BASE}/ScrapQuarterAnalysisData?searchString=${searchString}`;
   // 60 s timeout — Puppeteer-based API can be slow to launch the browser
   const res  = await fetchWithTimeout(url, 60_000);
   if (!res.ok) throw new Error(`Finance API quarterly: HTTP ${res.status}`);
