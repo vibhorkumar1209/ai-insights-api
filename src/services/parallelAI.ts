@@ -3,7 +3,8 @@ import { Competitor } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 180000; // 3 minutes — base processor typically 30-90s, allow headroom
+const TASK_TIMEOUT_MS = 300000; // 5 minutes — allow extra headroom for complex queries
+const MAX_RETRIES = 1;          // retry once on timeout
 
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────
 // AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
@@ -96,12 +97,26 @@ async function pollTask(runId: string): Promise<string> {
     }
   }
 
-  throw new Error('Parallel.AI task timed out after 3 minutes');
+  throw new Error('Parallel.AI task timed out after 5 minutes');
 }
 
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
-  const runId = await createTask(query, processor);
-  return pollTask(runId);
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const runId = await createTask(query, processor);
+      return await pollTask(runId);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const isTimeout = lastError.message.includes('timed out');
+      if (isTimeout && attempt < MAX_RETRIES) {
+        console.warn(`[parallelAI] Attempt ${attempt + 1} timed out — retrying...`);
+        continue;
+      }
+      throw lastError;
+    }
+  }
+  throw lastError!;
 }
 
 
