@@ -700,6 +700,26 @@ Provide specific, evidence-based findings. Cite every claim with a source. State
   }
 }
 
+// ── Industry Report Research ────────────────────────────────────────────────
+// Runs up to 4 research queries concurrently for a comprehensive industry report.
+
+export async function researchIndustryReport(
+  queries: string[]
+): Promise<string[]> {
+  const results = await Promise.all(
+    queries.slice(0, 4).map(async (query, idx) => {
+      try {
+        return await runResearch(query, 'base');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Research failed';
+        console.warn(`[parallelAI] Industry report query ${idx + 1} failed: ${msg}`);
+        return `Research unavailable for query ${idx + 1}: ${msg}`;
+      }
+    })
+  );
+  return results;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

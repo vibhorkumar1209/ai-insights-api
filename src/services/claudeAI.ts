@@ -11,6 +11,8 @@ import {
   SalesPlayCaseStudy, SalesPlayPriorityMapping, SalesPlayObjectionRebuttal,
   KeyBuyersInput, KeyBuyerRow,
   IndustryTrendsInput, IndustryTrendRow,
+  IndustryReportInput, IndustryReportScope, MarketSizingData,
+  ReportSection, ExecutiveSummary,
 } from '../types';
 
 // Returns true when a research string contains no real data
@@ -1102,4 +1104,343 @@ function parseIndustryTrends(raw: string): IndustryTrendsSynthesisResult {
       techTrends: techTrends.filter((r: IndustryTrendRow) => r.trend && r.impact),
     };
   }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INDUSTRY REPORT SYNTHESIS
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Step 1 — Extract structured scope from a free-text query.
+ * Also generates 4 optimised search queries for Parallel.AI.
+ */
+export async function extractReportScope(
+  input: IndustryReportInput
+): Promise<IndustryReportScope> {
+  const geographyHint = input.geography ? `\nThe user specified geography: "${input.geography}". Use this as the geography.` : '';
+
+  const userPrompt = `
+Extract structured parameters from this market research request and generate 4 optimised web-search queries.
+${geographyHint}
+
+USER QUERY: "${input.query}"
+
+Return ONLY valid JSON with this exact shape:
+{
+  "industry": "...",
+  "geography": "...",
+  "productScope": "1-2 sentence description of what products/services are in scope",
+  "timeHorizon": "YYYY-YYYY",
+  "searchQueries": [
+    "query 1 — focused on market size, TAM, revenue, and forecast data",
+    "query 2 — focused on industry trends, dynamics, drivers, and challenges",
+    "query 3 — focused on competitive landscape, major players, and market share",
+    "query 4 — focused on technology developments and regulatory environment"
+  ]
+}
+
+RULES for searchQueries:
+- Each query should be 10-20 words, optimised for web search
+- Include the industry name, geography, and current year (2024-2025)
+- Target authoritative sources: analyst reports, government data, trade associations, company filings
+- Make queries specific enough to return high-quality data points
+`.trim();
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 2048,
+    temperature: 0,
+    system: 'You are a senior market research analyst. Extract structured parameters from research requests. Output ONLY valid JSON.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const raw = content.text;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in scope extraction response');
+
+  const parsed = JSON.parse(jsonMatch[0]) as IndustryReportScope;
+
+  // Validate required fields
+  if (!parsed.industry || !parsed.geography || !parsed.searchQueries?.length) {
+    throw new Error('Incomplete scope extraction');
+  }
+
+  return parsed;
+}
+
+/**
+ * Step 3 — Market Sizing: TAM, SAM, SOM, CAGR from research data.
+ */
+export async function synthesizeMarketSizing(
+  scope: IndustryReportScope,
+  allResearch: string
+): Promise<MarketSizingData> {
+  const safeResearch = allResearch.length > 50000 ? allResearch.slice(0, 50000) : allResearch;
+
+  const userPrompt = `
+You are producing a market sizing analysis for the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
+
+RESEARCH DATA:
+${safeResearch}
+
+Using BOTH top-down and bottom-up approaches, produce market size estimates.
+
+TOP-DOWN: Start from the broadest relevant market → narrow by geography and product scope → arrive at TAM.
+BOTTOM-UP: Estimate from known player revenues, unit volumes, or customer counts → extrapolate total market.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "currentMarketSize": "$XX.XB (2024)" or range if uncertain,
+  "projectedMarketSize": "$XX.XB (2030)" or range,
+  "cagr": "X.X% (2024-2030)",
+  "methodology": "2-3 sentence summary of how estimates were derived using both methods",
+  "dataPoints": [
+    { "metric": "descriptive metric name", "value": "$XX.XB or XX%", "source": "Source Name, Year" },
+    ... (5-8 data points supporting the estimates)
+  ]
+}
+
+RULES:
+- Use research data first; supplement with training knowledge — label estimates "(est.)"
+- If data conflicts, explain in methodology and use the more authoritative source
+- Include at least 5 data points from the research
+- Be specific: cite exact figures, not vague ranges
+`.trim();
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 4096,
+    temperature: 0,
+    system: 'You are a quantitative market sizing analyst. Produce data-grounded market estimates. Output ONLY valid JSON.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const raw = content.text;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in market sizing response');
+
+  const parsed = JSON.parse(jsonMatch[0]) as MarketSizingData;
+  if (!parsed.currentMarketSize || !parsed.cagr) {
+    throw new Error('Incomplete market sizing data');
+  }
+
+  return parsed;
+}
+
+/**
+ * Step 4 — Draft a batch of report sections (called 3 times with different sectionIds).
+ */
+
+const SECTION_DEFINITIONS: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
+  introduction: {
+    title: 'Introduction & Scope',
+    tableHint: 'No table needed.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections.',
+  },
+  market_size: {
+    title: 'Market Size & Opportunity',
+    tableHint: 'Include a table with headers: ["Year", "Market Size", "YoY Growth"] showing 5-6 years of data.',
+    chartHint: 'Include a "bar" chart showing market size by year with data: [{label: "2020", value: <number>}, ...].',
+    subsectionHint: 'No subsections.',
+  },
+  segmentation: {
+    title: 'Market Segmentation',
+    tableHint: 'Include a table with headers: ["Segment", "Revenue", "Market Share", "Growth Rate"] for the major segments.',
+    chartHint: 'Include a "pie" chart showing segment shares with data: [{label: "Segment A", value: <percentage>}, ...].',
+    subsectionHint: 'Include subsections for each major segmentation dimension (e.g., "By Product Type", "By Geography", "By Application").',
+  },
+  dynamics_trends: {
+    title: 'Market Dynamics & Trends',
+    tableHint: 'Include a table with headers: ["Factor", "Impact", "Description"] listing key drivers and restraints.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'Include subsections: "Key Drivers", "Key Restraints", "Opportunities".',
+  },
+  technology: {
+    title: 'Technology Landscape',
+    tableHint: 'Include a table with headers: ["Technology", "Impact Level", "Adoption Stage", "Key Players"] for 5-8 technologies.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections.',
+  },
+  competitive: {
+    title: 'Competitive Landscape',
+    tableHint: 'Include a table with headers: ["Company", "Market Share", "Revenue", "HQ", "Key Strength"] for top 8-10 players.',
+    chartHint: 'Include a "bar" chart of market share with data: [{label: "Company A", value: <share%>}, ...].',
+    subsectionHint: 'Include subsections for top 3-5 company profiles.',
+  },
+  regulatory: {
+    title: 'Regulatory Environment',
+    tableHint: 'Include a table with headers: ["Regulation", "Region", "Status", "Impact"] tracking key regulations.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections.',
+  },
+  forecast: {
+    title: 'Forecast & Outlook',
+    tableHint: 'Include a table with headers: ["Scenario", "Market Size (2030)", "CAGR", "Key Assumption"] for Bull/Base/Bear.',
+    chartHint: 'Include a "line" chart showing forecast trajectory with data: [{label: "2024", value: <number>}, {label: "2025", value: <number>}, ...].',
+    subsectionHint: 'Include subsections: "Bull Case", "Base Case", "Bear Case".',
+  },
+};
+
+export async function draftSectionsBatch(
+  scope: IndustryReportScope,
+  allResearch: string,
+  marketSizing: MarketSizingData,
+  sectionIds: string[]
+): Promise<ReportSection[]> {
+  const safeResearch = allResearch.length > 45000 ? allResearch.slice(0, 45000) : allResearch;
+
+  const sectionInstructions = sectionIds.map((id) => {
+    const def = SECTION_DEFINITIONS[id];
+    if (!def) return '';
+    return `
+SECTION: "${id}"
+Title: "${def.title}"
+- Write 2-4 substantive paragraphs in bodyParagraphs. Use bullet points (each starting with "• " and separated by newlines) within each paragraph.
+- ${def.tableHint}
+- ${def.chartHint}
+- ${def.subsectionHint}
+`;
+  }).join('\n');
+
+  const userPrompt = `
+You are drafting sections of a comprehensive market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
+
+MARKET SIZING CONTEXT:
+- Current: ${marketSizing.currentMarketSize}
+- Projected: ${marketSizing.projectedMarketSize}
+- CAGR: ${marketSizing.cagr}
+
+RESEARCH DATA:
+${safeResearch}
+
+Draft the following ${sectionIds.length} sections:
+${sectionInstructions}
+
+Return ONLY a valid JSON array with this shape for each section:
+[
+  {
+    "id": "section_id",
+    "title": "Section Title",
+    "bodyParagraphs": ["paragraph 1 with • bullet points separated by newlines", "paragraph 2..."],
+    "keyTable": { "title": "Table Title", "headers": ["Col1", "Col2", ...], "rows": [["val1", "val2", ...], ...] } OR null if no table,
+    "chartSpec": { "type": "bar|line|pie", "title": "Chart Title", "xLabel": "...", "yLabel": "...", "data": [{"label": "...", "value": <number>}, ...] } OR null if no chart,
+    "subsections": [{ "title": "...", "content": "bullet text with • points", "keyTable": null }] OR null if no subsections,
+    "citations": ["Source 1, Year", "Source 2, Year", ...]
+  }
+]
+
+CRITICAL RULES:
+- Every claim must come from the research data. Label estimates "(est.)" if from training knowledge.
+- Use bullet point format (• ) for all lists within bodyParagraphs and subsection content.
+- chartSpec.data values MUST be numbers (not strings). Use the numeric value in billions/millions as appropriate.
+- keyTable rows must have the same number of cells as headers.
+- Complete each section object fully before starting the next — prioritise completeness.
+- Be specific: cite figures, company names, percentages, analyst firms.
+`.trim();
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.2,
+    system: 'You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const raw = content.text;
+  const parsed = safeParseJsonArray(raw);
+  if (!parsed || parsed.length === 0) {
+    throw new Error(`No sections parsed for batch [${sectionIds.join(', ')}]`);
+  }
+
+  return (parsed as ReportSection[]).filter((s) => s.id && s.title && s.bodyParagraphs?.length > 0);
+}
+
+/**
+ * Step 5 — Executive Summary: headline, KPIs, paragraphs, scenarios.
+ */
+export async function synthesizeExecutiveSummary(
+  scope: IndustryReportScope,
+  marketSizing: MarketSizingData,
+  sections: ReportSection[]
+): Promise<ExecutiveSummary> {
+  // Build a condensed summary of each section for the executive summary
+  const sectionSummaries = sections.map((s) => {
+    const firstPara = s.bodyParagraphs?.[0]?.slice(0, 300) || '';
+    const tableInfo = s.keyTable ? ` | Table: ${s.keyTable.title} (${s.keyTable.rows?.length || 0} rows)` : '';
+    return `- ${s.title}: ${firstPara}${tableInfo}`;
+  }).join('\n');
+
+  const userPrompt = `
+Produce an executive summary for a market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
+
+MARKET SIZING:
+- Current: ${marketSizing.currentMarketSize}
+- Projected: ${marketSizing.projectedMarketSize}
+- CAGR: ${marketSizing.cagr}
+- Methodology: ${marketSizing.methodology}
+
+SECTION SUMMARIES:
+${sectionSummaries}
+
+Return ONLY valid JSON with this exact shape:
+{
+  "headline": "One compelling sentence summarising the key market finding (include a number)",
+  "kpis": [
+    { "label": "Market Size 2024", "value": "$XX.XB", "trend": "up" },
+    { "label": "CAGR", "value": "XX.X%", "trend": "up" },
+    { "label": "Projected 2030", "value": "$XX.XB", "trend": "up" },
+    { "label": "Leading Segment", "value": "Name (XX%)", "trend": "up|down|flat" },
+    { "label": "Top Player", "value": "Company (XX%)", "trend": "flat" }
+  ],
+  "paragraphs": [
+    "• Summary bullet 1 about market size and growth trajectory\n• Summary bullet 2 about key drivers\n• Summary bullet 3 about competitive dynamics",
+    "• Summary bullet 4 about technology trends\n• Summary bullet 5 about regulatory impact\n• Summary bullet 6 about outlook"
+  ],
+  "scenarios": [
+    { "name": "Bull", "description": "2-3 sentences on optimistic scenario", "marketSize": "$XXXB by 2030" },
+    { "name": "Base", "description": "2-3 sentences on expected scenario", "marketSize": "$XXXB by 2030" },
+    { "name": "Bear", "description": "2-3 sentences on pessimistic scenario", "marketSize": "$XXXB by 2030" }
+  ]
+}
+
+RULES:
+- KPIs: include 4-6 metrics, each with a trend direction
+- Paragraphs: use bullet points (• ) separated by newlines within each paragraph
+- Scenarios: must be grounded in drivers/restraints from the report sections
+- headline: must include at least one specific number
+- Every figure must be traceable to a section already drafted — do not invent new data
+`.trim();
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 4096,
+    temperature: 0.2,
+    system: 'You are a senior market analyst producing an executive summary for C-suite readers. Be concise, impactful, and data-driven. Output ONLY valid JSON.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const raw = content.text;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in executive summary response');
+
+  const parsed = JSON.parse(jsonMatch[0]) as ExecutiveSummary;
+  if (!parsed.headline || !parsed.kpis?.length || !parsed.paragraphs?.length) {
+    throw new Error('Incomplete executive summary');
+  }
+
+  return parsed;
 }

@@ -331,6 +331,87 @@ export interface KeyBuyersResult {
   completedAt?: string;
 }
 
+// ── Industry Report ─────────────────────────────────────────────────────────
+
+export interface IndustryReportInput {
+  query: string;                // Free-text, e.g. "EV battery market in North America"
+  geography?: string;           // Optional override
+}
+
+export interface IndustryReportScope {
+  industry: string;
+  geography: string;
+  productScope: string;
+  timeHorizon: string;          // e.g. "2024-2030"
+  searchQueries: string[];      // 4 optimized Parallel.AI queries
+}
+
+export interface MarketSizingData {
+  currentMarketSize: string;    // e.g. "$65.8B (2024)"
+  projectedMarketSize: string;  // e.g. "$120B (2030)"
+  cagr: string;                 // e.g. "18.5% (2024-2030)"
+  methodology: string;          // Top-down/bottom-up summary
+  dataPoints: MarketDataPoint[];
+}
+
+export interface MarketDataPoint {
+  metric: string;
+  value: string;
+  source: string;
+}
+
+export interface ReportSection {
+  id: string;                   // e.g. "market_size"
+  title: string;
+  bodyParagraphs: string[];     // BulletText-compatible (bullet delimited)
+  keyTable?: ReportTable;
+  chartSpec?: ReportChartSpec;
+  subsections?: ReportSubsection[];
+  citations?: string[];
+}
+
+export interface ReportTable {
+  title: string;
+  headers: string[];
+  rows: string[][];
+}
+
+export interface ReportChartSpec {
+  type: 'bar' | 'line' | 'pie' | 'stacked_bar';
+  title: string;
+  xLabel?: string;
+  yLabel?: string;
+  data: { label: string; value: number; category?: string }[];
+}
+
+export interface ReportSubsection {
+  title: string;
+  content: string;              // BulletText-compatible
+  keyTable?: ReportTable;
+}
+
+export interface ExecutiveSummary {
+  headline: string;
+  kpis: { label: string; value: string; trend?: 'up' | 'down' | 'flat' }[];
+  paragraphs: string[];
+  scenarios: { name: string; description: string; marketSize: string }[];
+}
+
+export interface IndustryReportResult {
+  jobId: string;
+  status: 'pending' | 'scoping' | 'researching' | 'sizing' | 'drafting' | 'summarizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  query?: string;
+  scope?: IndustryReportScope;
+  marketSizing?: MarketSizingData;
+  sections?: ReportSection[];
+  executiveSummary?: ExecutiveSummary;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Financial Analysis ─────────────────────────────────────────────────────────
 
 export interface FinancialAnalysisResult {

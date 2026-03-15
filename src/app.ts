@@ -10,6 +10,7 @@ import financialAnalysisRouter from './routes/financialAnalysis';
 import salesPlayRouter from './routes/salesPlay';
 import keyBuyersRouter from './routes/keyBuyers';
 import industryTrendsRouter from './routes/industryTrends';
+import industryReportRouter from './routes/industryReport';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -33,6 +34,7 @@ app.use('/api/financial-analysis', financialAnalysisRouter);
 app.use('/api/sales-play', salesPlayRouter);
 app.use('/api/key-buyers', keyBuyersRouter);
 app.use('/api/industry-trends', industryTrendsRouter);
+app.use('/api/industry-report', industryReportRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
