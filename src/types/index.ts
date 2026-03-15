@@ -388,6 +388,7 @@ export interface ReportSubsection {
   title: string;
   content: string;              // BulletText-compatible
   keyTable?: ReportTable;
+  chartSpec?: ReportChartSpec;
 }
 
 export interface ExecutiveSummary {
