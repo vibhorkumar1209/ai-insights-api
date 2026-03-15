@@ -93,7 +93,7 @@ export async function synthesizeBenchmarkingTable(
 - Where provided research data exists, cite it specifically (systems, vendors, percentages).
 - Where research data is missing or sparse for a company, draw on your training knowledge — label it "(est.)" or "(based on public sources)".
 - Never leave a cell empty — always provide a meaningful best-known answer.
-- Keep each value field to 1-2 concise sentences.
+- FORMATTING: Each value field MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**SAP S/4HANA** deployed across 12 regions • **AI-powered** demand forecasting in pilot • Cloud migration **60% complete**"
 - Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.`;
 
   const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
@@ -157,6 +157,7 @@ Rules:
 - Map SPECIFIC products from the selling org's portfolio to each gap (not generic capability names).
 - Include realistic proof points or analyst benchmarks for each row.
 - Never leave any field empty.
+- FORMATTING: All text fields (peersBestPractice, targetStatus, gapDetail, solutionFit, proofPoint) MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**Real-time analytics** across supply chain • **Automated procurement** reducing cycle time by 40%"
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
 
   const userPrompt = `Create a gap analysis for "${input.targetCompany}" vs peers: ${peerNames}.
