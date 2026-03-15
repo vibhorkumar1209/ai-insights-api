@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { discoverCompetitors } from '../services/parallelAI';
+import { discoverCompetitorsFast } from '../services/claudeAI';
 import { aiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
 /**
  * POST /api/competitors
- * Discover competitors for a target company using Parallel.AI research.
+ * Discover competitors for a target company using Claude (fast, ~5-10s).
  *
  * Body: { targetCompany: string, industryContext?: string }
  * Returns: { competitors: Competitor[] }
@@ -27,7 +27,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     : undefined;
 
   try {
-    const competitors = await discoverCompetitors(
+    const competitors = await discoverCompetitorsFast(
       targetCompany.trim(),
       industry
     );

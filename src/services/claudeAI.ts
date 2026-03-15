@@ -76,6 +76,63 @@ function safeParseJsonArray(raw: string): unknown[] | null {
   return objects.length > 0 ? objects : null;
 }
 
+// ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
+
+import { Competitor } from '../types';
+
+export async function discoverCompetitorsFast(
+  targetCompany: string,
+  industryContext?: string
+): Promise<Competitor[]> {
+  const industryLine = industryContext
+    ? `in the ${industryContext} industry`
+    : '(determine the primary industry/sector first)';
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 4096,
+    messages: [{
+      role: 'user',
+      content: `Identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
+
+For each competitor return a JSON object with these fields:
+- name: Company name (exact legal or commonly known name)
+- description: One-sentence business description
+- headquarters: "City, Country"
+- estimatedRevenue: Estimated annual revenue e.g. "$X billion"
+- employees: Approximate employee count e.g. "~X,000"
+- relevanceScore: 1-10 rating of how directly they compete with ${targetCompany}
+
+Return ONLY a JSON array. No markdown fences, no explanation.
+[{"name":"...","description":"...","headquarters":"...","estimatedRevenue":"...","employees":"...","relevanceScore":8}]
+
+Only include direct competitors — companies competing for the same customers, contracts, or market segments as ${targetCompany}. Prioritize companies with publicly available technology/digital strategy information.`,
+    }],
+    system: 'You are a senior B2B sales intelligence analyst. Return ONLY valid JSON arrays. No commentary.',
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const jsonMatch = content.text.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error('Claude did not return valid JSON for competitors');
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  if (!Array.isArray(parsed)) throw new Error('Expected JSON array for competitors');
+
+  return parsed
+    .filter((c: Competitor) => c.name && c.description)
+    .slice(0, 10)
+    .map((c: Competitor) => ({
+      name: c.name,
+      description: c.description,
+      headquarters: c.headquarters,
+      estimatedRevenue: c.estimatedRevenue,
+      employees: c.employees,
+      relevanceScore: typeof c.relevanceScore === 'number' ? c.relevanceScore : 7,
+    }));
+}
+
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
 
 export async function synthesizeBenchmarkingTable(
