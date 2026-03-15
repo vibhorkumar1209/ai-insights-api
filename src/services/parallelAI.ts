@@ -109,10 +109,14 @@ async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'):
 
 export async function discoverCompetitors(
   targetCompany: string,
-  industryContext: string
+  industryContext?: string
 ): Promise<Competitor[]> {
+  const industryLine = industryContext
+    ? `in the ${industryContext} industry`
+    : `(first determine the primary industry/sector that "${targetCompany}" operates in, then identify competitors within that space)`;
+
   const query = `
-Research and identify the top 8-10 direct competitors of "${targetCompany}" in the ${industryContext} industry.
+Research and identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
 
 For each competitor provide:
 1. Company name (exact legal or commonly known name)
@@ -180,10 +184,13 @@ function parseCompetitors(raw: string): Competitor[] {
 export async function researchCompany(
   companyName: string,
   targetCompany: string,
-  industryContext: string
+  industryContext?: string
 ): Promise<string> {
+  const sectorLine = industryContext
+    ? `in the ${industryContext} sector`
+    : '(determine the relevant industry sector from the companies involved)';
   const query = `
-Conduct detailed research on "${companyName}" for a competitive benchmarking analysis against "${targetCompany}" in the ${industryContext} sector.
+Conduct detailed research on "${companyName}" for a competitive benchmarking analysis against "${targetCompany}" ${sectorLine}.
 
 Research and report on the following dimensions. For each, cite the specific source (press release, annual report, earnings call, job postings, news article):
 
@@ -228,7 +235,7 @@ Cite every claim with a source. State "Not publicly disclosed" for any unavailab
 export async function researchAllCompanies(
   companies: string[],
   targetCompany: string,
-  industryContext: string
+  industryContext?: string
 ): Promise<Record<string, string>> {
   const results: Record<string, string> = {};
 

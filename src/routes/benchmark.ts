@@ -30,9 +30,9 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   } = req.body;
 
   // Validate required fields
-  if (!userOrganization || !targetCompany || !industryContext) {
+  if (!userOrganization || !targetCompany) {
     return res.status(400).json({
-      error: 'userOrganization, targetCompany, and industryContext are required',
+      error: 'userOrganization and targetCompany are required',
     });
   }
 
@@ -49,7 +49,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   const input: BenchmarkInput = {
     userOrganization: String(userOrganization).slice(0, 200),
     targetCompany: String(targetCompany).slice(0, 200),
-    industryContext: String(industryContext).slice(0, 500),
+    industryContext: industryContext ? String(industryContext).slice(0, 500) : undefined,
     focusAreas: focusAreas ? String(focusAreas).slice(0, 500) : undefined,
     solutionPortfolio: solutionPortfolio ? String(solutionPortfolio).slice(0, 1000) : undefined,
     additionalContext: additionalContext ? String(additionalContext).slice(0, 2000) : undefined,

@@ -98,7 +98,7 @@ export async function synthesizeBenchmarkingTable(
 
   const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
 
-Selling org: "${input.userOrganization}" | Industry: ${input.industryContext}${input.focusAreas ? ` | Focus: ${input.focusAreas}` : ''}
+Selling org: "${input.userOrganization}"${input.industryContext ? ` | Industry: ${input.industryContext}` : ' | Industry: (determine from target company and competitors)'}${input.focusAreas ? ` | Focus: ${input.focusAreas}` : ''}
 ${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — use training knowledge.` : ''}
 
 RESEARCH DATA:
@@ -163,7 +163,7 @@ Rules:
   const userPrompt = `Create a gap analysis for "${input.targetCompany}" vs peers: ${peerNames}.
 
 Selling org: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}
-Industry: ${input.industryContext}
+${input.industryContext ? `Industry: ${input.industryContext}` : 'Industry: (determine from target company and benchmarking table)'}
 ${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — rely on benchmarking table + training knowledge.` : ''}
 
 BENCHMARKING TABLE (compact):

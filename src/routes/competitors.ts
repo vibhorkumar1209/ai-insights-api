@@ -8,7 +8,7 @@ const router = Router();
  * POST /api/competitors
  * Discover competitors for a target company using Parallel.AI research.
  *
- * Body: { targetCompany: string, industryContext: string }
+ * Body: { targetCompany: string, industryContext?: string }
  * Returns: { competitors: Competitor[] }
  */
 router.post('/', aiLimiter, async (req: Request, res: Response) => {
@@ -17,23 +17,24 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   if (!targetCompany || typeof targetCompany !== 'string') {
     return res.status(400).json({ error: 'targetCompany is required and must be a string' });
   }
-  if (!industryContext || typeof industryContext !== 'string') {
-    return res.status(400).json({ error: 'industryContext is required and must be a string' });
-  }
 
-  if (targetCompany.length > 200 || industryContext.length > 500) {
+  if (targetCompany.length > 200 || (industryContext && String(industryContext).length > 500)) {
     return res.status(400).json({ error: 'Input too long' });
   }
+
+  const industry = typeof industryContext === 'string' && industryContext.trim()
+    ? industryContext.trim()
+    : undefined;
 
   try {
     const competitors = await discoverCompetitors(
       targetCompany.trim(),
-      industryContext.trim()
+      industry
     );
 
     return res.json({
       targetCompany: targetCompany.trim(),
-      industryContext: industryContext.trim(),
+      industryContext: industry || '(auto-detected)',
       competitors,
       count: competitors.length,
     });

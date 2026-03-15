@@ -1,7 +1,7 @@
 export interface BenchmarkInput {
   userOrganization: string;   // SELLING_ORGANIZATION
   targetCompany: string;      // TARGET_ACCOUNT
-  industryContext: string;    // INDUSTRY_CONTEXT
+  industryContext?: string;   // INDUSTRY_CONTEXT (optional — auto-detected if empty)
   focusAreas?: string;        // FOCUS_AREAS
   solutionPortfolio?: string; // SOLUTION_PORTFOLIO
   additionalContext?: string; // ADDITIONAL_CONTEXT
