@@ -614,6 +614,59 @@ Format your response as structured text with clear sections per insight so it ca
   }
 }
 
+// ── Industry Trends Research ─────────────────────────────────────────────────
+// Research both business and technology trends affecting an industry segment.
+
+export async function researchIndustryTrends(
+  industrySegment: string
+): Promise<string> {
+  const query = `
+Research the major Business Trends and Technology Trends shaping the "${industrySegment}" industry in 2024-2025.
+
+PART A — BUSINESS TRENDS
+Research trends across ALL of the following dimensions. For each, provide specific data, named examples, and evidence:
+
+1. MACROECONOMY — How do interest rates, inflation, GDP growth, currency shifts, trade policies, and geopolitical tensions affect the ${industrySegment} industry? What macro tailwinds and headwinds are most material?
+
+2. DEMAND — What are the key shifts in demand patterns? Are there new customer segments, geographic markets, or use cases driving growth? What is the growth trajectory of the industry?
+
+3. SUPPLY — What supply-side dynamics are changing? Raw material availability, manufacturing capacity, supply chain restructuring, nearshoring/reshoring trends, logistics evolution?
+
+4. CUSTOMER — How are customer expectations and behaviours changing? What do customers now demand in terms of experience, sustainability, personalisation, and digital engagement?
+
+5. COMPETITION — How is the competitive landscape evolving? New entrants, consolidation via M&A, platform plays, ecosystem strategies, cross-industry disruption?
+
+6. REGULATORY — What regulations are pending or recently enacted? ESG mandates, data privacy, AI governance, trade barriers, sector-specific compliance requirements?
+
+7. PRICING — What pricing model shifts are underway? Subscription vs. one-time, value-based pricing, dynamic pricing, margin compression or expansion trends?
+
+8. OTHER KEY ISSUES — Any other significant business trends not covered above: workforce changes, sustainability pressures, geopolitical supply chain risks, new business models, etc.
+
+PART B — TECHNOLOGY TRENDS
+Research BOTH emerging and traditional technology trends:
+
+1. EMERGING TECHNOLOGY TRENDS — Generative AI, AI/ML at scale, edge computing, digital twins, quantum computing readiness, blockchain/Web3, spatial computing, autonomous systems, biotech convergence — whichever are most relevant to ${industrySegment}.
+
+2. TRADITIONAL TECHNOLOGY TRENDS — Cloud migration (multi-cloud, hybrid), ERP modernisation, cybersecurity evolution, data platform consolidation, IoT/IIoT maturity, RPA/intelligent automation scaling, legacy system decommissioning — whichever are most relevant to ${industrySegment}.
+
+FOR EVERY TREND:
+- Name the trend clearly
+- Describe its impact on the ${industrySegment} industry
+- Provide a detailed description with specific data points
+- Give concrete examples from MULTIPLE GLOBAL REGIONS (Americas, EMEA, APAC)
+- Cite sources: analyst reports (Gartner, Forrester, McKinsey, IDC), industry publications, company announcements, regulatory filings
+
+Provide specific, evidence-based findings. Cite every claim with a source. State "Not publicly disclosed" where data is unavailable.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${industrySegment} industry trends: ${msg}`;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

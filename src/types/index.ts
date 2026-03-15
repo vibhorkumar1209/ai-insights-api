@@ -117,6 +117,32 @@ export interface ChallengesGrowthResult {
   completedAt?: string;
 }
 
+// ── Industry Trends ──────────────────────────────────────────────────────────
+
+export interface IndustryTrendsInput {
+  industrySegment: string;
+}
+
+export interface IndustryTrendRow {
+  trend: string;           // Name of the trend
+  impact: string;          // Impact of the trend
+  description: string;     // Bulleted description
+  examples: string;        // Bulleted examples across global regions
+}
+
+export interface IndustryTrendsResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  industrySegment?: string;
+  businessTrends?: IndustryTrendRow[];
+  techTrends?: IndustryTrendRow[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Financial Analysis ─────────────────────────────────────────────────────────
 
 export interface CompanyInfo {

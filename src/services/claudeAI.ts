@@ -10,6 +10,7 @@ import {
   SalesPlayPriorityRow, SalesPlayIndustrySolution, SalesPlayPartner,
   SalesPlayCaseStudy, SalesPlayPriorityMapping, SalesPlayObjectionRebuttal,
   KeyBuyersInput, KeyBuyerRow,
+  IndustryTrendsInput, IndustryTrendRow,
 } from '../types';
 
 // Returns true when a research string contains no real data
@@ -816,4 +817,123 @@ function parseKeyBuyers(raw: string): KeyBuyerRow[] {
   return (items as KeyBuyerRow[]).filter(
     (row) => row.theme && row.reference && row.excerpt && row.keyExecutive
   );
+}
+
+// ── Industry Trends — Synthesis ──────────────────────────────────────────────
+
+interface IndustryTrendsSynthesisResult {
+  businessTrends: IndustryTrendRow[];
+  techTrends: IndustryTrendRow[];
+}
+
+export async function synthesizeIndustryTrends(
+  input: IndustryTrendsInput,
+  research: string
+): Promise<IndustryTrendsSynthesisResult> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are a senior industry analyst producing executive-grade trend reports for B2B sales and strategy teams.
+Rules:
+- Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
+- Be specific: cite data points, analyst firms, named companies, market figures, and regional examples.
+- Every cell must have substantive content — no vague generalities, no empty fields.
+- Description and Examples fields MUST use bullet points. Each bullet starts with "• ".
+- Examples MUST span multiple global regions (Americas, EMEA, APAC) where possible.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON object.`;
+
+  const userPrompt = `Analyse the following research on the "${input.industrySegment}" industry and produce an Industry Trends report in TWO blocks.
+
+${hasResearch
+  ? `RESEARCH:\n${research.slice(0, 60000)}`
+  : `[No live research available — use training knowledge about ${input.industrySegment} industry trends. Label estimates as "(est.)".]`}
+
+Return a JSON object with EXACTLY this shape:
+{
+  "businessTrends": [
+    {
+      "trend": "Trend name (e.g. 'Nearshoring & Supply Chain Restructuring')",
+      "impact": "One sentence summarising the impact on the ${input.industrySegment} industry",
+      "description": "• Bullet point 1 with specific data or insight\\n• Bullet point 2 with further detail\\n• Bullet point 3 with additional context",
+      "examples": "• Americas: Specific example with company/country name\\n• EMEA: Specific example with company/country name\\n• APAC: Specific example with company/country name"
+    }
+  ],
+  "techTrends": [
+    {
+      "trend": "Trend name",
+      "impact": "One sentence impact summary",
+      "description": "• Bullet 1\\n• Bullet 2\\n• Bullet 3",
+      "examples": "• Americas: Example\\n• EMEA: Example\\n• APAC: Example"
+    }
+  ]
+}
+
+BUSINESS TRENDS — include 7-10 trends covering these dimensions:
+1. Macroeconomy (interest rates, inflation, GDP, FX, trade policies, geopolitics)
+2. Demand (growth trajectory, new segments, geographic expansion)
+3. Supply (supply chain, manufacturing, nearshoring, logistics)
+4. Customer (behaviour shifts, experience expectations, personalisation)
+5. Competition (M&A, new entrants, platform plays, ecosystem strategies)
+6. Regulatory (ESG mandates, data privacy, AI governance, sector-specific rules)
+7. Pricing (model shifts, margin dynamics, value-based pricing)
+8. Any other material business trends (workforce, sustainability, new business models)
+
+TECHNOLOGY TRENDS — include 6-8 trends covering:
+1. Emerging Technology: Generative AI, AI/ML at scale, edge computing, digital twins, quantum readiness, autonomous systems — whichever are most relevant
+2. Traditional Technology: Cloud migration, ERP modernisation, cybersecurity, data platforms, IoT/IIoT, RPA/automation, legacy decommissioning — whichever are most relevant
+
+IMPORTANT:
+- "description" must be bullet points (each line starts with "• "), 3-5 bullets per trend
+- "examples" must be bullet points with regional labels (e.g. "• Americas:", "• EMEA:", "• APAC:"), 2-4 bullets per trend
+- Each example must name specific companies, countries, or initiatives
+- "impact" is a single sentence — concise and specific to ${input.industrySegment}`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  return parseIndustryTrends(content.text);
+}
+
+function parseIndustryTrends(raw: string): IndustryTrendsSynthesisResult {
+  // Extract JSON object from response
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Claude did not return valid JSON for industry trends');
+
+  try {
+    const parsed = JSON.parse(match[0]);
+    const businessTrends = Array.isArray(parsed.businessTrends)
+      ? (parsed.businessTrends as IndustryTrendRow[]).filter((r) => r.trend && r.impact)
+      : [];
+    const techTrends = Array.isArray(parsed.techTrends)
+      ? (parsed.techTrends as IndustryTrendRow[]).filter((r) => r.trend && r.impact)
+      : [];
+
+    if (businessTrends.length === 0 && techTrends.length === 0) {
+      throw new Error('No trends parsed');
+    }
+
+    return { businessTrends, techTrends };
+  } catch (e) {
+    // Fallback: try extracting individual arrays
+    const bizMatch = raw.match(/"businessTrends"\s*:\s*(\[[\s\S]*?\])/);
+    const techMatch = raw.match(/"techTrends"\s*:\s*(\[[\s\S]*?\])/);
+
+    const businessTrends = bizMatch ? safeParseJsonArray(bizMatch[1]) as IndustryTrendRow[] ?? [] : [];
+    const techTrends = techMatch ? safeParseJsonArray(techMatch[1]) as IndustryTrendRow[] ?? [] : [];
+
+    if (businessTrends.length === 0 && techTrends.length === 0) {
+      throw new Error('Claude did not return valid JSON for industry trends');
+    }
+
+    return {
+      businessTrends: businessTrends.filter((r: IndustryTrendRow) => r.trend && r.impact),
+      techTrends: techTrends.filter((r: IndustryTrendRow) => r.trend && r.impact),
+    };
+  }
 }
