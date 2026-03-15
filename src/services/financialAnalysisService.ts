@@ -240,7 +240,9 @@ async function runPublicPath(
     plInsight:       insights.plInsight,
     bsInsight:       insights.bsInsight,
     cfInsight:       insights.cfInsight,
-    keyHighlights:   insights.keyHighlights,
+    keyHighlights:      insights.keyHighlights,
+    chartInsights:      insights.chartInsights?.length ? insights.chartInsights : undefined,
+    geoSegmentInsights: insights.geoSegmentInsights?.length ? insights.geoSegmentInsights : undefined,
     segmentRevenue:  insights.segmentRevenue?.length ? insights.segmentRevenue : undefined,
     geoRevenue:      insights.geoRevenue?.length     ? insights.geoRevenue     : undefined,
   });
@@ -285,12 +287,13 @@ async function runPrivatePath(
     progress:            100,
     currentStep:         'Complete',
     completedAt,
-    estimatedRevenue:    privateData.estimatedRevenue,
-    profitabilityMargin: privateData.profitabilityMargin,
-    estimatedYoyGrowth:  privateData.estimatedYoyGrowth,
-    fundingInfo:         privateData.fundingInfo,
-    lastValuation:       privateData.lastValuation,
-    privateInsights:     privateData.privateInsights,
+    estimatedRevenue:     privateData.estimatedRevenue,
+    profitabilityMargin:  privateData.profitabilityMargin,
+    estimatedYoyGrowth:   privateData.estimatedYoyGrowth,
+    fundingInfo:          privateData.fundingInfo,
+    lastValuation:        privateData.lastValuation,
+    privateInsights:      privateData.privateInsights,
+    privateKeyHighlights: privateData.privateKeyHighlights,
   });
   emit(jobId, 'result', job);
 }

@@ -5,7 +5,7 @@ import {
   ChallengesGrowthInput, ChallengesGrowthRow,
   FinancialAnalysisInput, FinancialAnalysisResult,
   RevenueDataPoint, MarginDataPoint, FinancialStatementRow,
-  FinancialSegmentRow, GeoRow,
+  FinancialSegmentRow, GeoRow, KeyHighlightsStructured,
   SalesPlayInput,
   SalesPlayPriorityRow, SalesPlayIndustrySolution, SalesPlayPartner,
   SalesPlayCaseStudy, SalesPlayPriorityMapping, SalesPlayObjectionRebuttal,
@@ -355,7 +355,9 @@ interface FinancialInsightsPayload {
   plInsight: string;
   bsInsight: string;
   cfInsight: string;
-  keyHighlights: string[];
+  keyHighlights: KeyHighlightsStructured;
+  chartInsights: string[];
+  geoSegmentInsights: string[];
   segmentRevenue?: FinancialSegmentRow[];
   geoRevenue?: GeoRow[];
   // Fallback arrays extracted from Parallel.AI research when Yahoo Finance is empty
@@ -435,21 +437,33 @@ Return a single JSON object with EXACTLY this structure:
   "plInsight": "3-5 sentences on the P&L — the most significant items, cost structure efficiency, and any one-time items or structural shifts.",
   "bsInsight": "3-5 sentences on balance sheet health — liquidity, leverage, capital allocation, and balance sheet flexibility.",
   "cfInsight": "3-5 sentences on cash generation quality — operating cash conversion, capex intensity, free cash flow, and capital returns.",
-  "keyHighlights": [
-    "Bullet 1: single most important financial takeaway",
-    "Bullet 2: key risk or headwind visible in the financials",
-    "Bullet 3: significant growth driver or catalyst",
-    "Bullet 4: notable strategic capital allocation decision",
-    "Bullet 5: forward-looking signal from the financial data"
+  "keyHighlights": {
+    "overallPerformance": "2-4 sentences: overall financial health, revenue scale, profitability status, and market position.",
+    "factorsDrivingGrowth": "2-4 sentences: specific factors, products, segments, or markets driving revenue and profit growth.",
+    "factorsInhibitingGrowth": "2-4 sentences: headwinds, risks, competitive pressures, or structural challenges limiting growth.",
+    "futureStrategy": "2-4 sentences: management's stated strategic priorities, capital allocation plans, M&A activity, or transformation initiatives.",
+    "growthOutlook": "2-4 sentences: forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon."
+  },
+  "chartInsights": [
+    "Bullet 1: key observation about revenue trajectory over the last 5 years",
+    "Bullet 2: significant margin trend or inflection point",
+    "Bullet 3: quarterly momentum — is performance accelerating or decelerating?",
+    "Bullet 4: any notable one-off events affecting recent revenue or margins"
   ],
   "segmentRevenue": [
     { "segment": "Segment Name", "revenue": "$X.XB", "percentage": 42.5, "yoyGrowth": "+8.2%" }
   ],
   "geoRevenue": [
-    { "region": "Americas", "revenue": "$X.XB", "percentage": 55.0 }
+    { "region": "Americas", "revenue": "$X.XB", "percentage": 55.0, "yoyGrowth": "+8.2%" }
   ],
   "segmentInsight": "3-5 sentences on segment mix — which segments are growing, which are declining, and what the mix shift means strategically. Set to null if no segment data available.",
   "geoInsight": "3-5 sentences on geographic mix — regional growth rates, concentration risk, and international expansion signals. Set to null if no geo data available.",
+  "geoSegmentInsights": [
+    "Bullet 1: which geography or segment is the largest revenue contributor",
+    "Bullet 2: fastest-growing region or segment and why",
+    "Bullet 3: any region or segment showing decline or underperformance",
+    "Bullet 4: diversification or concentration risk assessment"
+  ],
   "revenueHistoryExtracted": [
     { "year": "2023", "revenue": 383285000000, "revenueFormatted": "$383.3B", "yoyGrowth": -2.8 }
   ],
@@ -493,7 +507,31 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Claude did not return valid JSON for financial insights');
   try {
-    const parsed = JSON.parse(match[0]) as FinancialInsightsPayload;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = JSON.parse(match[0]) as any;
+
+    // Handle keyHighlights — may be structured object or legacy array
+    let keyHighlights: KeyHighlightsStructured;
+    if (parsed.keyHighlights && typeof parsed.keyHighlights === 'object' && !Array.isArray(parsed.keyHighlights)) {
+      keyHighlights = {
+        overallPerformance: parsed.keyHighlights.overallPerformance || '',
+        factorsDrivingGrowth: parsed.keyHighlights.factorsDrivingGrowth || '',
+        factorsInhibitingGrowth: parsed.keyHighlights.factorsInhibitingGrowth || '',
+        futureStrategy: parsed.keyHighlights.futureStrategy || '',
+        growthOutlook: parsed.keyHighlights.growthOutlook || '',
+      };
+    } else {
+      // Legacy fallback: convert array to structured
+      const arr = Array.isArray(parsed.keyHighlights) ? parsed.keyHighlights : [];
+      keyHighlights = {
+        overallPerformance: arr[0] || '',
+        factorsDrivingGrowth: arr[1] || '',
+        factorsInhibitingGrowth: arr[2] || '',
+        futureStrategy: arr[3] || '',
+        growthOutlook: arr[4] || '',
+      };
+    }
+
     return {
       revenueInsight: parsed.revenueInsight || '',
       marginInsight: parsed.marginInsight || '',
@@ -502,7 +540,9 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
       plInsight: parsed.plInsight || '',
       bsInsight: parsed.bsInsight || '',
       cfInsight: parsed.cfInsight || '',
-      keyHighlights: Array.isArray(parsed.keyHighlights) ? parsed.keyHighlights : [],
+      keyHighlights,
+      chartInsights: Array.isArray(parsed.chartInsights) ? parsed.chartInsights : [],
+      geoSegmentInsights: Array.isArray(parsed.geoSegmentInsights) ? parsed.geoSegmentInsights : [],
       segmentRevenue: Array.isArray(parsed.segmentRevenue) ? parsed.segmentRevenue : [],
       geoRevenue: Array.isArray(parsed.geoRevenue) ? parsed.geoRevenue : [],
       // Fallback arrays extracted from research
@@ -531,6 +571,7 @@ interface PrivateCompanyPayload {
   fundingInfo?: string;
   lastValuation?: string;
   privateInsights: string[];
+  privateKeyHighlights?: KeyHighlightsStructured;
 }
 
 export async function synthesizePrivateCompany(
@@ -562,7 +603,14 @@ Return a JSON object with EXACTLY this structure:
     "Key risk factor visible from the financial and funding profile",
     "Most significant growth driver or market opportunity",
     "Notable recent development (acquisition, partnership, product launch, leadership change)"
-  ]
+  ],
+  "privateKeyHighlights": {
+    "overallPerformance": "2-4 sentences: overall financial health, revenue scale, profitability status, and competitive positioning of this private company.",
+    "factorsDrivingGrowth": "2-4 sentences: specific factors, products, markets, or strategic moves driving this company's growth.",
+    "factorsInhibitingGrowth": "2-4 sentences: risks, competitive threats, market headwinds, or challenges limiting this company's growth.",
+    "futureStrategy": "2-4 sentences: the company's known strategic direction, upcoming product launches, expansion plans, or transformation initiatives.",
+    "growthOutlook": "2-4 sentences: forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks."
+  }
 }`;
 
   const message = await client.messages.create({
@@ -582,7 +630,20 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Claude did not return valid JSON for private company');
   try {
-    const parsed = JSON.parse(match[0]) as PrivateCompanyPayload;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = JSON.parse(match[0]) as any;
+
+    let privateKeyHighlights: KeyHighlightsStructured | undefined;
+    if (parsed.privateKeyHighlights && typeof parsed.privateKeyHighlights === 'object') {
+      privateKeyHighlights = {
+        overallPerformance: parsed.privateKeyHighlights.overallPerformance || '',
+        factorsDrivingGrowth: parsed.privateKeyHighlights.factorsDrivingGrowth || '',
+        factorsInhibitingGrowth: parsed.privateKeyHighlights.factorsInhibitingGrowth || '',
+        futureStrategy: parsed.privateKeyHighlights.futureStrategy || '',
+        growthOutlook: parsed.privateKeyHighlights.growthOutlook || '',
+      };
+    }
+
     return {
       estimatedRevenue: parsed.estimatedRevenue || 'Not publicly disclosed',
       profitabilityMargin: parsed.profitabilityMargin || 'Not publicly disclosed',
@@ -590,6 +651,7 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
       fundingInfo: parsed.fundingInfo,
       lastValuation: parsed.lastValuation,
       privateInsights: Array.isArray(parsed.privateInsights) ? parsed.privateInsights : [],
+      privateKeyHighlights,
     };
   } catch {
     throw new Error('Failed to parse private company JSON');

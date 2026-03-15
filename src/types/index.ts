@@ -200,6 +200,15 @@ export interface GeoRow {
   region: string;
   revenue: string;           // formatted
   percentage: number;        // 0-100
+  yoyGrowth?: string;        // e.g. "+8.2%"
+}
+
+export interface KeyHighlightsStructured {
+  overallPerformance: string;
+  factorsDrivingGrowth: string;
+  factorsInhibitingGrowth: string;
+  futureStrategy: string;
+  growthOutlook: string;
 }
 
 export interface FinancialStatementRow {
@@ -352,7 +361,9 @@ export interface FinancialAnalysisResult {
   plInsight?:      string;
   bsInsight?:      string;
   cfInsight?:      string;
-  keyHighlights?:  string[];
+  keyHighlights?:  KeyHighlightsStructured;
+  chartInsights?:  string[];
+  geoSegmentInsights?: string[];
 
   // ── Private company ─────────────────────────────────────────────
   estimatedRevenue?:     string;
@@ -361,6 +372,7 @@ export interface FinancialAnalysisResult {
   fundingInfo?:          string;
   lastValuation?:        string;
   privateInsights?:      string[];
+  privateKeyHighlights?: KeyHighlightsStructured;
 
   error?: string;
   createdAt: string;
