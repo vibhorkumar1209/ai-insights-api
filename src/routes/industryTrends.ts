@@ -12,7 +12,7 @@ const router = Router();
 
 /** POST /api/industry-trends — start analysis */
 router.post('/', aiLimiter, (req: Request, res: Response): void => {
-  const { industrySegment } = req.body;
+  const { industrySegment, geography } = req.body;
 
   if (!industrySegment || typeof industrySegment !== 'string' || !industrySegment.trim()) {
     res.status(400).json({ error: 'industrySegment is required' });
@@ -23,6 +23,9 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
 
   runIndustryTrends(jobId, {
     industrySegment: industrySegment.trim().slice(0, 300),
+    geography: typeof geography === 'string' && geography.trim()
+      ? geography.trim().slice(0, 100)
+      : 'Global',
   }).catch((err) => console.error('[industryTrends] Unhandled error:', err));
 
   res.status(202).json({ jobId });

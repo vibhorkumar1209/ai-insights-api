@@ -831,6 +831,12 @@ export async function synthesizeIndustryTrends(
   research: string
 ): Promise<IndustryTrendsSynthesisResult> {
   const hasResearch = !isEmptyResearch(research);
+  const geography = input.geography || 'Global';
+  const isGlobal = geography === 'Global';
+
+  const examplesRule = isGlobal
+    ? '- Examples MUST span multiple global regions (Americas, EMEA, APAC) where possible.'
+    : `- Examples MUST be specifically from the ${geography} region/market. Do NOT include examples from other regions unless directly relevant to ${geography}.`;
 
   const systemPrompt = `You are a senior industry analyst producing executive-grade trend reports for B2B sales and strategy teams.
 Rules:
@@ -838,23 +844,39 @@ Rules:
 - Be specific: cite data points, analyst firms, named companies, market figures, and regional examples.
 - Every cell must have substantive content — no vague generalities, no empty fields.
 - Description and Examples fields MUST use bullet points. Each bullet starts with "• ".
-- Examples MUST span multiple global regions (Americas, EMEA, APAC) where possible.
+${examplesRule}
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON object.`;
 
-  const userPrompt = `Analyse the following research on the "${input.industrySegment}" industry and produce an Industry Trends report in TWO blocks.
+  const exampleTemplateBiz = isGlobal
+    ? `"examples": "• Americas: Specific example with company/country name\\n• EMEA: Specific example with company/country name\\n• APAC: Specific example with company/country name"`
+    : `"examples": "• ${geography}: Specific example with company/country name\\n• ${geography}: Another example with company/country name\\n• ${geography}: Additional example with company/country name"`;
+
+  const exampleTemplateTech = isGlobal
+    ? `"examples": "• Americas: Example\\n• EMEA: Example\\n• APAC: Example"`
+    : `"examples": "• ${geography}: Example\\n• ${geography}: Another example\\n• ${geography}: Additional example"`;
+
+  const exampleInstruction = isGlobal
+    ? '- "examples" must be bullet points with regional labels (e.g. "• Americas:", "• EMEA:", "• APAC:"), 2-4 bullets per trend'
+    : `- "examples" must be bullet points with examples specifically from ${geography}, 2-4 bullets per trend. Each bullet should reference specific companies, initiatives, or developments in ${geography}`;
+
+  const geoContext = isGlobal
+    ? ''
+    : `\n\nGEOGRAPHIC SCOPE: Focus exclusively on the ${geography} market. All trends, impacts, descriptions, and examples must be specifically relevant to ${geography}. Discuss how industry dynamics play out in this specific region.`;
+
+  const userPrompt = `Analyse the following research on the "${input.industrySegment}" industry and produce an Industry Trends report in TWO blocks.${geoContext}
 
 ${hasResearch
   ? `RESEARCH:\n${research.slice(0, 60000)}`
-  : `[No live research available — use training knowledge about ${input.industrySegment} industry trends. Label estimates as "(est.)".]`}
+  : `[No live research available — use training knowledge about ${input.industrySegment} industry trends${isGlobal ? '' : ` in ${geography}`}. Label estimates as "(est.)".]`}
 
 Return a JSON object with EXACTLY this shape:
 {
   "businessTrends": [
     {
       "trend": "Trend name (e.g. 'Nearshoring & Supply Chain Restructuring')",
-      "impact": "One sentence summarising the impact on the ${input.industrySegment} industry",
+      "impact": "One sentence summarising the impact on the ${input.industrySegment} industry${isGlobal ? '' : ` in ${geography}`}",
       "description": "• Bullet point 1 with specific data or insight\\n• Bullet point 2 with further detail\\n• Bullet point 3 with additional context",
-      "examples": "• Americas: Specific example with company/country name\\n• EMEA: Specific example with company/country name\\n• APAC: Specific example with company/country name"
+      ${exampleTemplateBiz}
     }
   ],
   "techTrends": [
@@ -862,7 +884,7 @@ Return a JSON object with EXACTLY this shape:
       "trend": "Trend name",
       "impact": "One sentence impact summary",
       "description": "• Bullet 1\\n• Bullet 2\\n• Bullet 3",
-      "examples": "• Americas: Example\\n• EMEA: Example\\n• APAC: Example"
+      ${exampleTemplateTech}
     }
   ]
 }
@@ -883,9 +905,9 @@ TECHNOLOGY TRENDS — include 6-8 trends covering:
 
 IMPORTANT:
 - "description" must be bullet points (each line starts with "• "), 3-5 bullets per trend
-- "examples" must be bullet points with regional labels (e.g. "• Americas:", "• EMEA:", "• APAC:"), 2-4 bullets per trend
+${exampleInstruction}
 - Each example must name specific companies, countries, or initiatives
-- "impact" is a single sentence — concise and specific to ${input.industrySegment}`;
+- "impact" is a single sentence — concise and specific to ${input.industrySegment}${isGlobal ? '' : ` in ${geography}`}`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,

@@ -55,16 +55,19 @@ export async function runIndustryTrends(
   input: IndustryTrendsInput
 ): Promise<void> {
   try {
-    updateJob(jobId, { industrySegment: input.industrySegment });
+    const geography = input.geography || 'Global';
+    const geoLabel = geography !== 'Global' ? ` in ${geography}` : '';
+
+    updateJob(jobId, { industrySegment: input.industrySegment, geography });
 
     updateJob(jobId, {
       status: 'researching',
       progress: 10,
-      currentStep: `Researching business & technology trends in ${input.industrySegment}…`,
+      currentStep: `Researching business & technology trends in ${input.industrySegment}${geoLabel}…`,
     });
-    emit(jobId, 'progress', { progress: 10, currentStep: `Researching business & technology trends in ${input.industrySegment}…` });
+    emit(jobId, 'progress', { progress: 10, currentStep: `Researching business & technology trends in ${input.industrySegment}${geoLabel}…` });
 
-    const research = await researchIndustryTrends(input.industrySegment);
+    const research = await researchIndustryTrends(input.industrySegment, geography);
 
     updateJob(jobId, {
       status: 'synthesizing',

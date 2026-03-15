@@ -121,6 +121,7 @@ export interface ChallengesGrowthResult {
 
 export interface IndustryTrendsInput {
   industrySegment: string;
+  geography?: string;       // "Global" | region name | custom country
 }
 
 export interface IndustryTrendRow {
@@ -136,6 +137,7 @@ export interface IndustryTrendsResult {
   progress: number;
   currentStep?: string;
   industrySegment?: string;
+  geography?: string;
   businessTrends?: IndustryTrendRow[];
   techTrends?: IndustryTrendRow[];
   error?: string;

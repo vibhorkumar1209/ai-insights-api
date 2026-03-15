@@ -618,10 +618,21 @@ Format your response as structured text with clear sections per insight so it ca
 // Research both business and technology trends affecting an industry segment.
 
 export async function researchIndustryTrends(
-  industrySegment: string
+  industrySegment: string,
+  geography: string = 'Global'
 ): Promise<string> {
+  const isGlobal = !geography || geography === 'Global';
+
+  const geographyExamplesLine = isGlobal
+    ? '- Give concrete examples from MULTIPLE GLOBAL REGIONS (Americas, EMEA, APAC)'
+    : `- Focus ALL examples specifically on the ${geography} region/market\n- Provide examples from companies, regulations, and market dynamics within ${geography}\n- Include region-specific data points, analyst reports, and regulatory context for ${geography}`;
+
+  const geographyContext = isGlobal
+    ? ''
+    : `\n\nGEOGRAPHIC FOCUS: ${geography}\nAll trends, data, and examples should be specifically relevant to the ${geography} market. Discuss how global trends manifest specifically in ${geography}.`;
+
   const query = `
-Research the major Business Trends and Technology Trends shaping the "${industrySegment}" industry in 2024-2025.
+Research the major Business Trends and Technology Trends shaping the "${industrySegment}" industry in 2024-2025.${geographyContext}
 
 PART A — BUSINESS TRENDS
 Research trends across ALL of the following dimensions. For each, provide specific data, named examples, and evidence:
@@ -653,7 +664,7 @@ FOR EVERY TREND:
 - Name the trend clearly
 - Describe its impact on the ${industrySegment} industry
 - Provide a detailed description with specific data points
-- Give concrete examples from MULTIPLE GLOBAL REGIONS (Americas, EMEA, APAC)
+${geographyExamplesLine}
 - Cite sources: analyst reports (Gartner, Forrester, McKinsey, IDC), industry publications, company announcements, regulatory filings
 
 Provide specific, evidence-based findings. Cite every claim with a source. State "Not publicly disclosed" where data is unavailable.
