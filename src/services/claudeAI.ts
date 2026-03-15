@@ -311,9 +311,9 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
 [
   {
     "theme": "Short punchy theme name (3-5 words)",
-    "description": "2-3 sentence explanation of what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data where available.",
+    "description": "3-4 bullet points (each starting with '• ' and separated by newlines): what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data where available.",
     "examples": "Concrete example 1 | Concrete example 2 | Concrete example 3",
-    "strategicImpact": "1-2 sentences on the strategic significance and what it signals about ${input.companyName}'s direction."
+    "strategicImpact": "2-3 bullet points (each starting with '• ' and separated by newlines): the strategic significance and what it signals about ${input.companyName}'s direction."
   }
 ]`;
 
@@ -377,14 +377,14 @@ Return a JSON array with EXACTLY this shape (8 objects):
 [
   {
     "dimension": "Macroeconomics",
-    "challenge": "2-3 sentences describing the most material macroeconomic challenge facing ${input.companyName} — be specific: name rates, geographies, FX pairs, or economic indicators.",
-    "growthProspect": "2-3 sentences describing the macro or structural tailwind that creates the biggest growth opportunity — cite specific markets, demographics, or policy drivers."
+    "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the most material challenge in this dimension — be specific, name rates, geographies, data points.",
+    "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): the most compelling growth opportunity — cite specific markets, demographics, or policy drivers."
   }
 ]
 
 For EACH dimension:
-- "challenge": The single most material, specific challenge — cite data, name the threat, quantify where possible.
-- "growthProspect": The most compelling growth opportunity in that dimension — forward-looking, specific, actionable insight.`;
+- "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges — cite data, name the threat, quantify where possible.
+- "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities — forward-looking, specific, actionable insights.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -500,15 +500,15 @@ Return a single JSON object with EXACTLY this structure:
   "bsInsight": "3-5 sentences on balance sheet health — liquidity, leverage, capital allocation, and balance sheet flexibility.",
   "cfInsight": "3-5 sentences on cash generation quality — operating cash conversion, capex intensity, free cash flow, and capital returns.",
   "keyHighlights": {
-    "overallPerformance": "2-4 sentences: overall financial health, revenue scale, profitability status, and market position.",
+    "overallPerformance": "3-5 bullet points (each starting with '• '): overall financial health, revenue scale, profitability status, and market position.",
     "overallPerformanceTagline": "3-6 word phrase summarising the main point, e.g. 'Strong revenue, margin pressure'",
-    "factorsDrivingGrowth": "2-4 sentences: specific factors, products, segments, or markets driving revenue and profit growth.",
+    "factorsDrivingGrowth": "3-5 bullet points (each starting with '• '): specific factors, products, segments, or markets driving revenue and profit growth.",
     "factorsDrivingGrowthTagline": "3-6 word phrase, e.g. 'Cloud & AI segment surge'",
-    "factorsInhibitingGrowth": "2-4 sentences: headwinds, risks, competitive pressures, or structural challenges limiting growth.",
+    "factorsInhibitingGrowth": "3-5 bullet points (each starting with '• '): headwinds, risks, competitive pressures, or structural challenges limiting growth.",
     "factorsInhibitingGrowthTagline": "3-6 word phrase, e.g. 'Rising input costs, FX headwinds'",
-    "futureStrategy": "2-4 sentences: management's stated strategic priorities, capital allocation plans, M&A activity, or transformation initiatives.",
+    "futureStrategy": "3-5 bullet points (each starting with '• '): management's stated strategic priorities, capital allocation plans, M&A activity, or transformation initiatives.",
     "futureStrategyTagline": "3-6 word phrase, e.g. 'Pivot to platform model'",
-    "growthOutlook": "2-4 sentences: forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon.",
+    "growthOutlook": "3-5 bullet points (each starting with '• '): forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon.",
     "growthOutlookTagline": "3-6 word phrase, e.g. 'Moderate growth ahead'"
   },
   "chartInsights": [
@@ -677,15 +677,15 @@ Return a JSON object with EXACTLY this structure:
     "Notable recent development (acquisition, partnership, product launch, leadership change)"
   ],
   "privateKeyHighlights": {
-    "overallPerformance": "2-4 sentences: overall financial health, revenue scale, profitability status, and competitive positioning of this private company.",
+    "overallPerformance": "3-5 bullet points (each starting with '• '): overall financial health, revenue scale, profitability status, and competitive positioning of this private company.",
     "overallPerformanceTagline": "3-6 word phrase summarising the main point, e.g. 'Rapid growth, pre-profit stage'",
-    "factorsDrivingGrowth": "2-4 sentences: specific factors, products, markets, or strategic moves driving this company's growth.",
+    "factorsDrivingGrowth": "3-5 bullet points (each starting with '• '): specific factors, products, markets, or strategic moves driving this company's growth.",
     "factorsDrivingGrowthTagline": "3-6 word phrase, e.g. 'Enterprise adoption accelerating'",
-    "factorsInhibitingGrowth": "2-4 sentences: risks, competitive threats, market headwinds, or challenges limiting this company's growth.",
+    "factorsInhibitingGrowth": "3-5 bullet points (each starting with '• '): risks, competitive threats, market headwinds, or challenges limiting this company's growth.",
     "factorsInhibitingGrowthTagline": "3-6 word phrase, e.g. 'Intense competitive pressure'",
-    "futureStrategy": "2-4 sentences: the company's known strategic direction, upcoming product launches, expansion plans, or transformation initiatives.",
+    "futureStrategy": "3-5 bullet points (each starting with '• '): the company's known strategic direction, upcoming product launches, expansion plans, or transformation initiatives.",
     "futureStrategyTagline": "3-6 word phrase, e.g. 'Global expansion push'",
-    "growthOutlook": "2-4 sentences: forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks.",
+    "growthOutlook": "3-5 bullet points (each starting with '• '): forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks.",
     "growthOutlookTagline": "3-6 word phrase, e.g. 'Strong upside potential'"
   }
 }`;
@@ -808,9 +808,9 @@ Return a single JSON object with EXACTLY this structure:
   "priorityTable": [
     {
       "priority": "Priority name (from user-supplied list, or discovered/derived — be consistent)",
-      "companySolution": "2-3 sentences: how ${input.yourCompany}'s solution directly addresses this priority with specifics",
-      "proofPoints": "2-3 concrete proof points: cite metrics, case study outcomes, or industry recognitions",
-      "whyNotCompetitor": "2-3 evidence-backed reasons ${input.competitorName} falls short on this specific priority"
+      "companySolution": "2-3 bullet points (each starting with '• ' separated by newlines): how ${input.yourCompany}'s solution directly addresses this priority with specifics",
+      "proofPoints": "2-3 bullet points (each starting with '• ' separated by newlines): cite metrics, case study outcomes, or industry recognitions",
+      "whyNotCompetitor": "2-3 bullet points (each starting with '• ' separated by newlines): evidence-backed reasons ${input.competitorName} falls short on this specific priority"
     }
   ],
   "industrySolutions": [
@@ -820,7 +820,7 @@ Return a single JSON object with EXACTLY this structure:
       "description": "1-2 sentence description of the solution and its key differentiator"
     }
   ],
-  "techSummary": "3-4 sentences on ${input.yourCompany}'s technology stack, proprietary AI/ML capabilities, cloud architecture, and what fundamentally differentiates it from ${input.competitorName}",
+  "techSummary": "3-5 bullet points (each starting with '• ' separated by newlines): ${input.yourCompany}'s technology stack, proprietary AI/ML capabilities, cloud architecture, and what fundamentally differentiates it from ${input.competitorName}",
   "technologyPartners": [
     { "name": "Technology partner name", "capability": "What this partnership enables for ${input.targetIndustry} clients specifically" }
   ],
@@ -927,7 +927,7 @@ Return a JSON array with 10-15 rows, EXACTLY this shape:
     "keyExecutive": "Full Name, Exact Title, Department (e.g. 'John Smith, Chief Technology Officer, Technology')",
     "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
     "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting 2024', 'Investor Day Keynote, Nov 2024', 'World Economic Forum Panel, Jan 2025', 'Q3 FY2025 Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
-    "excerpt": "A direct quote from the executive if available (in quotation marks), OR a close paraphrase of their key statement. Keep it concise — 1-2 sentences max."
+    "excerpt": "2-3 bullet points (each starting with '• ' separated by newlines): key statements or quotes from the executive about this theme — cite specific data points, programme names, or initiatives mentioned."
   }
 ]
 
