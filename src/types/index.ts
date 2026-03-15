@@ -205,10 +205,15 @@ export interface GeoRow {
 
 export interface KeyHighlightsStructured {
   overallPerformance: string;
+  overallPerformanceTagline?: string;
   factorsDrivingGrowth: string;
+  factorsDrivingGrowthTagline?: string;
   factorsInhibitingGrowth: string;
+  factorsInhibitingGrowthTagline?: string;
   futureStrategy: string;
+  futureStrategyTagline?: string;
   growthOutlook: string;
+  growthOutlookTagline?: string;
 }
 
 export interface FinancialStatementRow {

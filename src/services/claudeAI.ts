@@ -439,10 +439,15 @@ Return a single JSON object with EXACTLY this structure:
   "cfInsight": "3-5 sentences on cash generation quality — operating cash conversion, capex intensity, free cash flow, and capital returns.",
   "keyHighlights": {
     "overallPerformance": "2-4 sentences: overall financial health, revenue scale, profitability status, and market position.",
+    "overallPerformanceTagline": "3-6 word phrase summarising the main point, e.g. 'Strong revenue, margin pressure'",
     "factorsDrivingGrowth": "2-4 sentences: specific factors, products, segments, or markets driving revenue and profit growth.",
+    "factorsDrivingGrowthTagline": "3-6 word phrase, e.g. 'Cloud & AI segment surge'",
     "factorsInhibitingGrowth": "2-4 sentences: headwinds, risks, competitive pressures, or structural challenges limiting growth.",
+    "factorsInhibitingGrowthTagline": "3-6 word phrase, e.g. 'Rising input costs, FX headwinds'",
     "futureStrategy": "2-4 sentences: management's stated strategic priorities, capital allocation plans, M&A activity, or transformation initiatives.",
-    "growthOutlook": "2-4 sentences: forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon."
+    "futureStrategyTagline": "3-6 word phrase, e.g. 'Pivot to platform model'",
+    "growthOutlook": "2-4 sentences: forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon.",
+    "growthOutlookTagline": "3-6 word phrase, e.g. 'Moderate growth ahead'"
   },
   "chartInsights": [
     "Bullet 1: key observation about revenue trajectory over the last 5 years",
@@ -515,10 +520,15 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
     if (parsed.keyHighlights && typeof parsed.keyHighlights === 'object' && !Array.isArray(parsed.keyHighlights)) {
       keyHighlights = {
         overallPerformance: parsed.keyHighlights.overallPerformance || '',
+        overallPerformanceTagline: parsed.keyHighlights.overallPerformanceTagline || undefined,
         factorsDrivingGrowth: parsed.keyHighlights.factorsDrivingGrowth || '',
+        factorsDrivingGrowthTagline: parsed.keyHighlights.factorsDrivingGrowthTagline || undefined,
         factorsInhibitingGrowth: parsed.keyHighlights.factorsInhibitingGrowth || '',
+        factorsInhibitingGrowthTagline: parsed.keyHighlights.factorsInhibitingGrowthTagline || undefined,
         futureStrategy: parsed.keyHighlights.futureStrategy || '',
+        futureStrategyTagline: parsed.keyHighlights.futureStrategyTagline || undefined,
         growthOutlook: parsed.keyHighlights.growthOutlook || '',
+        growthOutlookTagline: parsed.keyHighlights.growthOutlookTagline || undefined,
       };
     } else {
       // Legacy fallback: convert array to structured
@@ -606,10 +616,15 @@ Return a JSON object with EXACTLY this structure:
   ],
   "privateKeyHighlights": {
     "overallPerformance": "2-4 sentences: overall financial health, revenue scale, profitability status, and competitive positioning of this private company.",
+    "overallPerformanceTagline": "3-6 word phrase summarising the main point, e.g. 'Rapid growth, pre-profit stage'",
     "factorsDrivingGrowth": "2-4 sentences: specific factors, products, markets, or strategic moves driving this company's growth.",
+    "factorsDrivingGrowthTagline": "3-6 word phrase, e.g. 'Enterprise adoption accelerating'",
     "factorsInhibitingGrowth": "2-4 sentences: risks, competitive threats, market headwinds, or challenges limiting this company's growth.",
+    "factorsInhibitingGrowthTagline": "3-6 word phrase, e.g. 'Intense competitive pressure'",
     "futureStrategy": "2-4 sentences: the company's known strategic direction, upcoming product launches, expansion plans, or transformation initiatives.",
-    "growthOutlook": "2-4 sentences: forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks."
+    "futureStrategyTagline": "3-6 word phrase, e.g. 'Global expansion push'",
+    "growthOutlook": "2-4 sentences: forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks.",
+    "growthOutlookTagline": "3-6 word phrase, e.g. 'Strong upside potential'"
   }
 }`;
 
@@ -637,10 +652,15 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
     if (parsed.privateKeyHighlights && typeof parsed.privateKeyHighlights === 'object') {
       privateKeyHighlights = {
         overallPerformance: parsed.privateKeyHighlights.overallPerformance || '',
+        overallPerformanceTagline: parsed.privateKeyHighlights.overallPerformanceTagline || undefined,
         factorsDrivingGrowth: parsed.privateKeyHighlights.factorsDrivingGrowth || '',
+        factorsDrivingGrowthTagline: parsed.privateKeyHighlights.factorsDrivingGrowthTagline || undefined,
         factorsInhibitingGrowth: parsed.privateKeyHighlights.factorsInhibitingGrowth || '',
+        factorsInhibitingGrowthTagline: parsed.privateKeyHighlights.factorsInhibitingGrowthTagline || undefined,
         futureStrategy: parsed.privateKeyHighlights.futureStrategy || '',
+        futureStrategyTagline: parsed.privateKeyHighlights.futureStrategyTagline || undefined,
         growthOutlook: parsed.privateKeyHighlights.growthOutlook || '',
+        growthOutlookTagline: parsed.privateKeyHighlights.growthOutlookTagline || undefined,
       };
     }
 
