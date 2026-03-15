@@ -665,9 +665,9 @@ ${hasResearch ? `RESEARCH:\n${research.slice(0, 50000)}` : `[No live research �
 
 Return a JSON object with EXACTLY this structure:
 {
-  "estimatedRevenue": "DATA ONLY — the number/range + source in parentheses. e.g. '$2.4B (FY2023, annual report)' or '$800M–$1.2B (est., Crunchbase)'. NO narrative text, NO explanation — just the figure and its source.",
-  "profitabilityMargin": "DATA ONLY — the margin figure + source. e.g. 'EBITDA ~20-25% (est., industry benchmarks)' or 'Net margin 12% (FY2023, filing)'. NO narrative — just the metric and source.",
-  "estimatedYoyGrowth": "DATA ONLY — the growth figure + source. e.g. '+25-35% YoY (est., press reports)' or '+18% (FY2023, annual report)'. NO narrative — just the number and source.",
+  "estimatedRevenue": "DATA ONLY — just the number or range. e.g. '$2.4B' or '$800M–$1.2B'. NO sources, NO parenthetical qualifiers, NO narrative — just the figure.",
+  "profitabilityMargin": "DATA ONLY — just the margin metric. e.g. 'EBITDA ~20-25%' or 'Net margin 12%'. NO sources, NO qualifiers — just the number.",
+  "estimatedYoyGrowth": "DATA ONLY — just the growth figure. e.g. '+25-35% YoY' or '+18%'. NO sources, NO qualifiers — just the number.",
   "fundingInfo": "e.g. 'Series D | $450M total raised | Last round: $150M in 2023 (Tiger Global, Andreessen Horowitz)'",
   "lastValuation": "e.g. '$4.5B (Series D, 2023)' or 'Not publicly disclosed'",
   "privateInsights": [
