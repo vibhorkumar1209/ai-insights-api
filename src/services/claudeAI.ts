@@ -164,13 +164,15 @@ ${Object.entries(safeResearch)
     .join('\n---\n')}
 
 Return a JSON array with EXACTLY this shape (one object per dimension):
-[{"dimension":"ERP & Core IT Stack","targetCompany":{"value":"...","notes":"..."},"peers":{"${input.selectedCompetitors[0] ?? 'Peer1'}":{"value":"...","notes":"..."}}}]
+[{"dimension":"...","targetCompany":{"value":"...","notes":"..."},"peers":{"${input.selectedCompetitors[0] ?? 'Peer1'}":{"value":"...","notes":"..."}}}]
 
-Dimensions to cover (one array element each, in this exact order):
-1. Stated IT Priority / Focus Area
-2. AI / ML & Automation Investments
-3. ERP & Core IT Stack
-4. Digital Commerce & Customer Platform${input.focusAreas ? `\n5. ${input.focusAreas}` : ''}`;
+DYNAMIC DIMENSIONS:
+- Analyse the research data and identify EXACTLY 5 strategic dimensions that best differentiate and compare these companies.
+- Pick dimensions that are most relevant to ${input.targetCompany}'s industry, competitive landscape, and where the research data reveals meaningful differences.
+- Examples of good dimensions: "AI / ML & Automation", "ERP & Core IT Stack", "Digital Commerce Strategy", "Cloud & Infrastructure", "Supply Chain Technology", "Cybersecurity Posture", "Data & Analytics Platform", "Sustainability & ESG Tech" — but choose what fits the data best.
+${input.focusAreas ? `- IMPORTANT: Ensure at least one dimension directly addresses the focus area: "${input.focusAreas}".` : ''}
+- Each dimension name should be concise (3-6 words).
+- Return EXACTLY 5 dimension objects in the array.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -208,13 +210,14 @@ export async function synthesizeGapAnalysis(
     .filter(([, text]) => isEmptyResearch(text))
     .map(([company]) => company);
 
+  const dimensions = benchmarkingTable.map(d => d.dimension);
+
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing gap analyses for enterprise sales.
 Rules:
 - Draw primarily from the benchmarking table already compiled; use research data as supplementary context.
 - Map SPECIFIC products from the selling org's portfolio to each gap (not generic capability names).
-- Include realistic proof points or analyst benchmarks for each row.
 - Never leave any field empty.
-- FORMATTING: All text fields (peersBestPractice, targetStatus, gapDetail, solutionFit, proofPoint) MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**Real-time analytics** across supply chain • **Automated procurement** reducing cycle time by 40%"
+- FORMATTING: All text fields (peersBestPractice, solutionFit) MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**Real-time analytics** across supply chain • **Automated procurement** reducing cycle time by 40%"
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
 
   const userPrompt = `Create a gap analysis for "${input.targetCompany}" vs peers: ${peerNames}.
@@ -231,18 +234,19 @@ ${Object.entries(safeResearch)
     .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[Use training knowledge]` : r.slice(0, 4000)}`)
     .join('\n---\n')}
 
-Return a JSON array with EXACTLY this shape (one object per capability):
-[{"capability":"...","peersBestPractice":"...","targetStatus":"...","gapLevel":"RED","gapDetail":"...","solutionFit":"...","proofPoint":"..."}]
+Return a JSON array with EXACTLY this shape (one object per dimension):
+[{"dimension":"...","peersBestPractice":"...","gapLevel":"RED","solutionFit":"..."}]
 
-gapLevel must be one of: "RED" (critical gap), "AMBER" (partial gap), "GREEN" (strength/parity).
+Fields:
+- dimension: The benchmarking dimension name (use EXACTLY the same dimension names from Table 1)
+- peersBestPractice: What the leading peers are doing in this dimension — cite specific vendors, systems, percentages
+- gapLevel: "RED" (critical gap), "AMBER" (partial gap), or "GREEN" (strength/parity) — assess ${input.targetCompany}'s position vs peers
+- solutionFit: How ${input.userOrganization}'s specific solutions/products address this gap — be concrete, name specific offerings
 
-Cover these 6 capability areas (one array element each):
-1. ERP / Core Data Infrastructure
-2. Digital Commerce & Customer Experience
-3. AI / ML & Intelligent Automation
-4. Contract & Process Automation
-5. Supply Chain / Operational Execution
-6. Scale & Investment Capacity`;
+DIMENSIONS TO COVER (one array element each, derived from Table 1):
+${dimensions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
+
+Return EXACTLY ${dimensions.length} objects, one per dimension above.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -262,7 +266,7 @@ function parseGapAnalysis(raw: string): GapAnalysisRow[] {
   if (!items || items.length === 0) {
     throw new Error('Claude did not return valid JSON for gap analysis');
   }
-  return (items as GapAnalysisRow[]).filter((row) => row.capability && row.gapLevel);
+  return (items as GapAnalysisRow[]).filter((row) => row.dimension && row.gapLevel);
 }
 
 // ── Themes Synthesis ──────────────────────────────────────────────────────────

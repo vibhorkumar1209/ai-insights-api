@@ -32,13 +32,10 @@ export interface BenchmarkDimension {
 export type GapLevel = 'RED' | 'AMBER' | 'GREEN';
 
 export interface GapAnalysisRow {
-  capability: string;
+  dimension: string;
   peersBestPractice: string;
-  targetStatus: string;
   gapLevel: GapLevel;
-  gapDetail: string;
   solutionFit: string;
-  proofPoint: string;
 }
 
 export interface BenchmarkResult {
