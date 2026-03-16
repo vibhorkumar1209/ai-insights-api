@@ -1247,15 +1247,15 @@ const SECTION_DEFINITIONS: Record<string, { title: string; tableHint: string; ch
   },
   market_size: {
     title: 'Market Size & Opportunity',
-    tableHint: 'Include a table with headers: ["Year", "Market Size", "YoY Growth"] showing 5-6 years of data.',
-    chartHint: 'Include a "bar" chart showing market size by year with data: [{label: "2020", value: <number>}, ...].',
+    tableHint: 'Include a table with headers: ["Year", "Market Size (USD Bn)", "YoY Growth (%)"] showing 5-6 years of data.',
+    chartHint: 'Include a "combo" chart with bars for market size + line for growth. data: [{label: "2020", value: <size>, growth: <percent>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %".',
     subsectionHint: 'No subsections.',
   },
   segmentation: {
     title: 'Market Segmentation',
-    tableHint: 'Include a table with headers: ["Segment", "Revenue", "Market Share", "Growth Rate"] for the major segments.',
-    chartHint: 'Include a "pie" chart showing segment shares with data: [{label: "Segment A", value: <percentage>}, ...].',
-    subsectionHint: 'Include subsections for each major segmentation dimension (e.g., "By Product Type", "By Geography", "By Application").',
+    tableHint: 'Include a table with headers: ["Segment", "Revenue (USD Bn)", "Market Share (%)", "CAGR (%)"] for the major segments.',
+    chartHint: 'Include a "pie" chart showing segment shares with data: [{label: "Segment A", value: <share_percentage>}, ...]. Each subsection chart should be "combo" with bars for segment value + line for CAGR.',
+    subsectionHint: 'Include subsections for each major segmentation dimension (e.g., "By Product Type", "By Geography", "By Application"). Each subsection should have a keyTable and a chartSpec.',
   },
   dynamics_trends: {
     title: 'Market Dynamics & Trends',
@@ -1271,8 +1271,8 @@ const SECTION_DEFINITIONS: Record<string, { title: string; tableHint: string; ch
   },
   competitive: {
     title: 'Competitive Landscape',
-    tableHint: 'Include a table with headers: ["Company", "Market Share", "Revenue", "HQ", "Key Strength"] for top 8-10 players.',
-    chartHint: 'Include a "bar" chart of market share with data: [{label: "Company A", value: <share%>}, ...].',
+    tableHint: 'Include a table with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for top 8-10 players.',
+    chartHint: 'Include a "horizontal_bar" chart of market share with data: [{label: "Company A", value: <share%>}, ...] for top 5-8 players.',
     subsectionHint: 'Include subsections for top 3-5 company profiles.',
   },
   regulatory: {
@@ -1283,8 +1283,8 @@ const SECTION_DEFINITIONS: Record<string, { title: string; tableHint: string; ch
   },
   forecast: {
     title: 'Forecast & Outlook',
-    tableHint: 'Include a table with headers: ["Scenario", "Market Size (2030)", "CAGR", "Key Assumption"] for Bull/Base/Bear.',
-    chartHint: 'Include a "line" chart showing forecast trajectory with data: [{label: "2024", value: <number>}, {label: "2025", value: <number>}, ...].',
+    tableHint: 'Include a table with headers: ["Scenario", "CAGR", "Base Year (USD Bn)", "Forecast Year (USD Bn)", "Key Assumption"] for Bull/Base/Bear.',
+    chartHint: 'Include a "combo" chart with bars for projected sizes + line for CAGR. data: [{label: "Pessimistic", value: <base>, growth: <cagr>}, {label: "Base", value: <base>, growth: <cagr>}, {label: "Optimistic", value: <base>, growth: <cagr>}], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "CAGR %", type: "line", yAxisId: "right"}], yRightLabel: "CAGR %".',
     subsectionHint: 'Include subsections: "Bull Case", "Base Case", "Bear Case".',
   },
 };
@@ -1331,8 +1331,8 @@ Return ONLY a valid JSON array with this shape for each section:
     "title": "Section Title",
     "bodyParagraphs": ["paragraph 1 with • bullet points separated by newlines", "paragraph 2..."],
     "keyTable": { "title": "Table Title", "headers": ["Col1", "Col2", ...], "rows": [["val1", "val2", ...], ...] } OR null if no table,
-    "chartSpec": { "type": "bar|line|pie", "title": "Chart Title", "xLabel": "...", "yLabel": "...", "data": [{"label": "...", "value": <number>}, ...] } OR null if no chart,
-    "subsections": [{ "title": "...", "content": "bullet text with • points", "keyTable": null }] OR null if no subsections,
+    "chartSpec": { "type": "bar|line|pie|combo|horizontal_bar", "title": "Chart Title", "xLabel": "...", "yLabel": "...", "yRightLabel": "..." (for combo), "data": [{"label": "...", "value": <number>, "<seriesKey>": <number>}], "series": [{"key": "...", "name": "...", "type": "bar|line", "yAxisId": "left|right"}] (for combo) } OR null if no chart,
+    "subsections": [{ "title": "...", "content": "bullet text with • points", "keyTable": {...} OR null, "chartSpec": {...} OR null }] OR null if no subsections,
     "citations": ["Source 1, Year", "Source 2, Year", ...]
   }
 ]

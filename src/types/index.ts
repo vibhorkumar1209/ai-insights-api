@@ -376,12 +376,30 @@ export interface ReportTable {
   rows: string[][];
 }
 
+export interface ChartDataPoint {
+  label: string;
+  value: number;
+  category?: string;
+  [key: string]: string | number | undefined;
+}
+
+export interface ChartSeriesConfig {
+  key: string;
+  name: string;
+  type?: 'bar' | 'line';
+  yAxisId?: 'left' | 'right';
+  stack?: string;
+  color?: string;
+}
+
 export interface ReportChartSpec {
-  type: 'bar' | 'line' | 'pie' | 'stacked_bar';
+  type: 'bar' | 'line' | 'pie' | 'stacked_bar' | 'combo' | 'area' | 'horizontal_bar';
   title: string;
   xLabel?: string;
   yLabel?: string;
-  data: { label: string; value: number; category?: string }[];
+  yRightLabel?: string;
+  data: ChartDataPoint[];
+  series?: ChartSeriesConfig[];
 }
 
 export interface ReportSubsection {
