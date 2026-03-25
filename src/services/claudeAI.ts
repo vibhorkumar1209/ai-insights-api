@@ -135,6 +135,38 @@ Only include direct competitors — companies competing for the same customers, 
     }));
 }
 
+// ── Business Description ────────────────────────────────────────────────────
+
+export async function generateBusinessDescription(
+  companyName: string,
+  domain?: string
+): Promise<string> {
+  const domainHint = domain ? ` (website: ${domain})` : '';
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: `Write a concise business description of "${companyName}"${domainHint} in 100-250 words.
+
+Include:
+- What the company does (core products/services)
+- Industry/sector it operates in
+- Target customers/markets
+- Key differentiators or market position
+- Approximate scale (if publicly known: revenue range, employee count, geography)
+
+Write in third person, professional tone. Return ONLY the description text — no headers, no bullet points, no markdown.`,
+    }],
+    system: 'You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable.',
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+  return content.text.trim();
+}
+
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
 
 export async function synthesizeBenchmarkingTable(

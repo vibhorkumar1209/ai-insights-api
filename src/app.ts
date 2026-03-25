@@ -11,6 +11,7 @@ import salesPlayRouter from './routes/salesPlay';
 import keyBuyersRouter from './routes/keyBuyers';
 import industryTrendsRouter from './routes/industryTrends';
 import industryReportRouter from './routes/industryReport';
+import businessDescriptionRouter from './routes/businessDescription';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -35,6 +36,7 @@ app.use('/api/sales-play', salesPlayRouter);
 app.use('/api/key-buyers', keyBuyersRouter);
 app.use('/api/industry-trends', industryTrendsRouter);
 app.use('/api/industry-report', industryReportRouter);
+app.use('/api/business-description', businessDescriptionRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
