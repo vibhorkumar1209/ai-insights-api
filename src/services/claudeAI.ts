@@ -1618,7 +1618,7 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     title: 'Competitive Landscape',
     tableHint: 'Include a table with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for selected players.',
     chartHint: 'Include a "horizontal_bar" chart of market share and a "pie" chart showing share distribution.',
-    subsectionHint: 'Include subsections for each selected company (up to 10): overview, products, competitive advantages, recent developments.',
+    subsectionHint: 'IMPORTANT: The FIRST bodyParagraph MUST be a brief overview of market fragmentation vs concentration (e.g. "The market is moderately fragmented with the top 5 players holding ~45% share..."), nascency/maturity of the market, and a mention of all key players discovered including new entrants, JVs, and M&A activity. Then include subsections ONLY for the user-selected companies (up to 10) with: overview, key products/services, competitive advantages, recent developments. For companies NOT in the selected list, only mention them briefly in the opening paragraph.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
@@ -1729,6 +1729,11 @@ CRITICAL RULES:
   const parsed = safeParseJsonArray(raw);
   if (!parsed || parsed.length === 0) {
     console.error(`[draftV2] Failed to parse batch [${sectionIds.join(', ')}]. First 500 chars:`, raw.slice(0, 500));
+    // If this is a single-section retry, return empty instead of throwing so the report can continue
+    if (sectionIds.length === 1) {
+      console.warn(`[draftV2] Skipping section ${sectionIds[0]} — parse failed even on individual retry.`);
+      return [];
+    }
     throw new Error(`No V2 sections parsed for batch [${sectionIds.join(', ')}]`);
   }
 
