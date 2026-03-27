@@ -1,10 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
-import { IndustryReportInput, IndustryReportResult, ReportSection } from '../types';
+import {
+  IndustryReportInput, IndustryReportResult, IndustryReportScope,
+  ReportSection, ScopeWizardResult,
+} from '../types';
 import { researchIndustryReport } from './parallelAI';
 import {
   extractReportScope,
+  extractScopeWithWizard,
   synthesizeMarketSizing,
   draftSectionsBatch,
+  draftSectionsBatchV2,
   synthesizeExecutiveSummary,
 } from './claudeAI';
 
@@ -127,6 +132,85 @@ export async function runIndustryReport(
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[industryReport] Job ${jobId} failed:`, errorMsg);
+    updateJob(jobId, { status: 'error', error: errorMsg });
+    emit(jobId, 'error', { error: errorMsg });
+  }
+}
+
+// ── Wizard: scope extraction with segments + players ────────────────────────
+
+export async function scopeWithWizard(
+  input: IndustryReportInput
+): Promise<ScopeWizardResult> {
+  return extractScopeWithWizard(input);
+}
+
+// ── V2 Runner: enhanced pipeline with selected segments/players ─────────────
+
+export async function runIndustryReportV2(
+  jobId: string,
+  scope: IndustryReportScope
+): Promise<void> {
+  const step = (msg: string, progress: number, status: IndustryReportResult['status'] = 'researching') => {
+    updateJob(jobId, { currentStep: msg, progress, status });
+    emit(jobId, 'progress', { currentStep: msg, progress, status });
+  };
+
+  try {
+    // ── Step 1: Update scope on job ──
+    updateJob(jobId, { scope });
+    step('Scope configured', 5, 'scoping');
+
+    // ── Step 2: Parallel research (5-50%) ──
+    step('Researching market data...', 10, 'researching');
+    const researchResults = await researchIndustryReport(scope.searchQueries);
+    const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
+    step('Research complete', 50, 'researching');
+
+    // ── Step 3: Market sizing (50-60%) ──
+    step('Analysing market size...', 55, 'sizing');
+    const marketSizing = await synthesizeMarketSizing(scope, allResearch);
+    updateJob(jobId, { marketSizing });
+    step('Market sizing complete', 60, 'sizing');
+
+    // ── Step 4: Section drafting (60-88%) — 4 batches ──
+    step('Drafting report sections (1/4)...', 62, 'drafting');
+    const batch1 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['market_overview', 'segmentation_analysis']);
+    updateJob(jobId, { sections: batch1 });
+    step('Drafting report sections (2/4)...', 70, 'drafting');
+
+    const batch2 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['trends_drivers_barriers', 'tech_trends', 'regulatory_overview']);
+    const sectionsAfter2 = [...batch1, ...batch2];
+    updateJob(jobId, { sections: sectionsAfter2 });
+    step('Drafting report sections (3/4)...', 78, 'drafting');
+
+    const batch3 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['competitive_landscape', 'forecast']);
+    const sectionsAfter3 = [...sectionsAfter2, ...batch3];
+    updateJob(jobId, { sections: sectionsAfter3 });
+    step('Drafting report sections (4/4)...', 84, 'drafting');
+
+    const batch4 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['swot', 'porters_five_forces', 'tei_analysis']);
+    const allSections: ReportSection[] = [...sectionsAfter3, ...batch4];
+    updateJob(jobId, { sections: allSections });
+    step('All sections drafted', 88, 'drafting');
+
+    // ── Step 5: Executive summary (88-100%) ──
+    step('Generating executive summary...', 92, 'summarizing');
+    const executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
+
+    // ── Complete ──
+    updateJob(jobId, {
+      status: 'complete',
+      progress: 100,
+      currentStep: 'Complete',
+      executiveSummary,
+      completedAt: new Date().toISOString(),
+    });
+    emit(jobId, 'result', jobs.get(jobId));
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[industryReport] V2 Job ${jobId} failed:`, errorMsg);
     updateJob(jobId, { status: 'error', error: errorMsg });
     emit(jobId, 'error', { error: errorMsg });
   }

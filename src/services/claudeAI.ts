@@ -13,6 +13,7 @@ import {
   IndustryTrendsInput, IndustryTrendRow,
   IndustryReportInput, IndustryReportScope, MarketSizingData,
   ReportSection, ExecutiveSummary,
+  ScopeWizardResult, MarketSegmentOption, KeyPlayerOption,
 } from '../types';
 
 // Returns true when a research string contains no real data
@@ -1205,6 +1206,104 @@ RULES for searchQueries:
 }
 
 /**
+ * Wizard Step — Extract scope + suggest market segments + suggest key players.
+ * Returns everything needed for the wizard flow.
+ */
+export async function extractScopeWithWizard(
+  input: IndustryReportInput
+): Promise<ScopeWizardResult> {
+  const geographyHint = input.geography ? `\nGeography: "${input.geography}".` : '';
+  const excludeHint = input.excludeRegion ? `\nExclude from research: "${input.excludeRegion}".` : '';
+  const subIndustryHint = input.subIndustry ? `\nSub-industry focus: "${input.subIndustry}".` : '';
+  const focusHint = input.focusAreas?.length ? `\nFocus areas: ${input.focusAreas.join(', ')}.` : '';
+
+  const userPrompt = `
+Analyse this market research request and provide structured scope, market segmentation suggestions, and key player suggestions.
+${geographyHint}${excludeHint}${subIndustryHint}${focusHint}
+
+INDUSTRY/PRODUCT: "${input.industry || input.query}"
+
+Return ONLY valid JSON with this exact shape:
+{
+  "scope": {
+    "industry": "Full industry/market name",
+    "geography": "Geography",
+    "productScope": "1-2 sentence description of what products/services are in scope",
+    "timeHorizon": "YYYY-YYYY",
+    "searchQueries": [
+      "query 1 — market size, TAM, revenue, forecast",
+      "query 2 — trends, dynamics, drivers, challenges",
+      "query 3 — competitive landscape, players, market share",
+      "query 4 — technology, regulatory environment"
+    ]
+  },
+  "suggestedSegments": [
+    { "id": "seg_1", "label": "Organized vs Unorganized", "type": "organized", "selected": true, "subSegments": ["Organized Market", "Unorganized Market"] },
+    { "id": "seg_2", "label": "By Region", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific", "..."] },
+    { "id": "seg_3", "label": "By Product Type", "type": "product_type", "selected": true, "subSegments": ["Type A", "Type B", "..."] },
+    { "id": "seg_4", "label": "By Application", "type": "application", "selected": true, "subSegments": ["App 1", "App 2", "..."] },
+    { "id": "seg_5", "label": "By Distribution Channel", "type": "distribution", "selected": true, "subSegments": ["Channel 1", "Channel 2", "..."] },
+    { "id": "seg_6", "label": "By Channel", "type": "channel", "selected": false, "subSegments": ["Online", "Offline", "..."] },
+    { "id": "seg_7", "label": "By Pricing Segment", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-range", "Economy"] },
+    { "id": "seg_8", "label": "By End-Use Industry", "type": "end_use", "selected": true, "subSegments": ["Industry 1", "Industry 2", "..."] }
+  ],
+  "suggestedPlayers": [
+    { "name": "Company A", "description": "Brief 1-line description", "marketShare": "XX%", "headquarters": "City, Country", "revenue": "$X.XB", "selected": true },
+    ...15-20 players total, top 10 pre-selected
+  ],
+  "tocPreview": [
+    "Executive Summary",
+    "Market Overview",
+    "Market Segmentation Analysis",
+    "Trends, Drivers & Barriers",
+    "Technology Trends",
+    "Competitive Landscape",
+    "Regulatory Overview",
+    "Market Forecast",
+    "SWOT Analysis",
+    "Porter's Five Forces Analysis",
+    "Total Economic Impact Analysis"
+  ]
+}
+
+RULES:
+- Suggest 8-12 market segments covering: organized/unorganized (if applicable), geo, product type, application, distribution, channel, pricing, end-use industry, and any other relevant breakdowns
+- Each segment must have 3-8 realistic sub-segments specific to this industry
+- Suggest 15-20 key players with estimated market shares. Pre-select the top 10.
+- searchQueries: 10-20 words each, optimised for web search with current year data
+- Be specific to the industry — do not use generic placeholder names
+`.trim();
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.1,
+    system: 'You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const raw = content.text;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in wizard scope response');
+
+  const parsed = JSON.parse(jsonMatch[0]) as ScopeWizardResult;
+
+  if (!parsed.scope?.industry || !parsed.suggestedSegments?.length || !parsed.suggestedPlayers?.length) {
+    throw new Error('Incomplete wizard scope extraction');
+  }
+
+  // Carry forward input fields to scope
+  if (input.subIndustry) parsed.scope.subIndustry = input.subIndustry;
+  if (input.focusAreas) parsed.scope.focusAreas = input.focusAreas;
+  if (input.excludeRegion) parsed.scope.excludeRegion = input.excludeRegion;
+
+  return parsed;
+}
+
+/**
  * Step 3 — Market Sizing: TAM, SAM, SOM, CAGR from research data.
  */
 export async function synthesizeMarketSizing(
@@ -1475,4 +1574,150 @@ RULES:
   }
 
   return parsed;
+}
+
+// ── V2 Section Definitions (enhanced report with SWOT, Porter's, TEI) ───────
+
+const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
+  market_overview: {
+    title: 'Market Overview',
+    tableHint: 'Include a table with headers: ["Year", "Market Size (USD Bn)", "YoY Growth (%)", "Volume Estimate", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years). Also include level of fragmentation/concentration and any new entrants, JV, M&A.',
+    chartHint: 'Include a "combo" chart with bars for market size + line for growth. data: [{label: "2020", value: <size>, growth: <percent>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %".',
+    subsectionHint: 'Include subsections: "Historical Market Size", "Market Concentration & Fragmentation", "Key Players & Market Share" (3-5 key players per region for global, top 5 economies for regional), "Recent M&A, JVs & New Entrants".',
+  },
+  segmentation_analysis: {
+    title: 'Market Segmentation Analysis',
+    tableHint: 'For each selected segment, include a table with headers: ["Sub-Segment", "Revenue (USD Bn)", "Market Share (%)", "CAGR (%)"].',
+    chartHint: 'For each segment subsection, build a "stacked_bar" chart showing sub-segments stacked with growth. data: [{label: "2020", "<sub1>": <val>, "<sub2>": <val>, cagrTrend: <total>}, ...], series: [{key: "<sub1>", name: "Sub1", type: "bar", yAxisId: "left", stack: "seg"}, ..., {key: "cagrTrend", name: "Trend", type: "line", yAxisId: "right"}].',
+    subsectionHint: 'Include a subsection for EACH selected market segment. Each subsection MUST have keyTable and stacked_bar chartSpec. Provide reasons for growth/degrowth.',
+  },
+  trends_drivers_barriers: {
+    title: 'Trends, Drivers & Barriers',
+    tableHint: 'Include a table with headers: ["Factor", "Type (Driver/Barrier/Trend)", "Impact (High/Medium/Low)", "Description"] in crisp bullets.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'Include subsections: "Key Market Drivers", "Key Barriers/Restraints", "Emerging Trends".',
+  },
+  tech_trends: {
+    title: 'Technology Trends',
+    tableHint: 'Include a table with headers: ["Technology", "Impact Level", "Adoption Stage", "Key Players", "Description"] for 5-8 technologies.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections.',
+  },
+  competitive_landscape: {
+    title: 'Competitive Landscape',
+    tableHint: 'Include a table with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for selected players.',
+    chartHint: 'Include a "horizontal_bar" chart of market share and a "pie" chart showing share distribution.',
+    subsectionHint: 'Include subsections for each selected company (up to 10): overview, products, competitive advantages, recent developments.',
+  },
+  regulatory_overview: {
+    title: 'Regulatory Overview',
+    tableHint: 'Include a table with headers: ["Regulation/Policy", "Region", "Status", "Impact", "Description"] in crisp bullets.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections.',
+  },
+  forecast: {
+    title: 'Market Forecast',
+    tableHint: 'Include a table with headers: ["Scenario", "CAGR (%)", "2024 Base (USD Bn)", "Forecast Year (USD Bn)", "Key Assumptions"] for Pessimistic, Realistic, Optimistic side by side.',
+    chartHint: 'Include a "combo" chart showing 3 scenarios. data: [{label: "Pessimistic", value: <base>, growth: <cagr>}, {label: "Realistic", ...}, {label: "Optimistic", ...}], series: [{key: "value", name: "Base Year", type: "bar", yAxisId: "left"}, {key: "growth", name: "CAGR %", type: "line", yAxisId: "right"}].',
+    subsectionHint: 'Include subsections: "Pessimistic Scenario", "Realistic (Base) Scenario", "Optimistic Scenario" with assumptions.',
+  },
+  swot: {
+    title: 'SWOT Analysis',
+    tableHint: 'No traditional table. Return a "swotData" field instead.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections. Include "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant.',
+  },
+  porters_five_forces: {
+    title: "Porter's Five Forces Analysis",
+    tableHint: 'No traditional table. Return a "portersData" field instead.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections. Include "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }.',
+  },
+  tei_analysis: {
+    title: 'Total Economic Impact Analysis',
+    tableHint: 'No traditional table. Return a "teiData" field instead.',
+    chartHint: 'No chart needed.',
+    subsectionHint: 'No subsections. Include "teiData": { "benefits": [{"category": "...", "year1": "$X.XM", "year2": "$X.XM", "year3": "$X.XM", "description": "..."}], "costs": [...], "risks": [...], "netPresentValue": "$X.XM", "roi": "XXX%", "paybackPeriod": "X months" }. 3-5 items each.',
+  },
+};
+
+/**
+ * V2 Section Drafting — uses SECTION_DEFINITIONS_V2, supports swotData/portersData/teiData.
+ */
+export async function draftSectionsBatchV2(
+  scope: IndustryReportScope,
+  allResearch: string,
+  marketSizing: MarketSizingData,
+  sectionIds: string[]
+): Promise<ReportSection[]> {
+  const safeResearch = allResearch.length > 45000 ? allResearch.slice(0, 45000) : allResearch;
+
+  const segmentContext = scope.selectedSegments?.length
+    ? `\nSELECTED MARKET SEGMENTS:\n${scope.selectedSegments.map((s) => `- ${s.label} (${s.type}): ${s.subSegments?.join(', ') || 'N/A'}`).join('\n')}`
+    : '';
+
+  const playerContext = scope.selectedPlayers?.length
+    ? `\nSELECTED KEY PLAYERS:\n${scope.selectedPlayers.map((p) => `- ${p.name} (${p.headquarters || 'N/A'}) — ${p.marketShare || 'N/A'} share, ${p.revenue || 'N/A'} revenue`).join('\n')}`
+    : '';
+
+  const sectionInstructions = sectionIds.map((id) => {
+    const def = SECTION_DEFINITIONS_V2[id];
+    if (!def) return '';
+    return `\nSECTION: "${id}"\nTitle: "${def.title}"\n- Write 2-4 substantive paragraphs in bodyParagraphs. Use • bullet points.\n- ${def.tableHint}\n- ${def.chartHint}\n- ${def.subsectionHint}\n`;
+  }).join('\n');
+
+  const userPrompt = `
+You are drafting sections of a comprehensive market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
+${scope.subIndustry ? `Sub-industry focus: ${scope.subIndustry}` : ''}
+${scope.excludeRegion ? `EXCLUDE from analysis: ${scope.excludeRegion}` : ''}
+${segmentContext}${playerContext}
+
+MARKET SIZING CONTEXT:
+- Current: ${marketSizing.currentMarketSize}
+- Projected: ${marketSizing.projectedMarketSize}
+- CAGR: ${marketSizing.cagr}
+
+RESEARCH DATA:
+${safeResearch}
+
+Draft the following ${sectionIds.length} sections:
+${sectionInstructions}
+
+Return ONLY a valid JSON array. Each element:
+{
+  "id": "section_id", "title": "...",
+  "bodyParagraphs": ["..."],
+  "keyTable": {...} OR null,
+  "chartSpec": {...} OR null,
+  "subsections": [...] OR null,
+  "citations": ["..."],
+  "swotData": {...} OR null,
+  "portersData": {...} OR null,
+  "teiData": {...} OR null
+}
+
+CRITICAL RULES:
+- chartSpec.data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
+- For swot/porters/tei sections: include specialized data fields IN ADDITION to bodyParagraphs.
+- Be specific: cite figures, company names, percentages.
+`.trim();
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.2,
+    system: 'You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  const raw = content.text;
+  const parsed = safeParseJsonArray(raw);
+  if (!parsed || parsed.length === 0) {
+    throw new Error(`No V2 sections parsed for batch [${sectionIds.join(', ')}]`);
+  }
+
+  return (parsed as ReportSection[]).filter((s) => s.id && s.title && s.bodyParagraphs?.length > 0);
 }

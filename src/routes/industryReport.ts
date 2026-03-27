@@ -4,6 +4,8 @@ import {
   createIndustryReportJob,
   getIndustryReportJob,
   runIndustryReport,
+  runIndustryReportV2,
+  scopeWithWizard,
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/industryReportService';
@@ -27,6 +29,58 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   const jobId = createIndustryReportJob(input);
   runIndustryReport(jobId, input).catch((err) =>
     console.error(`[industryReport] Unhandled error for job ${jobId}:`, err)
+  );
+
+  res.status(202).json({ jobId });
+});
+
+// POST /api/industry-report/scope — Wizard: extract scope + suggest segments & players
+router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
+  const { industry, subIndustry, focusAreas, geography, excludeRegion, query } = req.body;
+
+  const effectiveQuery = industry || query;
+  if (!effectiveQuery || typeof effectiveQuery !== 'string' || effectiveQuery.trim().length < 3) {
+    res.status(400).json({ error: 'industry or query is required (minimum 3 characters)' });
+    return;
+  }
+
+  try {
+    const result = await scopeWithWizard({
+      query: effectiveQuery.trim(),
+      industry: industry?.trim() || undefined,
+      subIndustry: subIndustry?.trim() || undefined,
+      focusAreas: focusAreas || undefined,
+      geography: geography?.trim() || undefined,
+      excludeRegion: excludeRegion?.trim() || undefined,
+    });
+    res.json(result);
+  } catch (err: unknown) {
+    console.error('[industryReport] Scope wizard error:', err);
+    const message = err instanceof Error ? err.message : 'Scope extraction failed';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/industry-report/generate — Wizard: generate full report with selected segments & players
+router.post('/generate', aiLimiter, (req: Request, res: Response) => {
+  const { scope, selectedSegments, selectedPlayers } = req.body;
+
+  if (!scope || !scope.industry) {
+    res.status(400).json({ error: 'scope with industry is required' });
+    return;
+  }
+
+  // Merge selections into scope
+  const enrichedScope = {
+    ...scope,
+    selectedSegments: selectedSegments || [],
+    selectedPlayers: selectedPlayers || [],
+  };
+
+  const input = { query: scope.industry, geography: scope.geography };
+  const jobId = createIndustryReportJob(input);
+  runIndustryReportV2(jobId, enrichedScope).catch((err) =>
+    console.error(`[industryReport] Unhandled V2 error for job ${jobId}:`, err)
   );
 
   res.status(202).json({ jobId });

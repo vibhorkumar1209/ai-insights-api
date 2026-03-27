@@ -335,7 +335,11 @@ export interface KeyBuyersResult {
 
 export interface IndustryReportInput {
   query: string;                // Free-text, e.g. "EV battery market in North America"
+  industry?: string;            // Primary industry/product
+  subIndustry?: string;         // Sub-industry/sub-product
+  focusAreas?: string[];        // ['market_segment','competition','regulation','trends']
   geography?: string;           // Optional override
+  excludeRegion?: string;       // Region/country to exclude from research
 }
 
 export interface IndustryReportScope {
@@ -344,6 +348,11 @@ export interface IndustryReportScope {
   productScope: string;
   timeHorizon: string;          // e.g. "2024-2030"
   searchQueries: string[];      // 4 optimized Parallel.AI queries
+  subIndustry?: string;
+  focusAreas?: string[];
+  excludeRegion?: string;
+  selectedSegments?: MarketSegmentOption[];
+  selectedPlayers?: KeyPlayerOption[];
 }
 
 export interface MarketSizingData {
@@ -368,6 +377,9 @@ export interface ReportSection {
   chartSpec?: ReportChartSpec;
   subsections?: ReportSubsection[];
   citations?: string[];
+  swotData?: SWOTData;
+  portersData?: PortersForcesData;
+  teiData?: TEIData;
 }
 
 export interface ReportTable {
@@ -414,6 +426,7 @@ export interface ExecutiveSummary {
   kpis: { label: string; value: string; trend?: 'up' | 'down' | 'flat' }[];
   paragraphs: string[];
   scenarios: { name: string; description: string; marketSize: string }[];
+  marketSizeChartSpec?: ReportChartSpec;
 }
 
 export interface IndustryReportResult {
@@ -426,9 +439,82 @@ export interface IndustryReportResult {
   marketSizing?: MarketSizingData;
   sections?: ReportSection[];
   executiveSummary?: ExecutiveSummary;
+  wizardData?: ScopeWizardResult;
   error?: string;
   createdAt: string;
   completedAt?: string;
+}
+
+// ── Industry Report Wizard Types ─────────────────────────────────────────────
+
+export interface MarketSegmentOption {
+  id: string;
+  label: string;
+  type: string;               // 'organized','geo','product_type','application','distribution','channel','pricing','end_use','other'
+  selected: boolean;
+  subSegments?: string[];
+}
+
+export interface KeyPlayerOption {
+  name: string;
+  description: string;
+  marketShare?: string;
+  headquarters?: string;
+  revenue?: string;
+  selected: boolean;
+}
+
+export interface ScopeWizardResult {
+  scope: IndustryReportScope;
+  suggestedSegments: MarketSegmentOption[];
+  suggestedPlayers: KeyPlayerOption[];
+  tocPreview: string[];
+}
+
+// ── SWOT, Porter's, TEI ──────────────────────────────────────────────────────
+
+export interface SWOTItem {
+  title: string;
+  description: string;
+  impact: 'high' | 'medium' | 'low';
+}
+
+export interface SWOTData {
+  strengths: SWOTItem[];
+  weaknesses: SWOTItem[];
+  opportunities: SWOTItem[];
+  threats: SWOTItem[];
+}
+
+export interface ForceAnalysis {
+  rating: 'high' | 'medium' | 'low';
+  factors: string[];
+  description: string;
+}
+
+export interface PortersForcesData {
+  competitiveRivalry: ForceAnalysis;
+  supplierPower: ForceAnalysis;
+  buyerPower: ForceAnalysis;
+  threatOfSubstitution: ForceAnalysis;
+  threatOfNewEntry: ForceAnalysis;
+}
+
+export interface TEIItem {
+  category: string;
+  year1: string;
+  year2: string;
+  year3: string;
+  description: string;
+}
+
+export interface TEIData {
+  benefits: TEIItem[];
+  costs: TEIItem[];
+  risks: TEIItem[];
+  netPresentValue: string;
+  roi: string;
+  paybackPeriod: string;
 }
 
 // ── Financial Analysis ─────────────────────────────────────────────────────────
