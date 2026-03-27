@@ -211,29 +211,33 @@ export async function runIndustryReportV2(
     step('Market sizing complete', 60, 'sizing');
     checkAbort(jobId);
 
-    // ── Step 4: Section drafting (60-88%) — 4 batches ──
-    step('Drafting report sections (1/4)...', 62, 'drafting');
-    const batch1 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['market_overview', 'segmentation_analysis']);
-    updateJob(jobId, { sections: batch1 });
-    checkAbort(jobId);
-    step('Drafting report sections (2/4)...', 70, 'drafting');
+    // ── Step 4: Section drafting (60-88%) — dynamic batches ──
+    const selected = scope.selectedSections?.length
+      ? scope.selectedSections
+      : ['market_overview', 'segmentation_analysis', 'trends_drivers_barriers', 'tech_trends', 'competitive_landscape', 'regulatory_overview', 'forecast', 'swot', 'porters_five_forces', 'tei_analysis'];
 
-    const batch2 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['trends_drivers_barriers', 'tech_trends', 'regulatory_overview']);
-    const sectionsAfter2 = [...batch1, ...batch2];
-    updateJob(jobId, { sections: sectionsAfter2 });
-    checkAbort(jobId);
-    step('Drafting report sections (3/4)...', 78, 'drafting');
+    // Group into batches (only include sections the user selected)
+    const batchDefs = [
+      ['market_overview', 'segmentation_analysis'],
+      ['trends_drivers_barriers', 'tech_trends', 'regulatory_overview'],
+      ['competitive_landscape', 'forecast'],
+      ['swot', 'porters_five_forces', 'tei_analysis'],
+    ];
+    const batches = batchDefs
+      .map((ids) => ids.filter((id) => selected.includes(id)))
+      .filter((b) => b.length > 0);
 
-    const batch3 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['competitive_landscape', 'forecast']);
-    const sectionsAfter3 = [...sectionsAfter2, ...batch3];
-    updateJob(jobId, { sections: sectionsAfter3 });
-    checkAbort(jobId);
-    step('Drafting report sections (4/4)...', 84, 'drafting');
+    const draftStart = 60, draftEnd = 88;
+    const draftStep = batches.length > 0 ? (draftEnd - draftStart) / batches.length : 0;
+    let allSections: ReportSection[] = [];
 
-    const batch4 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['swot', 'porters_five_forces', 'tei_analysis']);
-    const allSections: ReportSection[] = [...sectionsAfter3, ...batch4];
-    updateJob(jobId, { sections: allSections });
-    checkAbort(jobId);
+    for (let i = 0; i < batches.length; i++) {
+      step(`Drafting report sections (${i + 1}/${batches.length})...`, Math.round(draftStart + i * draftStep), 'drafting');
+      const batchResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, batches[i]);
+      allSections = [...allSections, ...batchResult];
+      updateJob(jobId, { sections: allSections });
+      checkAbort(jobId);
+    }
     step('All sections drafted', 88, 'drafting');
 
     // ── Step 5: Executive summary (88-100%) ──

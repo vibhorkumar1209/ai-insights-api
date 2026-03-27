@@ -37,7 +37,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
 
 // POST /api/industry-report/scope — Wizard: extract scope + suggest segments & players
 router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
-  const { industry, subIndustry, focusAreas, geography, excludeRegion, query } = req.body;
+  const { industry, subIndustry, focusAreas, geography, excludeRegion, query, selectedSections } = req.body;
 
   const effectiveQuery = industry || query;
   if (!effectiveQuery || typeof effectiveQuery !== 'string' || effectiveQuery.trim().length < 3) {
@@ -53,6 +53,7 @@ router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
       focusAreas: focusAreas || undefined,
       geography: geography?.trim() || undefined,
       excludeRegion: excludeRegion?.trim() || undefined,
+      selectedSections: selectedSections || undefined,
     });
     res.json(result);
   } catch (err: unknown) {
@@ -74,6 +75,7 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
   // Merge selections into scope
   const enrichedScope = {
     ...scope,
+    selectedSections: scope.selectedSections || undefined,
     selectedSegments: selectedSegments || [],
     selectedPlayers: selectedPlayers || [],
   };

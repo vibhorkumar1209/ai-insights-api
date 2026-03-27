@@ -340,6 +340,7 @@ export interface IndustryReportInput {
   focusAreas?: string[];        // ['market_segment','competition','regulation','trends']
   geography?: string;           // Optional override
   excludeRegion?: string;       // Region/country to exclude from research
+  selectedSections?: string[];  // Section IDs user wants in the report
 }
 
 export interface IndustryReportScope {
@@ -351,6 +352,7 @@ export interface IndustryReportScope {
   subIndustry?: string;
   focusAreas?: string[];
   excludeRegion?: string;
+  selectedSections?: string[];
   selectedSegments?: MarketSegmentOption[];
   selectedPlayers?: KeyPlayerOption[];
 }

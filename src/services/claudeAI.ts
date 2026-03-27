@@ -1217,9 +1217,28 @@ export async function extractScopeWithWizard(
   const subIndustryHint = input.subIndustry ? `\nSub-industry focus: "${input.subIndustry}".` : '';
   const focusHint = input.focusAreas?.length ? `\nFocus areas: ${input.focusAreas.join(', ')}.` : '';
 
+  // Build the TOC section titles based on user-selected sections
+  const sectionTitleMap: Record<string, string> = {
+    market_overview: 'Market Overview',
+    segmentation_analysis: 'Market Segmentation Analysis',
+    trends_drivers_barriers: 'Trends, Drivers & Barriers',
+    tech_trends: 'Technology Trends',
+    competitive_landscape: 'Competitive Landscape',
+    regulatory_overview: 'Regulatory Overview',
+    forecast: 'Market Forecast',
+    swot: 'SWOT Analysis',
+    porters_five_forces: "Porter's Five Forces Analysis",
+    tei_analysis: 'Total Economic Impact Analysis',
+  };
+  const userSelectedSections = input.selectedSections?.length
+    ? input.selectedSections
+    : Object.keys(sectionTitleMap);
+  const tocTitles = ['Executive Summary', ...userSelectedSections.map((id) => sectionTitleMap[id]).filter(Boolean)];
+  const sectionsHint = `\nUser has selected the following report sections (ONLY include these in tocPreview): ${tocTitles.join(', ')}.`;
+
   const userPrompt = `
 Analyse this market research request and provide structured scope, market segmentation suggestions, and key player suggestions.
-${geographyHint}${excludeHint}${subIndustryHint}${focusHint}
+${geographyHint}${excludeHint}${subIndustryHint}${focusHint}${sectionsHint}
 
 INDUSTRY/PRODUCT: "${input.industry || input.query}"
 
@@ -1251,19 +1270,7 @@ Return ONLY valid JSON with this exact shape:
     { "name": "Company A", "description": "Brief 1-line description", "marketShare": "XX%", "headquarters": "City, Country", "revenue": "$X.XB", "selected": true },
     ...15-20 players total, top 10 pre-selected
   ],
-  "tocPreview": [
-    "Executive Summary",
-    "Market Overview",
-    "Market Segmentation Analysis",
-    "Trends, Drivers & Barriers",
-    "Technology Trends",
-    "Competitive Landscape",
-    "Regulatory Overview",
-    "Market Forecast",
-    "SWOT Analysis",
-    "Porter's Five Forces Analysis",
-    "Total Economic Impact Analysis"
-  ]
+  "tocPreview": ${JSON.stringify(tocTitles)}
 }
 
 RULES:
@@ -1299,6 +1306,10 @@ RULES:
   if (input.subIndustry) parsed.scope.subIndustry = input.subIndustry;
   if (input.focusAreas) parsed.scope.focusAreas = input.focusAreas;
   if (input.excludeRegion) parsed.scope.excludeRegion = input.excludeRegion;
+  if (input.selectedSections?.length) parsed.scope.selectedSections = input.selectedSections;
+
+  // Override tocPreview to match exactly what user selected
+  parsed.tocPreview = tocTitles;
 
   return parsed;
 }
