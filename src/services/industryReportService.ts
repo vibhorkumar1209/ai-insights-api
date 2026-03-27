@@ -16,6 +16,29 @@ import {
 // ── In-memory job store ──────────────────────────────────────────────────────
 
 const jobs = new Map<string, IndustryReportResult>();
+const abortedJobs = new Set<string>();
+
+export function abortJob(jobId: string): boolean {
+  const job = jobs.get(jobId);
+  if (!job) return false;
+  if (job.status === 'complete' || job.status === 'error') return false;
+  abortedJobs.add(jobId);
+  updateJob(jobId, { status: 'error', error: 'Report generation was cancelled by user.' });
+  emit(jobId, 'error', { error: 'Report generation was cancelled by user.' });
+  return true;
+}
+
+function isJobAborted(jobId: string): boolean {
+  return abortedJobs.has(jobId);
+}
+
+class JobAbortedError extends Error {
+  constructor() { super('Job aborted'); this.name = 'JobAbortedError'; }
+}
+
+function checkAbort(jobId: string) {
+  if (isJobAborted(jobId)) throw new JobAbortedError();
+}
 
 // TTL cleanup: remove jobs older than 2 hours (every 30 min)
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
@@ -86,38 +109,45 @@ export async function runIndustryReport(
     const scope = await extractReportScope(input);
     updateJob(jobId, { scope });
     step('Scope extracted', 10, 'scoping');
+    checkAbort(jobId);
 
     // ── Step 2: Parallel research (10-50%) ──
     step('Researching market data...', 15, 'researching');
     const researchResults = await researchIndustryReport(scope.searchQueries);
     const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
     step('Research complete', 50, 'researching');
+    checkAbort(jobId);
 
     // ── Step 3: Market sizing (50-60%) ──
     step('Analysing market size...', 55, 'sizing');
     const marketSizing = await synthesizeMarketSizing(scope, allResearch);
     updateJob(jobId, { marketSizing });
     step('Market sizing complete', 60, 'sizing');
+    checkAbort(jobId);
 
     // ── Step 4: Section drafting (60-85%) — 3 batches ──
     step('Drafting report sections (1/3)...', 62, 'drafting');
     const batch1 = await draftSectionsBatch(scope, allResearch, marketSizing, ['introduction', 'market_size', 'segmentation']);
     updateJob(jobId, { sections: batch1 });
+    checkAbort(jobId);
     step('Drafting report sections (2/3)...', 72, 'drafting');
 
     const batch2 = await draftSectionsBatch(scope, allResearch, marketSizing, ['dynamics_trends', 'technology', 'competitive']);
     const sectionsAfter2 = [...batch1, ...batch2];
     updateJob(jobId, { sections: sectionsAfter2 });
+    checkAbort(jobId);
     step('Drafting report sections (3/3)...', 80, 'drafting');
 
     const batch3 = await draftSectionsBatch(scope, allResearch, marketSizing, ['regulatory', 'forecast']);
     const allSections: ReportSection[] = [...sectionsAfter2, ...batch3];
     updateJob(jobId, { sections: allSections });
+    checkAbort(jobId);
     step('All sections drafted', 85, 'drafting');
 
     // ── Step 5: Executive summary (85-100%) ──
     step('Generating executive summary...', 90, 'summarizing');
     const executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
+    checkAbort(jobId);
 
     // ── Complete ──
     updateJob(jobId, {
@@ -130,6 +160,11 @@ export async function runIndustryReport(
     emit(jobId, 'result', jobs.get(jobId));
 
   } catch (err) {
+    if (err instanceof JobAbortedError) {
+      console.log(`[industryReport] Job ${jobId} aborted by user.`);
+      abortedJobs.delete(jobId);
+      return;
+    }
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[industryReport] Job ${jobId} failed:`, errorMsg);
     updateJob(jobId, { status: 'error', error: errorMsg });
@@ -160,43 +195,51 @@ export async function runIndustryReportV2(
     // ── Step 1: Update scope on job ──
     updateJob(jobId, { scope });
     step('Scope configured', 5, 'scoping');
+    checkAbort(jobId);
 
     // ── Step 2: Parallel research (5-50%) ──
     step('Researching market data...', 10, 'researching');
     const researchResults = await researchIndustryReport(scope.searchQueries);
     const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
     step('Research complete', 50, 'researching');
+    checkAbort(jobId);
 
     // ── Step 3: Market sizing (50-60%) ──
     step('Analysing market size...', 55, 'sizing');
     const marketSizing = await synthesizeMarketSizing(scope, allResearch);
     updateJob(jobId, { marketSizing });
     step('Market sizing complete', 60, 'sizing');
+    checkAbort(jobId);
 
     // ── Step 4: Section drafting (60-88%) — 4 batches ──
     step('Drafting report sections (1/4)...', 62, 'drafting');
     const batch1 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['market_overview', 'segmentation_analysis']);
     updateJob(jobId, { sections: batch1 });
+    checkAbort(jobId);
     step('Drafting report sections (2/4)...', 70, 'drafting');
 
     const batch2 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['trends_drivers_barriers', 'tech_trends', 'regulatory_overview']);
     const sectionsAfter2 = [...batch1, ...batch2];
     updateJob(jobId, { sections: sectionsAfter2 });
+    checkAbort(jobId);
     step('Drafting report sections (3/4)...', 78, 'drafting');
 
     const batch3 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['competitive_landscape', 'forecast']);
     const sectionsAfter3 = [...sectionsAfter2, ...batch3];
     updateJob(jobId, { sections: sectionsAfter3 });
+    checkAbort(jobId);
     step('Drafting report sections (4/4)...', 84, 'drafting');
 
     const batch4 = await draftSectionsBatchV2(scope, allResearch, marketSizing, ['swot', 'porters_five_forces', 'tei_analysis']);
     const allSections: ReportSection[] = [...sectionsAfter3, ...batch4];
     updateJob(jobId, { sections: allSections });
+    checkAbort(jobId);
     step('All sections drafted', 88, 'drafting');
 
     // ── Step 5: Executive summary (88-100%) ──
     step('Generating executive summary...', 92, 'summarizing');
     const executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
+    checkAbort(jobId);
 
     // ── Complete ──
     updateJob(jobId, {
@@ -209,6 +252,11 @@ export async function runIndustryReportV2(
     emit(jobId, 'result', jobs.get(jobId));
 
   } catch (err) {
+    if (err instanceof JobAbortedError) {
+      console.log(`[industryReport] V2 Job ${jobId} aborted by user.`);
+      abortedJobs.delete(jobId);
+      return;
+    }
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[industryReport] V2 Job ${jobId} failed:`, errorMsg);
     updateJob(jobId, { status: 'error', error: errorMsg });

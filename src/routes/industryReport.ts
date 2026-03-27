@@ -8,6 +8,7 @@ import {
   scopeWithWizard,
   subscribeToJob,
   unsubscribeFromJob,
+  abortJob,
 } from '../services/industryReportService';
 
 const router = Router();
@@ -84,6 +85,16 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
   );
 
   res.status(202).json({ jobId });
+});
+
+// POST /api/industry-report/:jobId/abort — Cancel a running report
+router.post('/:jobId/abort', (req: Request, res: Response) => {
+  const success = abortJob(req.params.jobId);
+  if (!success) {
+    res.status(404).json({ error: 'Job not found or already finished' });
+    return;
+  }
+  res.json({ message: 'Job aborted' });
 });
 
 // GET /api/industry-report/:jobId — Snapshot
