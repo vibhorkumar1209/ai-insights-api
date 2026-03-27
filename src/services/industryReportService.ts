@@ -217,10 +217,12 @@ export async function runIndustryReportV2(
       : ['market_overview', 'segmentation_analysis', 'trends_drivers_barriers', 'tech_trends', 'competitive_landscape', 'regulatory_overview', 'forecast', 'swot', 'porters_five_forces', 'tei_analysis'];
 
     // Group into batches (only include sections the user selected)
+    // competitive_landscape is its own batch because it generates subsections for up to 10 players
     const batchDefs = [
       ['market_overview', 'segmentation_analysis'],
       ['trends_drivers_barriers', 'tech_trends', 'regulatory_overview'],
-      ['competitive_landscape', 'forecast'],
+      ['competitive_landscape'],
+      ['forecast'],
       ['swot', 'porters_five_forces', 'tei_analysis'],
     ];
     const batches = batchDefs
@@ -233,8 +235,23 @@ export async function runIndustryReportV2(
 
     for (let i = 0; i < batches.length; i++) {
       step(`Drafting report sections (${i + 1}/${batches.length})...`, Math.round(draftStart + i * draftStep), 'drafting');
-      const batchResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, batches[i]);
-      allSections = [...allSections, ...batchResult];
+      try {
+        const batchResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, batches[i]);
+        allSections = [...allSections, ...batchResult];
+      } catch (batchErr) {
+        // Retry each section individually if batch fails
+        console.warn(`[industryReport] Batch [${batches[i].join(', ')}] failed, retrying individually:`, batchErr instanceof Error ? batchErr.message : batchErr);
+        for (const sectionId of batches[i]) {
+          checkAbort(jobId);
+          try {
+            const singleResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, [sectionId]);
+            allSections = [...allSections, ...singleResult];
+          } catch (singleErr) {
+            console.error(`[industryReport] Section ${sectionId} failed even individually:`, singleErr instanceof Error ? singleErr.message : singleErr);
+            // Skip this section rather than fail the whole report
+          }
+        }
+      }
       updateJob(jobId, { sections: allSections });
       checkAbort(jobId);
     }

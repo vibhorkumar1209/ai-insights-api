@@ -23,7 +23,7 @@ function isEmptyResearch(text: string): boolean {
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const MAX_OUTPUT_TOKENS = 8192; // claude-sonnet-4-6 supports up to 8192
+const MAX_OUTPUT_TOKENS = 16384; // claude-sonnet-4-6 supports up to 16384
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
 
 // ── Truncate research to stay within token budget ───────────────────────────
@@ -1725,10 +1725,14 @@ CRITICAL RULES:
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
 
   const raw = content.text;
+  console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}, stop_reason: ${message.stop_reason}`);
   const parsed = safeParseJsonArray(raw);
   if (!parsed || parsed.length === 0) {
+    console.error(`[draftV2] Failed to parse batch [${sectionIds.join(', ')}]. First 500 chars:`, raw.slice(0, 500));
     throw new Error(`No V2 sections parsed for batch [${sectionIds.join(', ')}]`);
   }
 
-  return (parsed as ReportSection[]).filter((s) => s.id && s.title && s.bodyParagraphs?.length > 0);
+  const valid = (parsed as ReportSection[]).filter((s) => s.id && s.title && s.bodyParagraphs?.length > 0);
+  console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
+  return valid;
 }
