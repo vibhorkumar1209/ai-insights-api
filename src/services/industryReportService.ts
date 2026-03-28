@@ -214,15 +214,15 @@ export async function runIndustryReportV2(
     // ── Step 4: Section drafting (60-88%) — dynamic batches ──
     const selected = scope.selectedSections?.length
       ? scope.selectedSections
-      : ['market_overview', 'segmentation_analysis', 'trends_drivers_barriers', 'tech_trends', 'competitive_landscape', 'regulatory_overview', 'forecast', 'swot', 'porters_five_forces', 'tei_analysis'];
+      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'competition_analysis', 'regulatory_overview', 'forecast', 'swot', 'porters_five_forces', 'tei_analysis'];
 
-    // Group into batches (only include sections the user selected)
-    // competitive_landscape is its own batch because it generates subsections for up to 10 players
+    // Group into batches — heavy sections (multi-table, profiles) get their own batch
     const batchDefs = [
-      ['market_overview', 'segmentation_analysis'],
-      ['trends_drivers_barriers', 'tech_trends', 'regulatory_overview'],
-      ['competitive_landscape'],
-      ['forecast'],
+      ['market_overview', 'market_size_by_segment'],
+      ['market_dynamics'],             // 4 tables — heavy
+      ['competition_analysis'],        // 10 profiles + BCG matrix — heavy
+      ['regulatory_overview'],         // 4 tables — heavy
+      ['forecast'],                    // 3 charts + 2 tables
       ['swot', 'porters_five_forces', 'tei_analysis'],
     ];
     const batches = batchDefs

@@ -12,8 +12,9 @@ import {
   KeyBuyersInput, KeyBuyerRow,
   IndustryTrendsInput, IndustryTrendRow,
   IndustryReportInput, IndustryReportScope, MarketSizingData,
-  ReportSection, ExecutiveSummary,
+  ReportSection, ExecutiveSummary, ExecutiveSummaryTickerBox,
   ScopeWizardResult, MarketSegmentOption, KeyPlayerOption,
+  MacroTEIData, BCGMatrixItem, CompetitorProfile,
 } from '../types';
 
 // Returns true when a research string contains no real data
@@ -1538,27 +1539,57 @@ ${sectionSummaries}
 Return ONLY valid JSON with this exact shape:
 {
   "headline": "One compelling sentence summarising the key market finding (include a number)",
+  "tickerBoxes": [
+    { "label": "Current Market Size (n)", "value": "$XX.XB", "secondaryValue": "XX.X million units (if volume data available, else omit)", "trend": "up" },
+    { "label": "CAGR (n to n+5)", "value": "XX.X%", "trend": "up" },
+    { "label": "Projected Market Size (n+5)", "value": "$XX.XB", "secondaryValue": "XX.X million units (if volume data available, else omit)", "trend": "up" },
+    { "label": "Unorganized Market Share", "value": "XX% (if available and relevant, else omit this ticker entirely)" },
+    { "label": "Organized Channel Share (Top 5)", "value": "XX%" }
+  ],
   "kpis": [
-    { "label": "Market Size 2024", "value": "$XX.XB", "trend": "up" },
+    { "label": "Market Size (n)", "value": "$XX.XB", "trend": "up" },
     { "label": "CAGR", "value": "XX.X%", "trend": "up" },
-    { "label": "Projected 2030", "value": "$XX.XB", "trend": "up" },
+    { "label": "Projected (n+5)", "value": "$XX.XB", "trend": "up" },
     { "label": "Leading Segment", "value": "Name (XX%)", "trend": "up|down|flat" },
     { "label": "Top Player", "value": "Company (XX%)", "trend": "flat" }
   ],
+  "marketSizeChartSpec": {
+    "type": "combo",
+    "title": "Market Size: Historical & Projected",
+    "xLabel": "Year", "yLabel": "Market Size (USD Bn)", "yRightLabel": "CAGR %",
+    "data": [{"label": "2020", "value": <size>, "growth": <cagr>}, {"label": "2021", ...}, ... up to projected year],
+    "series": [
+      {"key": "value", "name": "Market Size", "type": "bar", "yAxisId": "left"},
+      {"key": "growth", "name": "CAGR %", "type": "line", "yAxisId": "right"}
+    ]
+  },
+  "concentrationInsights": "2-3 sentences on whether the market is concentrated or fragmented, top-N player concentration ratio, organized vs unorganized split",
+  "keyPlayersInsights": "2-3 sentences listing the top 3-5 players with their approximate market share percentages",
+  "topTrends": [
+    "Trend 1: One sentence summary",
+    "Trend 2: One sentence summary",
+    "Trend 3: One sentence summary"
+  ],
+  "recentMaJvInsights": "2-3 sentences on any recent M&A activity, joint ventures, and notable new entrants in the past 12 months",
   "paragraphs": [
     "• Summary bullet 1 about market size and growth trajectory\n• Summary bullet 2 about key drivers\n• Summary bullet 3 about competitive dynamics",
     "• Summary bullet 4 about technology trends\n• Summary bullet 5 about regulatory impact\n• Summary bullet 6 about outlook"
   ],
   "scenarios": [
-    { "name": "Bull", "description": "2-3 sentences on optimistic scenario", "marketSize": "$XXXB by 2030" },
-    { "name": "Base", "description": "2-3 sentences on expected scenario", "marketSize": "$XXXB by 2030" },
-    { "name": "Bear", "description": "2-3 sentences on pessimistic scenario", "marketSize": "$XXXB by 2030" }
+    { "name": "Bull", "description": "2-3 sentences on optimistic scenario", "marketSize": "$XXXB by n+5" },
+    { "name": "Base", "description": "2-3 sentences on expected scenario", "marketSize": "$XXXB by n+5" },
+    { "name": "Bear", "description": "2-3 sentences on pessimistic scenario", "marketSize": "$XXXB by n+5" }
   ]
 }
 
 RULES:
-- KPIs: include 4-6 metrics, each with a trend direction
-- Paragraphs: use bullet points (• ) separated by newlines within each paragraph
+- n = previous year from the date of request (e.g. if request date is 2026, n = 2025)
+- tickerBoxes: include 3-5 ticker boxes. Include secondaryValue (volume) only if volume data is available with medium-high confidence. Omit "Unorganized Market Share" ticker if not relevant to this market.
+- marketSizeChartSpec: MUST include historical years (n-4 to n) AND projected years (n+1 to n+5). Data values MUST be numbers.
+- concentrationInsights, keyPlayersInsights, topTrends, recentMaJvInsights: All required. Extract from the drafted sections.
+- topTrends: exactly 3-5 items, each a single concise sentence
+- kpis: keep as fallback, 4-6 metrics with trend direction
+- Paragraphs: use bullet points (• ) separated by newlines
 - Scenarios: must be grounded in drivers/restraints from the report sections
 - headline: must include at least one specific number
 - Every figure must be traceable to a section already drafted — do not invent new data
@@ -1566,7 +1597,7 @@ RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 4096,
+    max_tokens: 8192,
     temperature: 0.2,
     system: 'You are a senior market analyst producing an executive summary for C-suite readers. Be concise, impactful, and data-driven. Output ONLY valid JSON.',
     messages: [{ role: 'user', content: userPrompt }],
@@ -1580,7 +1611,7 @@ RULES:
   if (!jsonMatch) throw new Error('No JSON found in executive summary response');
 
   const parsed = JSON.parse(jsonMatch[0]) as ExecutiveSummary;
-  if (!parsed.headline || !parsed.kpis?.length || !parsed.paragraphs?.length) {
+  if (!parsed.headline || (!parsed.tickerBoxes?.length && !parsed.kpis?.length) || !parsed.paragraphs?.length) {
     throw new Error('Incomplete executive summary');
   }
 
@@ -1592,63 +1623,57 @@ RULES:
 const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
   market_overview: {
     title: 'Market Overview',
-    tableHint: 'Include a table with headers: ["Year", "Market Size (USD Bn)", "YoY Growth (%)", "Volume Estimate", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years). Also include level of fragmentation/concentration and any new entrants, JV, M&A.',
-    chartHint: 'Include a "combo" chart with bars for market size + line for growth. data: [{label: "2020", value: <size>, growth: <percent>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %".',
-    subsectionHint: 'Include subsections: "Historical Market Size", "Market Concentration & Fragmentation", "Key Players & Market Share" (3-5 key players per region for global, top 5 economies for regional), "Recent M&A, JVs & New Entrants".',
+    tableHint: 'Include a table (in keyTable) with headers: ["Year", "Market Size (USD Bn)", "YoY Growth (%)", "Volume Estimate", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years).',
+    chartHint: 'Include a "combo" chart (in chartSpec) with bars for market size + line for historical CAGR. data: [{label: "2020", value: <size>, growth: <percent>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %".',
+    subsectionHint: 'Include subsections: "Historical Market Size & CAGR" (with key growth insights marked as High/Medium/Low growth), "Market Concentration & Fragmentation" (insights on whether market is concentrated or fragmented), "Key Players & Market Share" (3-5 key players per region for global, top 5 economies for regional), "Recent M&A, JVs & New Entrants" (specific deals, dates, amounts).',
   },
-  segmentation_analysis: {
-    title: 'Market Segmentation Analysis',
-    tableHint: 'For each selected segment, include a table with headers: ["Sub-Segment", "Revenue (USD Bn)", "Market Share (%)", "CAGR (%)"].',
-    chartHint: 'For each segment subsection, build a "stacked_bar" chart showing sub-segments stacked with growth. data: [{label: "2020", "<sub1>": <val>, "<sub2>": <val>, cagrTrend: <total>}, ...], series: [{key: "<sub1>", name: "Sub1", type: "bar", yAxisId: "left", stack: "seg"}, ..., {key: "cagrTrend", name: "Trend", type: "line", yAxisId: "right"}].',
-    subsectionHint: 'Include a subsection for EACH selected market segment. Each subsection MUST have keyTable and stacked_bar chartSpec. Provide reasons for growth/degrowth.',
+  market_size_by_segment: {
+    title: 'Market Size by Segment',
+    tableHint: 'For EACH selected market segment, include a table in that subsection\'s keyTable with headers: ["Segment-Subtype", "Est. Market Size", "Share of SAM", "Est. CAGR (n to n+5)", "Key Players"]. Use both volume and value figures if available, otherwise value only.',
+    chartHint: 'For each segment subsection, build a "stacked_bar" chart showing sub-segments stacked with CAGR line. data: [{label: "2020", "<sub1>": <val>, "<sub2>": <val>, cagrTrend: <total>}, ...], series: [{key: "<sub1>", name: "Sub1", type: "bar", yAxisId: "left", stack: "seg"}, ..., {key: "cagrTrend", name: "Trend", type: "line", yAxisId: "right"}]. Use volume figures for chart if both volume and value are available with medium to high confidence.',
+    subsectionHint: 'Include a subsection for EACH selected market segment. Each subsection MUST have: 3-5 lines of analysis covering which sub-segments are increasing/decreasing, sub-segment specific trends or regulations. Each subsection MUST have keyTable and stacked_bar chartSpec.',
   },
-  trends_drivers_barriers: {
-    title: 'Trends, Drivers & Barriers',
-    tableHint: 'Include a table with headers: ["Factor", "Type (Driver/Barrier/Trend)", "Impact (High/Medium/Low)", "Description"] in crisp bullets.',
-    chartHint: 'No chart needed.',
-    subsectionHint: 'Include subsections: "Key Market Drivers", "Key Barriers/Restraints", "Emerging Trends".',
+  market_dynamics: {
+    title: 'Market Dynamics',
+    tableHint: 'Return 4 tables in the "tables" array (NOT keyTable). Each table has title and specific headers:\n1. Title: "Business Trends", Headers: ["Name of Trend", "Impact", "Description", "Examples"]\n2. Title: "Tech Trends", Headers: ["Name of Trend", "Impact", "Description", "Examples"]\n3. Title: "Drivers", Headers: ["Name of Driver", "Impact", "Description", "Examples"]\n4. Title: "Barriers", Headers: ["Name of Barrier", "Impact", "Description", "Examples"]\nThe "Examples" column MUST contain real-world references: news articles, company events, specific player actions, regulatory changes. Include 5-8 rows per table. Impact should be High/Medium/Low.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'No subsections needed. The 4 tables carry all the content. Include 1-2 bodyParagraphs summarizing the overall market dynamics landscape.',
   },
-  tech_trends: {
-    title: 'Technology Trends',
-    tableHint: 'Include a table with headers: ["Technology", "Impact Level", "Adoption Stage", "Key Players", "Description"] for 5-8 technologies.',
-    chartHint: 'No chart needed.',
-    subsectionHint: 'No subsections.',
-  },
-  competitive_landscape: {
-    title: 'Competitive Landscape',
-    tableHint: 'Include a table with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for selected players.',
-    chartHint: 'Include a "horizontal_bar" chart of market share and a "pie" chart showing share distribution.',
-    subsectionHint: 'IMPORTANT: The FIRST bodyParagraph MUST be a brief overview of market fragmentation vs concentration (e.g. "The market is moderately fragmented with the top 5 players holding ~45% share..."), nascency/maturity of the market, and a mention of all key players discovered including new entrants, JVs, and M&A activity. Then include subsections ONLY for the user-selected companies (up to 10) with: overview, key products/services, competitive advantages, recent developments. For companies NOT in the selected list, only mention them briefly in the opening paragraph.',
+  competition_analysis: {
+    title: 'Competition Analysis',
+    tableHint: 'Include a summary table (in keyTable) with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for top 10 players.',
+    chartHint: 'Include a "horizontal_bar" chart (in chartSpec) showing market share of top 10 players.',
+    subsectionHint: 'CRITICAL STRUCTURE:\n1. The FIRST bodyParagraph MUST outline: competition overview, market share distribution, market type (oligopoly, duopoly, perfect competition, price-led, innovation-led, etc.), organized vs unorganized market share.\n2. Include "bcgMatrixData" array: [{name: "Company", marketSize: <revenue_number>, growth: <growth_rate_number>, quadrant: "star|cash_cow|question_mark|dog"}, ...] for ALL identified players.\n3. Include "competitorProfiles" array with 10 detailed profiles, each: {name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews (key news from past 3 months), jvMaPartnerships (significant JV/M&A/partnerships), otherInsights}.\nDo NOT include subsections — use competitorProfiles instead.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
-    tableHint: 'Include a table with headers: ["Regulation/Policy", "Region", "Status", "Impact", "Description"] in crisp bullets.',
-    chartHint: 'No chart needed.',
-    subsectionHint: 'No subsections.',
+    tableHint: 'Return 4 tables in the "tables" array (NOT keyTable). Each table has title and specific headers:\n1. Title: "Regulatory Bodies", Headers: ["Regulatory Body", "Geography", "Role", "Key Regulations / Recent Regulation"]\n2. Title: "Regulation Tracker", Headers: ["Regulation / Policy", "Effective Date", "Scope", "Impact Level", "Strategic Implication"]\n3. Title: "Trade & Compliance Barriers", Headers: ["Barrier Type", "Geography", "Specific Requirement", "Compliance Cost / Burden", "Strategic Implication"]\n4. Title: "Pending Regulations", Headers: ["Pending Rule / Policy", "Expected Date", "Regulatory Body", "Scope", "Impact Level", "Strategic Implication"]\nInclude 3-6 rows per table.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'No subsections needed. Include 1-2 bodyParagraphs summarizing the regulatory landscape.',
   },
   forecast: {
     title: 'Market Forecast',
-    tableHint: 'Include a table with headers: ["Scenario", "CAGR (%)", "2024 Base (USD Bn)", "Forecast Year (USD Bn)", "Key Assumptions"] for Pessimistic, Realistic, Optimistic side by side.',
-    chartHint: 'Include a "combo" chart showing 3 scenarios. data: [{label: "Pessimistic", value: <base>, growth: <cagr>}, {label: "Realistic", ...}, {label: "Optimistic", ...}], series: [{key: "value", name: "Base Year", type: "bar", yAxisId: "left"}, {key: "growth", name: "CAGR %", type: "line", yAxisId: "right"}].',
-    subsectionHint: 'Include subsections: "Pessimistic Scenario", "Realistic (Base) Scenario", "Optimistic Scenario" with assumptions.',
+    tableHint: 'Include TWO tables in "tables" array:\n1. Title: "Scenario Assumptions", Headers: ["Assumption", "Pessimistic", "Realistic", "Optimistic"] with 4-6 key assumption rows.\n2. Title: "Forecast Summary", Headers: ["Metric", "Pessimistic", "Realistic", "Optimistic"] with rows: Current Market Size, Projected Market Size, CAGR (%), Probability of Scenario, Key Growth Drivers.',
+    chartHint: 'Include 3 separate "combo" charts in the "charts" array (NOT chartSpec). One chart per scenario:\n1. Title: "Pessimistic Scenario" — bars for projected market size by year + line for CAGR\n2. Title: "Realistic Scenario" — same structure\n3. Title: "Optimistic Scenario" — same structure\nEach chart: data: [{label: "2025", value: <size>, growth: <cagr>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "CAGR %", type: "line", yAxisId: "right"}], yRightLabel: "CAGR %".',
+    subsectionHint: 'Include 1-2 bodyParagraphs introducing the forecast: type of growth (linear/exponential/step), key factors driving growth, which market segments are primary growth engines.',
   },
   swot: {
     title: 'SWOT Analysis',
-    tableHint: 'No traditional table. Return a "swotData" field instead.',
-    chartHint: 'No chart needed.',
-    subsectionHint: 'No subsections. Include "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant.',
+    tableHint: 'No table needed. Set keyTable to null.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant. Focus on being concise — each item should be 1-2 sentences.',
   },
   porters_five_forces: {
     title: "Porter's Five Forces Analysis",
-    tableHint: 'No traditional table. Return a "portersData" field instead.',
-    chartHint: 'No chart needed.',
-    subsectionHint: 'No subsections. Include "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }.',
+    tableHint: 'No table needed. Set keyTable to null.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }. Each force needs rating + 3-5 factors + 1-2 sentence description.',
   },
   tei_analysis: {
-    title: 'Total Economic Impact Analysis',
-    tableHint: 'No traditional table. Return a "teiData" field instead.',
-    chartHint: 'No chart needed.',
-    subsectionHint: 'No subsections. Include "teiData": { "benefits": [{"category": "...", "year1": "$X.XM", "year2": "$X.XM", "year3": "$X.XM", "description": "..."}], "costs": [...], "risks": [...], "netPresentValue": "$X.XM", "roi": "XXX%", "paybackPeriod": "X months" }. 3-5 items each.',
+    title: 'Total Economic Impact',
+    tableHint: 'No traditional keyTable. Set keyTable to null.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "macroTeiData": { "items": [{"trigger": "Macroeconomic event/factor name", "impactLevel": "high|medium|low", "description": "Description of the macroeconomic trigger", "examples": "Real-world examples, recent events, data points", "marketSizeImpact": "+X.X% or -X.X% impact on market size"}, ...] }. Include 6-10 macroeconomic triggers (e.g., interest rate changes, inflation, trade wars, currency fluctuations, GDP growth, commodity prices, regulatory shifts, geopolitical events).',
   },
 };
 
@@ -1674,7 +1699,7 @@ export async function draftSectionsBatchV2(
   const sectionInstructions = sectionIds.map((id) => {
     const def = SECTION_DEFINITIONS_V2[id];
     if (!def) return '';
-    return `\nSECTION: "${id}"\nTitle: "${def.title}"\n- Write 2-4 substantive paragraphs in bodyParagraphs. Use • bullet points.\n- ${def.tableHint}\n- ${def.chartHint}\n- ${def.subsectionHint}\n`;
+    return `\nSECTION: "${id}"\nTitle: "${def.title}"\n- ${def.tableHint}\n- ${def.chartHint}\n- ${def.subsectionHint}\n`;
   }).join('\n');
 
   const userPrompt = `
@@ -1697,20 +1722,28 @@ ${sectionInstructions}
 Return ONLY a valid JSON array. Each element:
 {
   "id": "section_id", "title": "...",
-  "bodyParagraphs": ["..."],
+  "bodyParagraphs": ["..."] (use • bullet points; may be empty [] for swot/porters/tei),
   "keyTable": {...} OR null,
+  "tables": [{title, headers, rows}, ...] OR null (for multi-table sections like market_dynamics, regulatory_overview, forecast),
   "chartSpec": {...} OR null,
+  "charts": [{type, title, xLabel, yLabel, yRightLabel, data, series}, ...] OR null (for multi-chart sections like forecast),
   "subsections": [...] OR null,
   "citations": ["..."],
   "swotData": {...} OR null,
   "portersData": {...} OR null,
-  "teiData": {...} OR null
+  "macroTeiData": {"items": [...]} OR null,
+  "bcgMatrixData": [{name, marketSize, growth, quadrant}, ...] OR null,
+  "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null
 }
 
 CRITICAL RULES:
-- chartSpec.data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
-- For swot/porters/tei sections: include specialized data fields IN ADDITION to bodyParagraphs.
-- Be specific: cite figures, company names, percentages.
+- chartSpec.data and charts[].data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
+- For swot/porters/tei sections: include ONLY the specialized data field. bodyParagraphs can be empty [].
+- For market_dynamics and regulatory_overview: use "tables" array (NOT keyTable) for multiple tables.
+- For forecast: use "tables" array for assumption/summary tables AND "charts" array for 3 scenario charts.
+- For competition_analysis: include bcgMatrixData AND competitorProfiles alongside keyTable and chartSpec.
+- Be specific: cite figures, company names, percentages, dates.
+- bcgMatrixData.marketSize and .growth must be numeric values (not strings).
 `.trim();
 
   const message = await client.messages.create({
@@ -1737,7 +1770,13 @@ CRITICAL RULES:
     throw new Error(`No V2 sections parsed for batch [${sectionIds.join(', ')}]`);
   }
 
-  const valid = (parsed as ReportSection[]).filter((s) => s.id && s.title && s.bodyParagraphs?.length > 0);
+  // Sections with specialized data (swot/porters/tei) may have empty bodyParagraphs
+  const valid = (parsed as ReportSection[]).filter((s) => {
+    if (!s.id || !s.title) return false;
+    const hasBody = s.bodyParagraphs?.length > 0;
+    const hasSpecialData = s.swotData || s.portersData || s.macroTeiData;
+    return hasBody || hasSpecialData;
+  });
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
   return valid;
 }

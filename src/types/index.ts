@@ -372,16 +372,21 @@ export interface MarketDataPoint {
 }
 
 export interface ReportSection {
-  id: string;                   // e.g. "market_size"
+  id: string;                   // e.g. "market_overview"
   title: string;
   bodyParagraphs: string[];     // BulletText-compatible (bullet delimited)
   keyTable?: ReportTable;
+  tables?: ReportTable[];       // Multi-table support (e.g. regulatory: 4 tables)
   chartSpec?: ReportChartSpec;
+  charts?: ReportChartSpec[];   // Multi-chart support (e.g. forecast: 3 charts)
   subsections?: ReportSubsection[];
   citations?: string[];
   swotData?: SWOTData;
   portersData?: PortersForcesData;
   teiData?: TEIData;
+  macroTeiData?: MacroTEIData;
+  bcgMatrixData?: BCGMatrixItem[];
+  competitorProfiles?: CompetitorProfile[];
 }
 
 export interface ReportTable {
@@ -407,7 +412,7 @@ export interface ChartSeriesConfig {
 }
 
 export interface ReportChartSpec {
-  type: 'bar' | 'line' | 'pie' | 'stacked_bar' | 'combo' | 'area' | 'horizontal_bar';
+  type: 'bar' | 'line' | 'pie' | 'stacked_bar' | 'combo' | 'area' | 'horizontal_bar' | 'scatter';
   title: string;
   xLabel?: string;
   yLabel?: string;
@@ -420,15 +425,29 @@ export interface ReportSubsection {
   title: string;
   content: string;              // BulletText-compatible
   keyTable?: ReportTable;
+  tables?: ReportTable[];
   chartSpec?: ReportChartSpec;
+  charts?: ReportChartSpec[];
+}
+
+export interface ExecutiveSummaryTickerBox {
+  label: string;
+  value: string;
+  secondaryValue?: string;      // volume when both volume+value available
+  trend?: 'up' | 'down' | 'flat';
 }
 
 export interface ExecutiveSummary {
   headline: string;
+  tickerBoxes?: ExecutiveSummaryTickerBox[];
   kpis: { label: string; value: string; trend?: 'up' | 'down' | 'flat' }[];
   paragraphs: string[];
   scenarios: { name: string; description: string; marketSize: string }[];
   marketSizeChartSpec?: ReportChartSpec;
+  concentrationInsights?: string;
+  keyPlayersInsights?: string;
+  topTrends?: string[];
+  recentMaJvInsights?: string;
 }
 
 export interface IndustryReportResult {
@@ -517,6 +536,45 @@ export interface TEIData {
   netPresentValue: string;
   roi: string;
   paybackPeriod: string;
+}
+
+// ── Macroeconomic Impact (replaces TEI for industry reports) ─────────────────
+
+export interface MacroTEIItem {
+  trigger: string;
+  impactLevel: 'high' | 'medium' | 'low';
+  description: string;
+  examples: string;
+  marketSizeImpact: string;     // e.g. "+2.5%" or "-1.8%"
+}
+
+export interface MacroTEIData {
+  items: MacroTEIItem[];
+}
+
+// ── BCG Matrix ───────────────────────────────────────────────────────────────
+
+export interface BCGMatrixItem {
+  name: string;
+  marketSize: number;           // X-axis (relative market share or revenue)
+  growth: number;               // Y-axis (growth rate %)
+  quadrant: 'star' | 'cash_cow' | 'question_mark' | 'dog';
+}
+
+// ── Enhanced Competitor Profiles ─────────────────────────────────────────────
+
+export interface CompetitorProfile {
+  name: string;
+  parentCompany?: string;
+  hqLocation: string;
+  keyProducts: string;
+  overallRevenue?: string;
+  categoryRevenue?: string;
+  marketShare?: string;
+  manufacturingLocation?: string;
+  recentNews?: string;
+  jvMaPartnerships?: string;
+  otherInsights?: string;
 }
 
 // ── Financial Analysis ─────────────────────────────────────────────────────────
