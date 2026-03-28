@@ -361,6 +361,8 @@ export interface MarketSizingData {
   currentMarketSize: string;    // e.g. "$65.8B (2024)"
   projectedMarketSize: string;  // e.g. "$120B (2030)"
   cagr: string;                 // e.g. "18.5% (2024-2030)"
+  currentVolume?: string;       // e.g. "12.5 million units (2024)" — if volume data available
+  projectedVolume?: string;     // e.g. "22.3 million units (2030)"
   methodology: string;          // Top-down/bottom-up summary
   dataPoints: MarketDataPoint[];
 }

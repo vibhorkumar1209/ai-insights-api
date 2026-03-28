@@ -1340,6 +1340,8 @@ Return ONLY valid JSON with this exact shape:
   "currentMarketSize": "$XX.XB (2024)" or range if uncertain,
   "projectedMarketSize": "$XX.XB (2030)" or range,
   "cagr": "X.X% (2024-2030)",
+  "currentVolume": "XX.X million units (2024) — include ONLY if volume/unit data is available with medium-high confidence from the research. For physical products, vehicles, devices, etc. this is usually available. Omit this field entirely if not available.",
+  "projectedVolume": "XX.X million units (2030) — same rule as currentVolume",
   "methodology": "2-3 sentence summary of how estimates were derived using both methods",
   "dataPoints": [
     { "metric": "descriptive metric name", "value": "$XX.XB or XX%", "source": "Source Name, Year" },
@@ -1352,6 +1354,7 @@ RULES:
 - If data conflicts, explain in methodology and use the more authoritative source
 - Include at least 5 data points from the research
 - Be specific: cite exact figures, not vague ranges
+- VOLUME DATA: For industries where units/volume makes sense (vehicles, devices, tonnes, liters, units sold, etc.), you MUST include currentVolume and projectedVolume. Use the most appropriate unit (million units, thousand tonnes, etc.). Only omit if the industry is purely a service/intangible market where volume doesn't apply.
 `.trim();
 
   const message = await client.messages.create({
@@ -1528,9 +1531,11 @@ export async function synthesizeExecutiveSummary(
 Produce an executive summary for a market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
 
 MARKET SIZING:
-- Current: ${marketSizing.currentMarketSize}
-- Projected: ${marketSizing.projectedMarketSize}
+- Current (Value): ${marketSizing.currentMarketSize}
+- Projected (Value): ${marketSizing.projectedMarketSize}
 - CAGR: ${marketSizing.cagr}
+- Current (Volume): ${marketSizing.currentVolume || 'Not available'}
+- Projected (Volume): ${marketSizing.projectedVolume || 'Not available'}
 - Methodology: ${marketSizing.methodology}
 
 SECTION SUMMARIES:
@@ -1584,7 +1589,7 @@ Return ONLY valid JSON with this exact shape:
 
 RULES:
 - n = previous year from the date of request (e.g. if request date is 2026, n = 2025)
-- tickerBoxes: include 3-5 ticker boxes. Include secondaryValue (volume) only if volume data is available with medium-high confidence. Omit "Unorganized Market Share" ticker if not relevant to this market.
+- tickerBoxes: include 3-5 ticker boxes. CRITICAL: If volume data is provided in MARKET SIZING above (Current Volume / Projected Volume), you MUST include the volume as secondaryValue in the Current and Projected ticker boxes. Format: "XX.X million units" or equivalent. Omit "Unorganized Market Share" ticker if not relevant to this market.
 - marketSizeChartSpec: MUST include historical years (n-4 to n) AND projected years (n+1 to n+5). Data values MUST be numbers.
 - concentrationInsights, keyPlayersInsights, topTrends, recentMaJvInsights: All required. Extract from the drafted sections.
 - topTrends: exactly 3-5 items, each a single concise sentence
@@ -1623,15 +1628,15 @@ RULES:
 const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
   market_overview: {
     title: 'Market Overview',
-    tableHint: 'Include a table (in keyTable) with headers: ["Year", "Market Size (USD Bn)", "YoY Growth (%)", "Volume Estimate", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years).',
-    chartHint: 'Include a "combo" chart (in chartSpec) with bars for market size + line for historical CAGR. data: [{label: "2020", value: <size>, growth: <percent>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %".',
-    subsectionHint: 'Include subsections: "Historical Market Size & CAGR" (with key growth insights marked as High/Medium/Low growth), "Market Concentration & Fragmentation" (insights on whether market is concentrated or fragmented), "Key Players & Market Share" (3-5 key players per region for global, top 5 economies for regional), "Recent M&A, JVs & New Entrants" (specific deals, dates, amounts).',
+    tableHint: 'Include a table (in keyTable) with headers: ["Year", "Market Size (Value)", "Market Size (Volume)", "YoY Growth (%)", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years). Include both value (USD) and volume (units/tonnes/etc.) columns. If volume data not available, leave volume cells as "N/A".',
+    chartHint: 'Include a "combo" chart (in chartSpec) showing current market size and historical CAGR. data: [{label: "2020", value: <size_in_billions>, growth: <yoy_percent>}, {label: "2021", ...}, ...for 5 years], series: [{key: "value", name: "Market Size (USD Bn)", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %". ALL data values MUST be numbers.',
+    subsectionHint: 'Structure the section as follows:\n1. bodyParagraphs[0]: Current market size (value + volume if available), historical CAGR, and overall growth characterization (tag as HIGH GROWTH / MEDIUM GROWTH / LOW GROWTH).\n2. Subsection "Growth Insights": Key growth insights — explicitly classify growth as High, Medium, or Low with explanation of drivers.\n3. Subsection "Market Concentration & Fragmentation": Whether market is concentrated (top 3-5 players dominate) or fragmented (many small players), organized vs unorganized market split, HHI-equivalent assessment.\n4. Subsection "Major Players & Key Insights": Top 3-5 players with market share %, key differentiators, plus any other key market insights.',
   },
   market_size_by_segment: {
     title: 'Market Size by Segment',
-    tableHint: 'For EACH selected market segment, include a table in that subsection\'s keyTable with headers: ["Segment-Subtype", "Est. Market Size", "Share of SAM", "Est. CAGR (n to n+5)", "Key Players"]. Use both volume and value figures if available, otherwise value only.',
-    chartHint: 'For each segment subsection, build a "stacked_bar" chart showing sub-segments stacked with CAGR line. data: [{label: "2020", "<sub1>": <val>, "<sub2>": <val>, cagrTrend: <total>}, ...], series: [{key: "<sub1>", name: "Sub1", type: "bar", yAxisId: "left", stack: "seg"}, ..., {key: "cagrTrend", name: "Trend", type: "line", yAxisId: "right"}]. Use volume figures for chart if both volume and value are available with medium to high confidence.',
-    subsectionHint: 'Include a subsection for EACH selected market segment. Each subsection MUST have: 3-5 lines of analysis covering which sub-segments are increasing/decreasing, sub-segment specific trends or regulations. Each subsection MUST have keyTable and stacked_bar chartSpec.',
+    tableHint: 'For EACH segment (from SELECTED MARKET SEGMENTS if provided, otherwise identify 4-6 major segments from the research data — e.g. by product type, by geography, by application, by price tier, by channel), include a table in that subsection\'s keyTable with headers: ["Segment-Subtype", "Est. Market Size", "Share of SAM", "Est. CAGR (n to n+5)", "Key Players"]. Use both volume and value figures if available, otherwise value only. Market Size column should show "$X.XB" format.',
+    chartHint: 'For each segment subsection, build a "stacked_bar" chart showing sub-segments stacked with CAGR line. data: [{label: "2020", "<sub1>": <val>, "<sub2>": <val>, cagrTrend: <total_cagr>}, ...], series: [{key: "<sub1>", name: "Sub-segment 1", type: "bar", yAxisId: "left", stack: "seg"}, ..., {key: "cagrTrend", name: "CAGR Trend", type: "line", yAxisId: "right"}]. Use volume figures for chart if both volume and value estimates are available with medium/high confidence.',
+    subsectionHint: 'CRITICAL: This section MUST have subsections. If SELECTED MARKET SEGMENTS are provided, use those. If NOT, identify and analyze 4-6 major market segments from the research data (e.g. "By Product Type", "By Geography", "By Application", "By Price Tier", "By Distribution Channel").\nEach subsection MUST have:\n1. content: 3-5 lines of analysis covering which sub-segments are increasing/decreasing, sub-segment specific market trends, regulatory impacts\n2. keyTable: table with the segment-subtype breakdown as described above\n3. chartSpec: stacked_bar chart as described above\nDo NOT skip this section. Even without user-selected segments, you MUST identify segments from research.',
   },
   market_dynamics: {
     title: 'Market Dynamics',
@@ -1709,9 +1714,11 @@ ${scope.excludeRegion ? `EXCLUDE from analysis: ${scope.excludeRegion}` : ''}
 ${segmentContext}${playerContext}
 
 MARKET SIZING CONTEXT:
-- Current: ${marketSizing.currentMarketSize}
-- Projected: ${marketSizing.projectedMarketSize}
+- Current (Value): ${marketSizing.currentMarketSize}
+- Projected (Value): ${marketSizing.projectedMarketSize}
 - CAGR: ${marketSizing.cagr}
+- Current (Volume): ${marketSizing.currentVolume || 'Not available — estimate if the industry involves physical goods/units'}
+- Projected (Volume): ${marketSizing.projectedVolume || 'Not available — estimate if the industry involves physical goods/units'}
 
 RESEARCH DATA:
 ${safeResearch}
