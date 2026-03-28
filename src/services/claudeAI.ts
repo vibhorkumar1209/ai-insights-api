@@ -1630,7 +1630,7 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     title: 'Market Overview',
     tableHint: 'Include a table (in keyTable) with headers: ["Year", "Market Size (Value)", "Market Size (Volume)", "YoY Growth (%)", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years). Include both value (USD) and volume (units/tonnes/etc.) columns. If volume data not available, leave volume cells as "N/A".',
     chartHint: 'Include a "combo" chart (in chartSpec) showing current market size and historical CAGR. data: [{label: "2020", value: <size_in_billions>, growth: <yoy_percent>}, {label: "2021", ...}, ...for 5 years], series: [{key: "value", name: "Market Size (USD Bn)", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %". ALL data values MUST be numbers.',
-    subsectionHint: 'Structure the section as follows:\n1. bodyParagraphs[0]: Current market size (value + volume if available), historical CAGR, and overall growth characterization (tag as HIGH GROWTH / MEDIUM GROWTH / LOW GROWTH).\n2. Subsection "Growth Insights": Key growth insights — explicitly classify growth as High, Medium, or Low with explanation of drivers.\n3. Subsection "Market Concentration & Fragmentation": Whether market is concentrated (top 3-5 players dominate) or fragmented (many small players), organized vs unorganized market split, HHI-equivalent assessment.\n4. Subsection "Major Players & Key Insights": Top 3-5 players with market share %, key differentiators, plus any other key market insights.',
+    subsectionHint: 'Structure the section as follows:\n1. bodyParagraphs[0]: Current market size (value + volume if available), historical CAGR, and overall growth characterization (tag as HIGH GROWTH / MEDIUM GROWTH / LOW GROWTH).\n2. Subsection "Growth Insights": MUST have "content" field (3-5 bullet points). Explicitly classify growth as High, Medium, or Low. Explain key growth drivers, inflection points, and growth trajectory.\n3. Subsection "Market Concentration & Fragmentation": MUST have "content" field (3-5 bullet points). Whether market is concentrated (top 3-5 players dominate) or fragmented (many small players), organized vs unorganized market split (with % estimates), HHI-equivalent assessment.\n4. Subsection "Major Players & Key Insights": MUST have "content" field (3-5 bullet points). Top 3-5 players with market share %, key differentiators, recent strategic moves, plus any other key market insights.\nCRITICAL: Every subsection MUST have a non-empty "content" string with substantive analysis (at least 3 bullet points using • character). Do NOT leave content empty.',
   },
   market_size_by_segment: {
     title: 'Market Size by Segment',
@@ -1734,7 +1734,7 @@ Return ONLY a valid JSON array. Each element:
   "tables": [{title, headers, rows}, ...] OR null (for multi-table sections like market_dynamics, regulatory_overview, forecast),
   "chartSpec": {...} OR null,
   "charts": [{type, title, xLabel, yLabel, yRightLabel, data, series}, ...] OR null (for multi-chart sections like forecast),
-  "subsections": [...] OR null,
+  "subsections": [{"title": "...", "content": "paragraph text with • bullets", "keyTable": {...} OR null, "tables": [...] OR null, "chartSpec": {...} OR null, "charts": [...] OR null}] OR null,
   "citations": ["..."],
   "swotData": {...} OR null,
   "portersData": {...} OR null,
@@ -1751,6 +1751,7 @@ CRITICAL RULES:
 - For competition_analysis: include bcgMatrixData AND competitorProfiles alongside keyTable and chartSpec.
 - Be specific: cite figures, company names, percentages, dates.
 - bcgMatrixData.marketSize and .growth must be numeric values (not strings).
+- EVERY subsection MUST have a non-empty "content" string with substantive bullet-point analysis. Never leave subsection content as "" or null.
 `.trim();
 
   const message = await client.messages.create({
