@@ -80,6 +80,9 @@ function safeParseJsonArray(raw: string): unknown[] | null {
   return objects.length > 0 ? objects : null;
 }
 
+// ── Shared recency directive (injected into all system prompts) ─────────────
+const RECENCY_DIRECTIVE = 'RECENCY RULE: Prioritize information from the last 3 years, with highest weight given to the most recent data. If conflicting data exists across time periods, always use the latest available information. Clearly note when data is older than 3 years.';
+
 // ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
 
 import { Competitor } from '../types';
@@ -112,7 +115,7 @@ Return ONLY a JSON array. No markdown fences, no explanation.
 
 Only include direct competitors — companies competing for the same customers, contracts, or market segments as ${targetCompany}. Prioritize companies with publicly available technology/digital strategy information. IMPORTANT: Only include companies that are currently active and operating. Do NOT include companies that have shut down, filed for bankruptcy, been liquidated, or permanently exited the market.`,
     }],
-    system: 'You are a senior B2B sales intelligence analyst. Return ONLY valid JSON arrays. No commentary.',
+    system: `You are a senior B2B sales intelligence analyst. Return ONLY valid JSON arrays. No commentary. ${RECENCY_DIRECTIVE}`,
   });
 
   const content = message.content[0];
@@ -161,7 +164,7 @@ Include:
 
 Write in third person, professional tone. Return ONLY the description text — no headers, no bullet points, no markdown.`,
     }],
-    system: 'You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable.',
+    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable. ${RECENCY_DIRECTIVE}`,
   });
 
   const content = message.content[0];
@@ -187,7 +190,8 @@ export async function synthesizeBenchmarkingTable(
 - Where research data is missing or sparse for a company, draw on your training knowledge — label it "(est.)" or "(based on public sources)".
 - Never leave a cell empty — always provide a meaningful best-known answer.
 - FORMATTING: Each value field MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**SAP S/4HANA** deployed across 12 regions • **AI-powered** demand forecasting in pilot • Cloud migration **60% complete**"
-- Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.`;
+- Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
 
@@ -254,7 +258,8 @@ Rules:
 - Map SPECIFIC products from the selling org's portfolio to each gap (not generic capability names).
 - Never leave any field empty.
 - FORMATTING: All text fields (peersBestPractice, solutionFit) MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**Real-time analytics** across supply chain • **Automated procurement** reducing cycle time by 40%"
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Create a gap analysis for "${input.targetCompany}" vs peers: ${peerNames}.
 
@@ -333,7 +338,8 @@ export async function synthesizeThemes(
 - Draw on the provided research first; supplement with your training knowledge where research is sparse — label estimates "(est.)".
 - Each theme must be concrete and evidence-based, not generic.
 - Never produce empty fields — always provide a meaningful answer.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Analyse the following research on "${input.companyName}" and identify their top ${config.label}.
 
@@ -387,7 +393,8 @@ Rules:
 - Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
 - Be specific: cite programmes, metrics, named initiatives, competitor names, and market data.
 - Every cell must have substantive content — no vague generalities, no empty fields.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Analyse the following research on "${input.companyName}" and produce a Challenges & Growth analysis.
 
@@ -487,7 +494,8 @@ Rules:
 - Key highlights must be brief bullets suitable for an executive summary.
 - For segment/geo data: extract from research if provided; otherwise use your training knowledge to populate these arrays for well-known companies — never leave both empty if you know the answer.
 - When extracting financial statement rows, include 8-15 key line items per statement.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON.
+- ${RECENCY_DIRECTIVE}`;
 
   // Compact the Yahoo data for context
   const revenueStr = (yahooData.revenueHistory || [])
@@ -693,7 +701,8 @@ Rules:
 - Use provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
 - Be specific with ranges: "$800M–$1.2B" not "high revenue".
 - Insights should be actionable intelligence, not generic descriptions.
-- Output ONLY valid JSON. No markdown fences.`;
+- Output ONLY valid JSON. No markdown fences.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Produce a financial profile for private company "${input.companyName}".
 
@@ -824,7 +833,8 @@ Rules:
 - Use [Client A, Fortune 500 ${input.targetIndustry} Company] as placeholder when real client names are unavailable.
 - Base competitor weaknesses ONLY on publicly known analyst reports, G2/Gartner reviews, or documented product gaps — never fabricate.
 - When strategic priorities or solution areas were not user-supplied, derive them from research and use them consistently throughout.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Generate a comprehensive Sales Play document for the following engagement:
 
@@ -947,7 +957,8 @@ Rules:
 - Focus on C-suite and SVP/VP level executives — the decision-makers.
 - Every row must have substantive, specific content — no vague generalities, no empty fields.
 - Prefer direct quotes in the excerpt field when available — use quotation marks.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
+- ${RECENCY_DIRECTIVE}`;
 
   const userPrompt = `Analyse the following research on "${input.companyName}" and produce a Key Prospective Buyers table.
 
@@ -1025,7 +1036,8 @@ Rules:
 - Every cell must have substantive content — no vague generalities, no empty fields.
 - Description and Examples fields MUST use bullet points. Each bullet starts with "• ".
 ${examplesRule}
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON object.`;
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON object.
+- ${RECENCY_DIRECTIVE}`;
 
   const exampleTemplateBiz = isGlobal
     ? `"examples": "• Americas: Specific example with company/country name\\n• EMEA: Specific example with company/country name\\n• APAC: Specific example with company/country name"`
@@ -1185,7 +1197,7 @@ RULES for searchQueries:
     model: SYNTHESIS_MODEL,
     max_tokens: 2048,
     temperature: 0,
-    system: 'You are a senior market research analyst. Extract structured parameters from research requests. Output ONLY valid JSON.',
+    system: `You are a senior market research analyst. Extract structured parameters from research requests. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1287,7 +1299,7 @@ RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     temperature: 0.1,
-    system: 'You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON.',
+    system: `You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1362,7 +1374,7 @@ RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: 4096,
     temperature: 0,
-    system: 'You are a quantitative market sizing analyst. Produce data-grounded market estimates. Output ONLY valid JSON.',
+    system: `You are a quantitative market sizing analyst. Produce data-grounded market estimates. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1497,7 +1509,7 @@ CRITICAL RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     temperature: 0.2,
-    system: 'You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON.',
+    system: `You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1605,7 +1617,7 @@ RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: 8192,
     temperature: 0.2,
-    system: 'You are a senior market analyst producing an executive summary for C-suite readers. Be concise, impactful, and data-driven. Output ONLY valid JSON.',
+    system: `You are a senior market analyst producing an executive summary for C-suite readers. Be concise, impactful, and data-driven. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1760,7 +1772,7 @@ CRITICAL RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     temperature: 0.2,
-    system: 'You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON.',
+    system: `You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
