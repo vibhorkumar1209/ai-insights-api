@@ -65,7 +65,7 @@ router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
 
 // POST /api/industry-report/generate — Wizard: generate full report with selected segments & players
 router.post('/generate', aiLimiter, (req: Request, res: Response) => {
-  const { scope, selectedSegments, selectedPlayers } = req.body;
+  const { scope, selectedSegments, selectedPlayers, allPlayers } = req.body;
 
   if (!scope || !scope.industry) {
     res.status(400).json({ error: 'scope with industry is required' });
@@ -78,6 +78,7 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
     selectedSections: scope.selectedSections || undefined,
     selectedSegments: selectedSegments || [],
     selectedPlayers: selectedPlayers || [],
+    allPlayers: allPlayers || selectedPlayers || [],
   };
 
   const input = { query: scope.industry, geography: scope.geography };

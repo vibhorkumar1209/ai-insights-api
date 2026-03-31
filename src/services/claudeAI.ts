@@ -1553,6 +1553,8 @@ MARKET SIZING:
 
 SECTION SUMMARIES:
 ${sectionSummaries}
+${scope.selectedPlayers?.length ? `\nSELECTED KEY PLAYERS (profiled):\n${scope.selectedPlayers.map((p) => `- ${p.name} — ${p.marketShare || 'N/A'} share`).join('\n')}` : ''}
+${(() => { const selNames = new Set((scope.selectedPlayers || []).map((p) => p.name)); const others = (scope.allPlayers || []).filter((p) => !selNames.has(p.name)); return others.length ? `\nOTHER KNOWN PLAYERS (not profiled but MUST be mentioned):\n${others.map((p) => `- ${p.name} — ${p.marketShare || 'N/A'} share`).join('\n')}` : ''; })()}
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -1582,7 +1584,7 @@ Return ONLY valid JSON with this exact shape:
     ]
   },
   "concentrationInsights": "2-3 sentences on whether the market is concentrated or fragmented, top-N player concentration ratio, organized vs unorganized split",
-  "keyPlayersInsights": "2-3 sentences listing the top 3-5 players with their approximate market share percentages",
+  "keyPlayersInsights": "3-5 sentences listing ALL known players (both SELECTED KEY PLAYERS and OTHER KNOWN PLAYERS from the context above) with their approximate market share percentages. Every player must be named.",
   "topTrends": [
     "Trend 1: One sentence summary",
     "Trend 2: One sentence summary",
@@ -1605,6 +1607,7 @@ RULES:
 - tickerBoxes: include 3-5 ticker boxes. CRITICAL: If volume data is provided in MARKET SIZING above (Current Volume / Projected Volume), you MUST include the volume as secondaryValue in the Current and Projected ticker boxes. Format: "XX.X million units" or equivalent. Omit "Unorganized Market Share" ticker if not relevant to this market.
 - marketSizeChartSpec: MUST include historical years (n-4 to n) AND projected years (n+1 to n+5). Data values MUST be numbers.
 - concentrationInsights, keyPlayersInsights, topTrends, recentMaJvInsights: All required. Extract from the drafted sections.
+- keyPlayersInsights MUST name every competitor from both SELECTED KEY PLAYERS and OTHER KNOWN PLAYERS lists. Do not omit any player.
 - topTrends: exactly 3-5 items, each a single concise sentence
 - kpis: keep as fallback, 4-6 metrics with trend direction
 - Paragraphs: use bullet points (• ) separated by newlines
@@ -1659,9 +1662,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   competition_analysis: {
     title: 'Competition Analysis',
-    tableHint: 'Include a summary table (in keyTable) with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for top 10 players.',
-    chartHint: 'Include a "horizontal_bar" chart (in chartSpec) showing market share of top 10 players.',
-    subsectionHint: 'CRITICAL STRUCTURE:\n1. The FIRST bodyParagraph MUST outline: competition overview, market share distribution, market type (oligopoly, duopoly, perfect competition, price-led, innovation-led, etc.), organized vs unorganized market share.\n2. Include "bcgMatrixData" array: [{name: "Company", marketSize: <revenue_number>, growth: <growth_rate_number>, quadrant: "star|cash_cow|question_mark|dog"}, ...] for ALL identified active players. Do NOT include companies that have shut down, ceased operations, or filed for bankruptcy in the BCG matrix.\n3. Include "competitorProfiles" array with 10 detailed profiles of ACTIVE, OPERATING companies ONLY. Each: {name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews (key news from past 3 months), jvMaPartnerships (significant JV/M&A/partnerships), otherInsights}. Do NOT build profiles for companies that have shut down operations, gone bankrupt, been liquidated, or permanently exited the market.\n4. DEFUNCT PLAYERS CALLOUT: If any notable companies in this market have shut down, filed for bankruptcy, been liquidated, or permanently ceased operations, add a separate bodyParagraph titled "⚠ Defunct / Bankrupt Players" listing them with: company name, year of closure/bankruptcy, brief reason (e.g. financial distress, acquisition & shutdown, regulatory action), and any market impact. This is critical for investor and strategic awareness.\nDo NOT include subsections — use competitorProfiles instead.',
+    tableHint: 'Include a summary table (in keyTable) with headers: ["Company", "Market Share (%)", "Revenue (USD Bn)", "HQ", "Key Strength"] for ALL known players — both SELECTED KEY PLAYERS and OTHER KNOWN PLAYERS listed in the context.',
+    chartHint: 'Include a "horizontal_bar" chart (in chartSpec) showing market share of ALL known players (selected + other known players).',
+    subsectionHint: 'CRITICAL STRUCTURE:\n1. The FIRST bodyParagraph MUST outline: competition overview, market share distribution, market type (oligopoly, duopoly, perfect competition, price-led, innovation-led, etc.), organized vs unorganized market share. IMPORTANT: This paragraph MUST mention ALL competitors — both SELECTED KEY PLAYERS and OTHER KNOWN PLAYERS from the context. Every single player should be named at least once in the competition analysis body text.\n2. Include "bcgMatrixData" array: [{name: "Company", marketSize: <revenue_number>, growth: <growth_rate_number>, quadrant: "star|cash_cow|question_mark|dog"}, ...] for ALL identified active players (both selected and other known). Do NOT include companies that have shut down, ceased operations, or filed for bankruptcy in the BCG matrix.\n3. Include "competitorProfiles" array with detailed profiles ONLY for SELECTED KEY PLAYERS (the ones marked for profiling). Each: {name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews (key news from past 3 months), jvMaPartnerships (significant JV/M&A/partnerships), otherInsights}. Do NOT build profiles for OTHER KNOWN PLAYERS (unselected) or defunct companies.\n4. DEFUNCT PLAYERS CALLOUT: If any notable companies in this market have shut down, filed for bankruptcy, been liquidated, or permanently ceased operations, add a separate bodyParagraph titled "⚠ Defunct / Bankrupt Players" listing them with: company name, year of closure/bankruptcy, brief reason (e.g. financial distress, acquisition & shutdown, regulatory action), and any market impact. This is critical for investor and strategic awareness.\nDo NOT include subsections — use competitorProfiles instead.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
@@ -1710,8 +1713,15 @@ export async function draftSectionsBatchV2(
     ? `\nSELECTED MARKET SEGMENTS:\n${scope.selectedSegments.map((s) => `- ${s.label} (${s.type}): ${s.subSegments?.join(', ') || 'N/A'}`).join('\n')}`
     : '';
 
+  const selectedNames = new Set((scope.selectedPlayers || []).map((p) => p.name));
+  const unselectedPlayers = (scope.allPlayers || []).filter((p) => !selectedNames.has(p.name));
+
   const playerContext = scope.selectedPlayers?.length
-    ? `\nSELECTED KEY PLAYERS:\n${scope.selectedPlayers.map((p) => `- ${p.name} (${p.headquarters || 'N/A'}) — ${p.marketShare || 'N/A'} share, ${p.revenue || 'N/A'} revenue`).join('\n')}`
+    ? `\nSELECTED KEY PLAYERS (build detailed profiles for these):\n${scope.selectedPlayers.map((p) => `- ${p.name} (${p.headquarters || 'N/A'}) — ${p.marketShare || 'N/A'} share, ${p.revenue || 'N/A'} revenue`).join('\n')}`
+    : '';
+
+  const unselectedPlayerContext = unselectedPlayers.length
+    ? `\nOTHER KNOWN PLAYERS (do NOT build profiles, but MUST mention in executive summary and competition analysis body text):\n${unselectedPlayers.map((p) => `- ${p.name} (${p.headquarters || 'N/A'}) — ${p.marketShare || 'N/A'} share, ${p.revenue || 'N/A'} revenue`).join('\n')}`
     : '';
 
   const sectionInstructions = sectionIds.map((id) => {
@@ -1724,7 +1734,7 @@ export async function draftSectionsBatchV2(
 You are drafting sections of a comprehensive market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
 ${scope.subIndustry ? `Sub-industry focus: ${scope.subIndustry}` : ''}
 ${scope.excludeRegion ? `EXCLUDE from analysis: ${scope.excludeRegion}` : ''}
-${segmentContext}${playerContext}
+${segmentContext}${playerContext}${unselectedPlayerContext}
 
 MARKET SIZING CONTEXT:
 - Current (Value): ${marketSizing.currentMarketSize}
