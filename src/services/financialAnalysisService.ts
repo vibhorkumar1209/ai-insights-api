@@ -1,6 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '../types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
+import {
+  fmpSearchTicker, fmpFetchProfile, fmpFetchIncomeStatement,
+  fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
+} from './fmpFinance';
 import { researchPrivateCompany } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany } from './claudeAI';
 
@@ -95,7 +99,18 @@ export async function runFinancialAnalysis(
       // User explicitly forced private — skip ticker lookup
       isPublic = false;
     } else {
-      const tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
+      // Try FMP ticker search first, then Yahoo Finance as fallback
+      let fmpTicker: string | null = null;
+      try {
+        fmpTicker = await fmpSearchTicker(input.companyName);
+        if (fmpTicker) console.log('[financialAnalysis] FMP ticker found:', fmpTicker);
+      } catch (err) {
+        console.warn('[financialAnalysis] FMP ticker search failed, trying Yahoo:', err);
+      }
+
+      const tickerResult = fmpTicker
+        ? { ticker: fmpTicker, exchange: '' }
+        : await detectTicker(input.companyName, input.companyDomain).catch(() => null);
       console.log('[financialAnalysis] ticker detection result:', tickerResult);
 
       if (input.isPublic === true) {
@@ -142,52 +157,89 @@ async function runPublicPath(
     status: 'fetching',
     progress: 25,
     currentStep: ticker
-      ? `Fetching annual & quarterly financial data for ${buildSearchString(ticker, exchange || '')}…`
+      ? `Fetching financial data for ${ticker} via FMP…`
       : `Fetching financial data for ${input.companyName}…`,
   });
   emit(jobId, 'progress', job);
 
   let apiData: Partial<FinancialAnalysisResult> = {};
+  let usedFMP = false;
 
   if (ticker) {
-    const searchString = buildSearchString(ticker, exchange || '');
-    console.log('[financialAnalysis] Finance API search string:', searchString);
-
-    // Fetch annual and quarterly data in parallel
-    const [annualResult, quarterlyResult] = await Promise.allSettled([
-      fetchAnnualFinancials(searchString),
-      fetchQuarterlyFinancials(searchString),
+    // ── Primary: FMP (Financial Modeling Prep) ──────────────────────────────────
+    console.log('[financialAnalysis] Trying FMP as primary source for:', ticker);
+    const [fmpProfile, fmpIncome, fmpBS, fmpCF, fmpQuarterly] = await Promise.allSettled([
+      fmpFetchProfile(ticker),
+      fmpFetchIncomeStatement(ticker, 5),
+      fmpFetchBalanceSheet(ticker),
+      fmpFetchCashFlow(ticker),
+      fmpFetchQuarterly(ticker),
     ]);
 
-    if (annualResult.status === 'fulfilled') {
-      const a = annualResult.value;
+    const profileData   = fmpProfile.status === 'fulfilled' ? fmpProfile.value : null;
+    const incomeData    = fmpIncome.status === 'fulfilled' ? fmpIncome.value : null;
+    const bsData        = fmpBS.status === 'fulfilled' ? fmpBS.value : null;
+    const cfData        = fmpCF.status === 'fulfilled' ? fmpCF.value : null;
+    const quarterlyData = fmpQuarterly.status === 'fulfilled' ? fmpQuarterly.value : null;
+
+    // FMP is considered successful if we got at least income statement data
+    if (incomeData) {
+      usedFMP = true;
+      console.log('[financialAnalysis] FMP data retrieved successfully');
       apiData = {
-        companyInfo:    a.companyInfo,
-        currency:       a.currency,
-        revenueHistory: a.revenueHistory,
-        marginHistory:  a.marginHistory,
-        plStatement:    a.plStatement,
+        companyInfo:     profileData?.companyInfo,
+        currency:        incomeData.currency || profileData?.currency || 'USD',
+        revenueHistory:  incomeData.revenueHistory,
+        marginHistory:   incomeData.marginHistory,
+        plStatement:     incomeData.plStatement,
+        balanceSheet:    bsData || undefined,
+        cashFlow:        cfData || undefined,
+        quarterlyHistory: quarterlyData?.quarterly,
       };
     } else {
-      console.error('[financialAnalysis] Annual Finance API failed:', annualResult.reason);
+      console.warn('[financialAnalysis] FMP income statement empty — falling back to Yahoo Finance');
     }
 
-    if (quarterlyResult.status === 'fulfilled') {
-      apiData.quarterlyHistory = quarterlyResult.value;
-    } else {
-      console.error('[financialAnalysis] Quarterly Finance API failed:', quarterlyResult.reason);
+    // ── Fallback: Yahoo Finance ────────────────────────────────────────────────
+    if (!usedFMP) {
+      const searchString = buildSearchString(ticker, exchange || '');
+      console.log('[financialAnalysis] Yahoo Finance fallback, search string:', searchString);
+
+      const [annualResult, quarterlyResult] = await Promise.allSettled([
+        fetchAnnualFinancials(searchString),
+        fetchQuarterlyFinancials(searchString),
+      ]);
+
+      if (annualResult.status === 'fulfilled') {
+        const a = annualResult.value;
+        apiData = {
+          companyInfo:    a.companyInfo,
+          currency:       a.currency,
+          revenueHistory: a.revenueHistory,
+          marginHistory:  a.marginHistory,
+          plStatement:    a.plStatement,
+        };
+      } else {
+        console.error('[financialAnalysis] Yahoo Finance annual fetch failed:', annualResult.reason);
+      }
+
+      if (quarterlyResult.status === 'fulfilled') {
+        apiData.quarterlyHistory = quarterlyResult.value;
+      } else {
+        console.error('[financialAnalysis] Yahoo Finance quarterly fetch failed:', quarterlyResult.reason);
+      }
     }
 
     // Stream partial data so charts render while Claude synthesises
     job = update(jobId, { ...apiData, progress: 55 });
     emit(jobId, 'progress', job);
   } else {
-    console.warn('[financialAnalysis] No ticker found — proceeding to Claude synthesis with empty Finance API data');
+    console.warn('[financialAnalysis] No ticker found — proceeding to Claude synthesis with empty data');
   }
 
   // ── Step 2: Claude synthesis ─────────────────────────────────────────────────
-  // Pass empty parallelResearch — Claude uses Finance API data + training knowledge.
-  // Segment/geo breakdown comes from Claude training data where available.
+  // When FMP provided BS/CF, pass them through so Claude knows not to extract.
+  // Claude uses Finance API data + training knowledge for segments/geo.
   job = update(jobId, {
     status: 'synthesizing',
     progress: 60,
@@ -197,7 +249,7 @@ async function runPublicPath(
 
   const insights = await synthesizeFinancialInsights(input, apiData, '');
 
-  // Prefer Finance API structured arrays; fall back to Claude-extracted arrays
+  // Prefer API-sourced structured arrays; fall back to Claude-extracted arrays
   const finalRevenueHistory =
     (apiData.revenueHistory?.length ?? 0) > 0
       ? apiData.revenueHistory
@@ -213,11 +265,16 @@ async function runPublicPath(
       ? apiData.plStatement
       : insights.plStatementExtracted?.length ? insights.plStatementExtracted : undefined;
 
+  // For BS/CF: FMP provides these directly; Claude is fallback only
   const finalBalanceSheet =
-    insights.balanceSheetExtracted?.length ? insights.balanceSheetExtracted : undefined;
+    (apiData.balanceSheet?.length ?? 0) > 0
+      ? apiData.balanceSheet
+      : insights.balanceSheetExtracted?.length ? insights.balanceSheetExtracted : undefined;
 
   const finalCashFlow =
-    insights.cashFlowExtracted?.length ? insights.cashFlowExtracted : undefined;
+    (apiData.cashFlow?.length ?? 0) > 0
+      ? apiData.cashFlow
+      : insights.cashFlowExtracted?.length ? insights.cashFlowExtracted : undefined;
 
   const completedAt = new Date().toISOString();
   job = update(jobId, {
