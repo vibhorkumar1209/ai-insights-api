@@ -631,3 +631,94 @@ export interface FinancialAnalysisResult {
   completedAt?: string;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// TARGET INDUSTRY
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface TargetIndustryInput {
+  productDescription: string;
+  websiteUrl?: string;
+  additionalContext?: string;   // pasted literature / doc content
+}
+
+export interface TargetIndustryRow {
+  industry: string;
+  category: 'High Volume' | 'High Growth' | 'High Growth–Low Volume' | 'High Volume–Low Growth';
+  estimatedMarketSize: string;
+  estimatedGrowthCAGR: string;
+  alignmentScore: 'High' | 'Medium' | 'Low';
+  alignmentRationale: string;
+}
+
+export interface TargetSubSegmentRow {
+  parentIndustry: string;
+  subSegment: string;
+  category: 'High Volume' | 'High Growth' | 'High Growth–Low Volume' | 'High Volume–Low Growth';
+  estimatedMarketSize: string;
+  estimatedGrowthCAGR: string;
+  alignmentScore: 'High' | 'Medium' | 'Low';
+  alignmentRationale: string;
+}
+
+export interface TargetIndustryResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'drilling' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  productDescription?: string;
+  industries?: TargetIndustryRow[];
+  subSegments?: TargetSubSegmentRow[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETING STRATEGY FRAMEWORK
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type StrategyFramework =
+  | 'BCG Matrix'
+  | 'SWOT'
+  | 'Porters Five Forces'
+  | 'Ansoff Matrix'
+  | '4P/7P Marketing Mix'
+  | 'AIDA'
+  | 'PESTEL'
+  | 'North Star'
+  | 'Flywheel Model'
+  | 'Blue Ocean'
+  | '7S Framework'
+  | 'GE-McKinsey Matrix'
+  | 'Eisenhower Matrix';
+
+export interface MarketingStrategyInput {
+  industryOrSegment: string;
+  framework: StrategyFramework;
+  productContext?: string;
+  additionalContext?: string;
+}
+
+export interface StrategyDimensionRow {
+  dimension: string;
+  element: string;
+  analysis: string;
+  strategicImplication: string;
+  priority: 'High' | 'Medium' | 'Low';
+}
+
+export interface MarketingStrategyResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  industryOrSegment?: string;
+  framework?: StrategyFramework;
+  frameworkSummary?: string;
+  dimensions?: StrategyDimensionRow[];
+  strategicRecommendations?: string[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+

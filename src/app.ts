@@ -12,6 +12,8 @@ import keyBuyersRouter from './routes/keyBuyers';
 import industryTrendsRouter from './routes/industryTrends';
 import industryReportRouter from './routes/industryReport';
 import businessDescriptionRouter from './routes/businessDescription';
+import targetIndustryRouter from './routes/targetIndustry';
+import marketingStrategyRouter from './routes/marketingStrategy';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -19,7 +21,7 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 // ── Global middleware ────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(corsMiddleware);
-app.use(express.json({ limit: '50kb' }));
+app.use(express.json({ limit: '500kb' }));
 app.use(apiLimiter);
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -37,6 +39,8 @@ app.use('/api/key-buyers', keyBuyersRouter);
 app.use('/api/industry-trends', industryTrendsRouter);
 app.use('/api/industry-report', industryReportRouter);
 app.use('/api/business-description', businessDescriptionRouter);
+app.use('/api/target-industries', targetIndustryRouter);
+app.use('/api/marketing-strategy', marketingStrategyRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {

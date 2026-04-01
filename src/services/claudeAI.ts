@@ -1814,3 +1814,210 @@ CRITICAL RULES:
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
   return valid;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TARGET INDUSTRY SYNTHESIS
+// ══════════════════════════════════════════════════════════════════════════════
+
+import {
+  TargetIndustryInput, TargetIndustryRow,
+  TargetSubSegmentRow,
+  MarketingStrategyInput, StrategyDimensionRow,
+} from '../types';
+
+export async function synthesizeTargetIndustries(
+  input: TargetIndustryInput,
+  research: string
+): Promise<TargetIndustryRow[]> {
+  const systemPrompt = `You are a senior market research analyst at McKinsey & Company, specializing in market entry strategy and industry targeting.
+Rules:
+- Be specific: cite market size figures, CAGR percentages, and analyst sources.
+- Every alignment rationale must reference specific use cases and buyer personas.
+- Classify every industry into exactly one quadrant.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON.
+- ${RECENCY_DIRECTIVE}`;
+
+  const userPrompt = `Based on the following research, identify and classify target industries for this product/service.
+
+PRODUCT/SERVICE:
+${input.productDescription}
+${input.websiteUrl ? `Website: ${input.websiteUrl}` : ''}
+${input.additionalContext ? `Additional context: ${input.additionalContext.slice(0, 3000)}` : ''}
+
+RESEARCH:
+${research.slice(0, 55000)}
+
+Return a JSON array of 12-16 industries with this structure:
+[
+  {
+    "industry": "Industry name",
+    "category": "High Volume" | "High Growth" | "High Growth–Low Volume" | "High Volume–Low Growth",
+    "estimatedMarketSize": "$X.XB (source, year)",
+    "estimatedGrowthCAGR": "X.X% CAGR (2024-2030)",
+    "alignmentScore": "High" | "Medium" | "Low",
+    "alignmentRationale": "2-3 sentences explaining specific use cases, pain points addressed, and buyer personas in this industry"
+  }
+]
+
+Ensure 3-4 industries per category. Sort by alignmentScore (High first), then by market size within each category.`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const raw = (message.content[0] as { type: string; text: string }).text;
+  const items = safeParseJsonArray(raw);
+  if (!items || items.length === 0) throw new Error('No valid target industries parsed');
+  return (items as TargetIndustryRow[]).filter((r) => r.industry && r.category && r.estimatedMarketSize);
+}
+
+export async function synthesizeSubSegments(
+  industries: string[],
+  productDescription: string,
+  research: string
+): Promise<TargetSubSegmentRow[]> {
+  const systemPrompt = `You are a senior market research analyst at McKinsey & Company.
+Rules:
+- Be specific with market size figures and growth rates, citing sources.
+- Each sub-segment must reference its parent industry.
+- Output ONLY valid JSON. No markdown fences.
+- ${RECENCY_DIRECTIVE}`;
+
+  const userPrompt = `Based on the research, identify sub-segments within these target industries.
+
+PRODUCT/SERVICE: ${productDescription.slice(0, 2000)}
+
+TARGET INDUSTRIES:
+${industries.map((i, idx) => `${idx + 1}. ${i}`).join('\n')}
+
+RESEARCH:
+${research.slice(0, 55000)}
+
+Return a JSON array of 3-5 sub-segments per industry:
+[
+  {
+    "parentIndustry": "Parent Industry Name",
+    "subSegment": "Sub-segment name",
+    "category": "High Volume" | "High Growth" | "High Growth–Low Volume" | "High Volume–Low Growth",
+    "estimatedMarketSize": "$X.XB (source, year)",
+    "estimatedGrowthCAGR": "X.X% CAGR (2024-2030)",
+    "alignmentScore": "High" | "Medium" | "Low",
+    "alignmentRationale": "2-3 sentences explaining specific use cases in this sub-segment"
+  }
+]
+
+Sort by parentIndustry, then by alignmentScore (High first).`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const raw = (message.content[0] as { type: string; text: string }).text;
+  const items = safeParseJsonArray(raw);
+  if (!items || items.length === 0) throw new Error('No valid sub-segments parsed');
+  return (items as TargetSubSegmentRow[]).filter((r) => r.parentIndustry && r.subSegment && r.category);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETING STRATEGY FRAMEWORK SYNTHESIS
+// ══════════════════════════════════════════════════════════════════════════════
+
+export async function synthesizeMarketingStrategy(
+  input: MarketingStrategyInput,
+  research: string
+): Promise<{
+  frameworkSummary: string;
+  dimensions: StrategyDimensionRow[];
+  strategicRecommendations: string[];
+}> {
+  const systemPrompt = `You are a seasoned McKinsey senior partner with 25 years of strategy consulting experience. You produce institutional-grade strategic analyses that Fortune 500 CEOs rely on for decision-making.
+Rules:
+- Every dimension must have specific data points, named companies, and quantified evidence.
+- Analysis must be 3-5 sentences — analytical, forward-looking, and actionable.
+- Strategic implications must be concrete enough to act on.
+- Priority ratings must be justified by evidence.
+- Output ONLY valid JSON. No markdown fences.
+- ${RECENCY_DIRECTIVE}`;
+
+  const frameworkDimensions: Record<string, string[]> = {
+    'BCG Matrix': ['Stars', 'Cash Cows', 'Question Marks', 'Dogs'],
+    'SWOT': ['Strengths', 'Weaknesses', 'Opportunities', 'Threats'],
+    'Porters Five Forces': ['Competitive Rivalry', 'Threat of New Entrants', 'Threat of Substitutes', 'Bargaining Power of Buyers', 'Bargaining Power of Suppliers'],
+    'Ansoff Matrix': ['Market Penetration', 'Market Development', 'Product Development', 'Diversification'],
+    '4P/7P Marketing Mix': ['Product', 'Price', 'Place', 'Promotion', 'People', 'Process', 'Physical Evidence'],
+    'AIDA': ['Attention', 'Interest', 'Desire', 'Action'],
+    'PESTEL': ['Political', 'Economic', 'Social', 'Technological', 'Environmental', 'Legal'],
+    'North Star': ['North Star Metric', 'Leading Indicators', 'Input Metrics', 'Lagging Indicators'],
+    'Flywheel Model': ['Acquisition', 'Activation', 'Retention', 'Revenue', 'Referral'],
+    'Blue Ocean': ['Eliminate', 'Reduce', 'Raise', 'Create'],
+    '7S Framework': ['Strategy', 'Structure', 'Systems', 'Shared Values', 'Style', 'Staff', 'Skills'],
+    'GE-McKinsey Matrix': ['Invest/Grow', 'Hold/Selective', 'Harvest/Divest'],
+    'Eisenhower Matrix': ['Urgent & Important', 'Important but Not Urgent', 'Urgent but Not Important', 'Neither Urgent nor Important'],
+  };
+
+  const dims = frameworkDimensions[input.framework] || ['Dimension 1', 'Dimension 2', 'Dimension 3'];
+
+  const userPrompt = `Conduct a comprehensive ${input.framework} analysis for the "${input.industryOrSegment}" industry.
+${input.productContext ? `\nPRODUCT/SERVICE CONTEXT:\n${input.productContext.slice(0, 3000)}` : ''}
+${input.additionalContext ? `\nADDITIONAL CONTEXT:\n${input.additionalContext.slice(0, 2000)}` : ''}
+
+RESEARCH:
+${research.slice(0, 55000)}
+
+The ${input.framework} dimensions are: ${dims.join(', ')}.
+
+Return a single JSON object:
+{
+  "frameworkSummary": "3-5 sentence executive summary of the ${input.framework} analysis findings — the most important takeaways a CEO needs to know.",
+  "dimensions": [
+    {
+      "dimension": "${dims[0]}",
+      "element": "Specific item/factor within this dimension",
+      "analysis": "3-5 sentences of deep, data-driven analysis with specific figures and named examples",
+      "strategicImplication": "1-2 sentences on what this means for strategy and what action to take",
+      "priority": "High" | "Medium" | "Low"
+    }
+  ],
+  "strategicRecommendations": [
+    "Recommendation 1: Specific, actionable recommendation with expected impact",
+    "Recommendation 2: ...",
+    "..."
+  ]
+}
+
+Requirements:
+- Provide 2-4 elements per dimension (${dims.length * 3} total elements minimum).
+- Provide 5-8 strategic recommendations.
+- Every analysis must cite specific data, company names, or market figures.
+- Sort elements within each dimension by priority (High first).`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const raw = (message.content[0] as { type: string; text: string }).text;
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No valid JSON object in marketing strategy response');
+
+  let parsed: { frameworkSummary?: string; dimensions?: StrategyDimensionRow[]; strategicRecommendations?: string[] };
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch {
+    throw new Error('Failed to parse marketing strategy JSON');
+  }
+
+  return {
+    frameworkSummary: parsed.frameworkSummary || '',
+    dimensions: (parsed.dimensions || []).filter((d) => d.dimension && d.element && d.analysis),
+    strategicRecommendations: parsed.strategicRecommendations || [],
+  };
+}

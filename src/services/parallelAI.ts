@@ -723,3 +723,143 @@ export async function researchIndustryReport(
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ── Target Industry Research ─────────────────────────────────────────────────
+
+export async function researchTargetIndustries(
+  productDescription: string,
+  websiteUrl?: string,
+  additionalContext?: string
+): Promise<string> {
+  const websiteLine = websiteUrl ? `\nProduct website: ${websiteUrl}` : '';
+  const extraLine = additionalContext ? `\nAdditional product literature:\n${additionalContext.slice(0, 8000)}` : '';
+
+  const query = `
+You are a senior market research analyst at McKinsey & Company. Identify the most promising target industries for the following product/service/platform/solution.
+
+PRODUCT/SERVICE DESCRIPTION:
+${productDescription}${websiteLine}${extraLine}
+
+TASK:
+Research and identify 12-16 industries where this product/solution would have the strongest market fit. Classify each industry into one of these four quadrants:
+
+1. HIGH VOLUME — Large established markets (>$50B) with moderate growth (3-8% CAGR)
+2. HIGH GROWTH — Fast-growing markets (>15% CAGR) regardless of current size
+3. HIGH GROWTH–LOW VOLUME — Emerging/niche markets (<$20B) with high growth (>12% CAGR)
+4. HIGH VOLUME–LOW GROWTH — Mature large markets (>$100B) with slow growth (<5% CAGR)
+
+FOR EACH INDUSTRY provide:
+- Industry name (standard classification)
+- Which quadrant it falls into
+- Estimated global market size (cite source: Gartner, IDC, MarketsandMarkets, Grand View Research, etc.)
+- Estimated CAGR (with year range, e.g. 2024-2030)
+- Why this product/service aligns with this industry — be specific about use cases, pain points addressed, and buyer personas
+- Alignment strength: High/Medium/Low
+
+Aim for 3-4 industries per quadrant. Be specific with market size numbers and growth rates. Cite analyst reports where possible.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for target industries: ${msg}`;
+  }
+}
+
+export async function researchIndustrySubSegments(
+  industries: string[],
+  productDescription: string
+): Promise<string> {
+  const industryList = industries.map((i, idx) => `${idx + 1}. ${i}`).join('\n');
+
+  const query = `
+You are a senior market research analyst at McKinsey & Company. For each of the following industries, identify the most relevant sub-segments for this product/solution.
+
+PRODUCT/SERVICE:
+${productDescription.slice(0, 2000)}
+
+TARGET INDUSTRIES:
+${industryList}
+
+TASK:
+For EACH industry above, identify 3-5 sub-segments. Classify each sub-segment into:
+1. HIGH VOLUME — Large sub-segment (>$10B) with moderate growth
+2. HIGH GROWTH — Fast-growing sub-segment (>15% CAGR)
+3. HIGH GROWTH–LOW VOLUME — Niche/emerging sub-segment with high growth
+4. HIGH VOLUME–LOW GROWTH — Mature large sub-segment with slow growth
+
+FOR EACH SUB-SEGMENT provide:
+- Parent industry name
+- Sub-segment name
+- Quadrant classification
+- Estimated market size (cite source)
+- Estimated CAGR
+- Product alignment rationale — specific use cases in this sub-segment
+- Alignment strength: High/Medium/Low
+
+Be specific with numbers. Cite analyst reports (Gartner, IDC, Forrester, MarketsandMarkets, etc.) where possible.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for industry sub-segments: ${msg}`;
+  }
+}
+
+// ── Marketing Strategy Framework Research ────────────────────────────────────
+
+export async function researchMarketingStrategy(
+  industryOrSegment: string,
+  framework: string,
+  productContext?: string
+): Promise<string> {
+  const productLine = productContext
+    ? `\nPRODUCT/SERVICE CONTEXT:\n${productContext.slice(0, 3000)}`
+    : '';
+
+  const frameworkInstructions: Record<string, string> = {
+    'BCG Matrix': `Analyse the ${industryOrSegment} industry using the BCG Growth-Share Matrix. Identify products/segments/business units that fall into: Stars (high growth, high share), Cash Cows (low growth, high share), Question Marks (high growth, low share), Dogs (low growth, low share). Provide market growth rates and relative market share data for each.`,
+    'SWOT': `Conduct a comprehensive SWOT analysis for operating in the ${industryOrSegment} industry. Identify internal Strengths and Weaknesses, and external Opportunities and Threats. For each item, provide specific evidence, data points, and strategic implications.`,
+    'Porters Five Forces': `Analyse the ${industryOrSegment} industry using Porter's Five Forces: (1) Competitive Rivalry — number of competitors, market concentration, differentiation; (2) Threat of New Entrants — barriers to entry, capital requirements, regulation; (3) Threat of Substitutes — alternative solutions, switching costs; (4) Bargaining Power of Buyers — buyer concentration, price sensitivity; (5) Bargaining Power of Suppliers — supplier concentration, input criticality. Rate each force as High/Medium/Low with evidence.`,
+    'Ansoff Matrix': `Analyse growth strategies for the ${industryOrSegment} industry using the Ansoff Matrix: (1) Market Penetration — existing products in existing markets; (2) Market Development — existing products in new markets; (3) Product Development — new products in existing markets; (4) Diversification — new products in new markets. Provide specific strategies, examples, and risk assessments for each quadrant.`,
+    '4P/7P Marketing Mix': `Analyse the ${industryOrSegment} industry using the 7P Marketing Mix: Product, Price, Place, Promotion, People, Process, Physical Evidence. For each P, provide current industry practices, best-in-class examples, emerging trends, and strategic recommendations.`,
+    'AIDA': `Analyse how companies in the ${industryOrSegment} industry can apply the AIDA model: Attention (awareness strategies), Interest (engagement tactics), Desire (value proposition building), Action (conversion optimization). Provide channel-specific strategies, metrics, and best practices for each stage.`,
+    'PESTEL': `Conduct a PESTEL analysis of the ${industryOrSegment} industry: Political (regulations, trade policies, government stability), Economic (GDP growth, inflation, exchange rates, industry spending), Social (demographics, cultural trends, workforce shifts), Technological (emerging tech, R&D investment, digital transformation), Environmental (sustainability mandates, climate impact, ESG requirements), Legal (compliance frameworks, IP, data privacy). Cite specific regulations, data points, and trends.`,
+    'North Star': `Identify the North Star metric and framework for the ${industryOrSegment} industry. Analyse: the primary value metric that drives long-term success, leading indicators that predict growth, input metrics that teams can directly influence, and how top companies in this industry define and track their North Star. Provide specific metrics, benchmarks, and case studies.`,
+    'Flywheel Model': `Design a Flywheel growth model for the ${industryOrSegment} industry. Identify: the core flywheel loop (what creates momentum), key stages/components, how each stage reinforces the next, friction points that slow the flywheel, and strategies to reduce friction and increase momentum. Provide examples from successful companies in this industry.`,
+    'Blue Ocean': `Apply Blue Ocean Strategy to the ${industryOrSegment} industry. Analyse: (1) Eliminate — which factors the industry takes for granted should be eliminated; (2) Reduce — which factors should be reduced well below industry standard; (3) Raise — which factors should be raised well above industry standard; (4) Create — which factors should be created that the industry has never offered. Identify uncontested market spaces and value innovation opportunities.`,
+    '7S Framework': `Analyse the ${industryOrSegment} industry using McKinsey's 7S Framework: Strategy (competitive positioning), Structure (organizational models), Systems (processes and workflows), Shared Values (culture and mission), Style (leadership approaches), Staff (talent and capabilities), Skills (core competencies). Assess alignment between elements and identify gaps.`,
+    'GE-McKinsey Matrix': `Analyse segments within the ${industryOrSegment} industry using the GE-McKinsey 9-Box Matrix. Evaluate each segment on: Industry Attractiveness (market size, growth rate, profitability, competition intensity) and Competitive Strength (market share, brand strength, technology position, margins). Classify segments as Invest/Grow, Hold/Selective, or Harvest/Divest.`,
+    'Eisenhower Matrix': `Apply the Eisenhower Priority Matrix to strategic initiatives in the ${industryOrSegment} industry. Classify key strategic actions into: (1) Urgent & Important — do immediately; (2) Important but Not Urgent — schedule/plan; (3) Urgent but Not Important — delegate/automate; (4) Neither — eliminate. Provide specific actionable initiatives for each quadrant.`,
+  };
+
+  const frameworkInstruction = frameworkInstructions[framework] || `Analyse the ${industryOrSegment} industry using the ${framework} framework. Provide comprehensive analysis with specific data points, examples, and strategic implications.`;
+
+  const query = `
+You are a seasoned McKinsey senior partner conducting a strategic analysis for a Fortune 500 client.${productLine}
+
+INDUSTRY: ${industryOrSegment}
+FRAMEWORK: ${framework}
+
+${frameworkInstruction}
+
+FOR EVERY ELEMENT/DIMENSION:
+- Provide specific data points, percentages, and market figures
+- Name real companies and examples
+- Cite analyst reports and industry sources (Gartner, McKinsey, BCG, Bain, Forrester, IDC)
+- Rate strategic importance/priority: High/Medium/Low
+- Include strategic implications and actionable recommendations
+
+Be thorough, data-driven, and consultancy-grade in your analysis. Avoid generic statements — every insight should be specific and actionable.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${framework} analysis of ${industryOrSegment}: ${msg}`;
+  }
+}
