@@ -216,6 +216,7 @@ export interface KeyHighlightsStructured {
 export interface FinancialStatementRow {
   label: string;
   value: string;
+  previousValue?: string;    // previous year value for comparison
   yoy?: string;              // e.g. "+12.3%"
   isSection?: boolean;       // section header (no value)
   isBold?: boolean;          // subtotal / key line

@@ -351,16 +351,19 @@ function buildPLFromAPI(periods: PeriodEntry[], currency: string): FinancialStat
   const pNi    = prev ? parseFinanceValue(prev['Net income']) : null;
   const pOpInc = (pRev != null && pOpex != null) ? pRev - pOpex : null;
 
+  const pEbitda = prev ? parseFinanceValue(prev.EBITDA) : null;
+  const pNetMar = prev ? prev['Net profit margin'] : null;
+
   const rows: FinancialStatementRow[] = [
     { label: 'INCOME SUMMARY', value: '', isSection: true },
-    { label: 'Revenue',             value: formatWithCurrency(rev, currency),   yoy: calcYoy(rev, pRev),     isBold: true },
-    { label: 'Operating Expense',   value: formatWithCurrency(opex, currency),  yoy: calcYoy(opex, pOpex) },
-    { label: 'Operating Income',    value: formatWithCurrency(opInc, currency), yoy: calcYoy(opInc, pOpInc), isBold: true },
-    ...(opInc != null && rev ? [{ label: 'Operating Margin', value: `${((opInc / rev) * 100).toFixed(1)}%` }] : []),
-    ...(ebitda != null ? [{ label: 'EBITDA', value: formatWithCurrency(ebitda, currency) }] : []),
+    { label: 'Revenue',             value: formatWithCurrency(rev, currency),   previousValue: formatWithCurrency(pRev, currency),   yoy: calcYoy(rev, pRev),     isBold: true },
+    { label: 'Operating Expense',   value: formatWithCurrency(opex, currency),  previousValue: formatWithCurrency(pOpex, currency),  yoy: calcYoy(opex, pOpex) },
+    { label: 'Operating Income',    value: formatWithCurrency(opInc, currency), previousValue: formatWithCurrency(pOpInc, currency), yoy: calcYoy(opInc, pOpInc), isBold: true },
+    ...(opInc != null && rev ? [{ label: 'Operating Margin', value: `${((opInc / rev) * 100).toFixed(1)}%`, previousValue: pOpInc != null && pRev ? `${((pOpInc / pRev) * 100).toFixed(1)}%` : undefined }] : []),
+    ...(ebitda != null ? [{ label: 'EBITDA', value: formatWithCurrency(ebitda, currency), previousValue: formatWithCurrency(pEbitda, currency) }] : []),
     { label: 'NET RESULTS', value: '', isSection: true },
-    { label: 'Net Income',          value: formatWithCurrency(ni, currency),    yoy: calcYoy(ni, pNi),       isBold: true },
-    ...(netMar && netMar !== EM_DASH ? [{ label: 'Net Profit Margin', value: `${parseFloat(netMar).toFixed(1)}%` }] : []),
+    { label: 'Net Income',          value: formatWithCurrency(ni, currency),    previousValue: formatWithCurrency(pNi, currency),    yoy: calcYoy(ni, pNi),       isBold: true },
+    ...(netMar && netMar !== EM_DASH ? [{ label: 'Net Profit Margin', value: `${parseFloat(netMar).toFixed(1)}%`, previousValue: pNetMar && pNetMar !== EM_DASH ? `${parseFloat(pNetMar).toFixed(1)}%` : undefined }] : []),
     ...(eps && eps !== EM_DASH && eps !== EN_DASH && eps !== '—' ? [{ label: 'Earnings per Share', value: eps }] : []),
     ...(taxR && taxR !== EM_DASH ? [{ label: 'Effective Tax Rate', value: taxR }] : []),
   ];

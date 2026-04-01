@@ -582,21 +582,23 @@ Return a single JSON object with EXACTLY this structure:
     { "year": "2023", "netMargin": 25.3, "operatingMargin": 29.8 }
   ],
   "plStatementExtracted": [
-    { "label": "Revenue", "value": "$383.3B", "yoy": "-2.8%", "isBold": true },
-    { "label": "Cost of Revenue", "value": "$214.1B", "isBold": false },
-    { "label": "Gross Profit", "value": "$169.1B", "yoy": "-1.5%", "isBold": true }
+    { "label": "Revenue", "value": "$383.3B", "previousValue": "$394.3B", "yoy": "-2.8%", "isBold": true },
+    { "label": "Cost of Revenue", "value": "$214.1B", "previousValue": "$223.5B", "yoy": "-4.2%", "isBold": false },
+    { "label": "Gross Profit", "value": "$169.1B", "previousValue": "$170.8B", "yoy": "-1.0%", "isBold": true }
   ],
   "balanceSheetExtracted": [
-    { "label": "Total Assets", "value": "$352.6B", "isBold": true }
+    { "label": "Total Assets", "value": "$352.6B", "previousValue": "$338.5B", "yoy": "+4.2%", "isBold": true },
+    { "label": "Total Liabilities", "value": "$290.4B", "previousValue": "$287.9B", "yoy": "+0.9%", "isBold": true }
   ],
   "cashFlowExtracted": [
-    { "label": "Operating Cash Flow", "value": "$114.0B", "isBold": true }
+    { "label": "Operating Cash Flow", "value": "$114.0B", "previousValue": "$122.2B", "yoy": "-6.7%", "isBold": true },
+    { "label": "Capital Expenditure", "value": "-$11.0B", "previousValue": "-$10.7B", "isBold": false }
   ]
 }
 
 Extraction rules:
 - revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer USD (e.g. 383285000000). Percentages as numbers not strings.
-- plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. isSection=true for category headers (value=""). isBold=true for subtotals/totals.
+- plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. MUST include BOTH current year ("value") AND previous year ("previousValue") for every data row. Include "yoy" percentage change where calculable. isSection=true for category headers (value=""). isBold=true for subtotals/totals. The "value" field is the most recent fiscal year; "previousValue" is the year before that.
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
 - For segmentRevenue and geoRevenue: populate from research if available, otherwise populate from your training knowledge for this company. Return [] only if you genuinely don't know the segment/geo breakdown.
 - For insights: draw on BOTH the Finance API data above and your training knowledge — be specific, cite figures.`;
