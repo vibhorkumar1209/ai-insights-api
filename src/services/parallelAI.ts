@@ -724,88 +724,77 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ── Target Industry Research ─────────────────────────────────────────────────
+// ── High Growth Niche Industry Research ──────────────────────────────────────
 
-export async function researchTargetIndustries(
-  productDescription: string,
-  websiteUrl?: string,
-  additionalContext?: string
-): Promise<string> {
-  const websiteLine = websiteUrl ? `\nProduct website: ${websiteUrl}` : '';
-  const extraLine = additionalContext ? `\nAdditional product literature:\n${additionalContext.slice(0, 8000)}` : '';
-
-  const query = `
-You are a senior market research analyst at McKinsey & Company. Identify the most promising target industries for the following product/service/platform/solution.
-
-PRODUCT/SERVICE DESCRIPTION:
-${productDescription}${websiteLine}${extraLine}
-
-TASK:
-Research and identify 12-16 industries where this product/solution would have the strongest market fit. Classify each industry into one of these four quadrants:
-
-1. HIGH VOLUME — Large established markets (>$50B) with moderate growth (3-8% CAGR)
-2. HIGH GROWTH — Fast-growing markets (>15% CAGR) regardless of current size
-3. HIGH GROWTH–LOW VOLUME — Emerging/niche markets (<$20B) with high growth (>12% CAGR)
-4. HIGH VOLUME–LOW GROWTH — Mature large markets (>$100B) with slow growth (<5% CAGR)
-
-FOR EACH INDUSTRY provide:
-- Industry name (standard classification)
-- Which quadrant it falls into
-- Estimated global market size (cite source: Gartner, IDC, MarketsandMarkets, Grand View Research, etc.)
-- Estimated CAGR (with year range, e.g. 2024-2030)
-- Why this product/service aligns with this industry — be specific about use cases, pain points addressed, and buyer personas
-- Alignment strength: High/Medium/Low
-
-Aim for 3-4 industries per quadrant. Be specific with market size numbers and growth rates. Cite analyst reports where possible.
-`.trim();
-
-  try {
-    return await runResearch(query, 'base');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Research failed';
-    return `Research unavailable for target industries: ${msg}`;
+export async function researchNicheIndustries(
+  input: {
+    industryVertical: string;
+    subSegmentOrTheme?: string;
+    geography: string;
+    minimumCAGR: string;
+    outputMode: string;
+    numberOfTopics: number;
+    segmentationDepth: string;
+    additionalContext?: string;
   }
-}
-
-export async function researchIndustrySubSegments(
-  industries: string[],
-  productDescription: string
 ): Promise<string> {
-  const industryList = industries.map((i, idx) => `${idx + 1}. ${i}`).join('\n');
+  const modeLabel =
+    input.outputMode === 'white_space' ? 'white-space'
+    : input.outputMode === 'bestseller' ? 'bestseller'
+    : 'white-space AND bestseller';
+
+  const depthNote = input.segmentationDepth === 'deep'
+    ? 'Also include application layer and buyer type as segmentation axes.'
+    : '';
+
+  const themeLine = input.subSegmentOrTheme
+    ? `\nSub-segment or theme focus: ${input.subSegmentOrTheme}`
+    : '';
+
+  const contextLine = input.additionalContext
+    ? `\nAdditional context (regulatory signals, M&A, tariffs, emerging tech angles):\n${input.additionalContext.slice(0, 5000)}`
+    : '';
 
   const query = `
-You are a senior market research analyst at McKinsey & Company. For each of the following industries, identify the most relevant sub-segments for this product/solution.
+You are a senior market intelligence strategist specializing in syndicated research report topic identification, with deep expertise in how firms like MarketsandMarkets, GlobalData, Grand View Research, Global Market Insights, Market Research Future, Wise Guy Reports, IMARC, and Research&Markets select and validate niche high-growth topics.
 
-PRODUCT/SERVICE:
-${productDescription.slice(0, 2000)}
+INDUSTRY VERTICAL: ${input.industryVertical}${themeLine}
+GEOGRAPHY FOCUS: ${input.geography}
+MINIMUM CAGR THRESHOLD: ≥${input.minimumCAGR}%
+OUTPUT MODE: ${modeLabel}
+NUMBER OF TOPICS: ${input.numberOfTopics}${contextLine}
 
-TARGET INDUSTRIES:
-${industryList}
+Identify ${input.numberOfTopics} ${modeLabel} report topics passing ALL THREE filters:
 
-TASK:
-For EACH industry above, identify 3-5 sub-segments. Classify each sub-segment into:
-1. HIGH VOLUME — Large sub-segment (>$10B) with moderate growth
-2. HIGH GROWTH — Fast-growing sub-segment (>15% CAGR)
-3. HIGH GROWTH–LOW VOLUME — Niche/emerging sub-segment with high growth
-4. HIGH VOLUME–LOW GROWTH — Mature large sub-segment with slow growth
+FILTER 1 — SPECIFICITY: Narrow enough that a buyer would pay $3,000–$5,000 for a standalone report. Generic parent-level topics fail. Must be specific product + specific application + geographic qualifier.
 
-FOR EACH SUB-SEGMENT provide:
-- Parent industry name
-- Sub-segment name
-- Quadrant classification
-- Estimated market size (cite source)
-- Estimated CAGR
-- Product alignment rationale — specific use cases in this sub-segment
-- Alignment strength: High/Medium/Low
+FILTER 2 — GROWTH SIGNAL: Structural CAGR ≥${input.minimumCAGR}% driven by ≥2 megatrends (AI/digitization, decarbonization, demographic shift, reshoring, regulatory tailwinds, platform convergence).
 
-Be specific with numbers. Cite analyst reports (Gartner, IDC, Forrester, MarketsandMarkets, etc.) where possible.
+FILTER 3 — SEGMENTABILITY: Segmentable along ≥3 axes (technology type, region, end-use, company type, price tier, etc.). ${depthNote}
+
+For white-space topics: NO major research platform has a standalone report yet, OR coverage is 3+ years old. Justify why this gap exists.
+For bestseller topics: mirror highest-selling reports — specific product + specific application + geographic qualifier + near-future forecast window (2025–2032 or similar).
+
+FOR EACH TOPIC provide:
+- A specific report title (in the style of MarketsandMarkets / Grand View Research report names)
+- Whether it is "white_space" or "bestseller"
+- Estimated CAGR range (e.g. "18–22%")
+- Base market size estimate (e.g. "$2.4B (2024)")
+- White space score (1–10, where 10 = completely uncovered)
+- Competition level: none/low/moderate/high
+- Primary growth driver: one sentence naming the specific megatrend(s)
+- Segmentation axes: 3–5 specific axes
+- Verdict: "strong buy", "pursue", or "monitor"
+- Rationale: 2 sentences max explaining why this topic qualifies
+
+Cite research platform coverage gaps, analyst reports, and industry data wherever possible. Be extremely specific — avoid generic market names.
 `.trim();
 
   try {
     return await runResearch(query, 'base');
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Research failed';
-    return `Research unavailable for industry sub-segments: ${msg}`;
+    return `Research unavailable for niche industry topics: ${msg}`;
   }
 }
 

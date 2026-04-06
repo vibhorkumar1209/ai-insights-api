@@ -632,42 +632,42 @@ export interface FinancialAnalysisResult {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TARGET INDUSTRY
+// HIGH GROWTH NICHE INDUSTRIES
 // ══════════════════════════════════════════════════════════════════════════════
 
-export interface TargetIndustryInput {
-  productDescription: string;
-  websiteUrl?: string;
-  additionalContext?: string;   // pasted literature / doc content
+export type NicheOutputMode = 'white_space' | 'bestseller' | 'both';
+export type NicheSegmentationDepth = 'standard' | 'deep';
+
+export interface NicheIndustryInput {
+  industryVertical: string;
+  subSegmentOrTheme?: string;
+  geography: string;
+  minimumCAGR: string;             // '5' | '8' | '12' | '18'
+  outputMode: NicheOutputMode;
+  additionalContext?: string;
+  numberOfTopics: number;           // 8 | 12 | 16
+  segmentationDepth: NicheSegmentationDepth;
 }
 
-export interface TargetIndustryRow {
-  industry: string;
-  category: 'High Volume' | 'High Growth' | 'High Growth–Low Volume' | 'High Volume–Low Growth';
-  estimatedMarketSize: string;
-  estimatedGrowthCAGR: string;
-  alignmentScore: 'High' | 'Medium' | 'Low';
-  alignmentRationale: string;
+export interface NicheTopicRow {
+  topic_title: string;
+  type: 'white_space' | 'bestseller';
+  estimated_cagr: string;
+  base_market_size: string;
+  white_space_score: number;        // 1–10
+  competition_level: 'none' | 'low' | 'moderate' | 'high';
+  primary_growth_driver: string;
+  segmentation_axes: string[];
+  verdict: 'strong buy' | 'pursue' | 'monitor';
+  rationale: string;
 }
 
-export interface TargetSubSegmentRow {
-  parentIndustry: string;
-  subSegment: string;
-  category: 'High Volume' | 'High Growth' | 'High Growth–Low Volume' | 'High Volume–Low Growth';
-  estimatedMarketSize: string;
-  estimatedGrowthCAGR: string;
-  alignmentScore: 'High' | 'Medium' | 'Low';
-  alignmentRationale: string;
-}
-
-export interface TargetIndustryResult {
+export interface NicheIndustryResult {
   jobId: string;
-  status: 'pending' | 'researching' | 'synthesizing' | 'drilling' | 'complete' | 'error';
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
   progress: number;
   currentStep?: string;
-  productDescription?: string;
-  industries?: TargetIndustryRow[];
-  subSegments?: TargetSubSegmentRow[];
+  topics?: NicheTopicRow[];
   error?: string;
   createdAt: string;
   completedAt?: string;

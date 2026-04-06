@@ -1,11 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-import { TargetIndustryInput, TargetIndustryResult } from '../types';
-import { researchTargetIndustries, researchIndustrySubSegments } from './parallelAI';
-import { synthesizeTargetIndustries, synthesizeSubSegments } from './claudeAI';
+import { NicheIndustryInput, NicheIndustryResult } from '../types';
+import { researchNicheIndustries } from './parallelAI';
+import { synthesizeNicheTopics } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
-const jobs = new Map<string, TargetIndustryResult>();
+const jobs = new Map<string, NicheIndustryResult>();
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
 
 setInterval(() => {
@@ -36,7 +36,7 @@ function emit(jobId: string, event: string, data: unknown): void {
   (subscribers.get(jobId) || []).forEach((cb) => cb(event, data));
 }
 
-function update(jobId: string, patch: Partial<TargetIndustryResult>): TargetIndustryResult {
+function update(jobId: string, patch: Partial<NicheIndustryResult>): NicheIndustryResult {
   const current = jobs.get(jobId)!;
   const updated = { ...current, ...patch };
   jobs.set(jobId, updated);
@@ -45,7 +45,7 @@ function update(jobId: string, patch: Partial<TargetIndustryResult>): TargetIndu
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export function createTargetIndustryJob(): string {
+export function createNicheIndustryJob(): string {
   const jobId = uuidv4();
   jobs.set(jobId, {
     jobId,
@@ -56,92 +56,50 @@ export function createTargetIndustryJob(): string {
   return jobId;
 }
 
-export function getTargetIndustryJob(jobId: string): TargetIndustryResult | undefined {
+export function getNicheIndustryJob(jobId: string): NicheIndustryResult | undefined {
   return jobs.get(jobId);
 }
 
 // ── Main orchestrator ──────────────────────────────────────────────────────────
 
-export async function runTargetIndustryAnalysis(
+export async function runNicheIndustryAnalysis(
   jobId: string,
-  input: TargetIndustryInput
+  input: NicheIndustryInput
 ): Promise<void> {
   try {
-    // Step 1: Research target industries
+    // Step 1: Research via Parallel.AI
     let job = update(jobId, {
       status: 'researching',
-      progress: 10,
-      currentStep: 'Researching target industries via Parallel.AI…',
-      productDescription: input.productDescription,
+      progress: 15,
+      currentStep: 'Researching niche industry topics via Parallel.AI…',
     });
     emit(jobId, 'progress', job);
 
-    const industryResearch = await researchTargetIndustries(
-      input.productDescription,
-      input.websiteUrl,
-      input.additionalContext
-    );
+    const research = await researchNicheIndustries(input);
 
-    // Step 2: Synthesize industries
+    // Step 2: Synthesize via Claude
     job = update(jobId, {
       status: 'synthesizing',
-      progress: 35,
-      currentStep: 'Classifying industries into growth-volume quadrants…',
+      progress: 60,
+      currentStep: 'Synthesizing niche topic recommendations…',
     });
     emit(jobId, 'progress', job);
 
-    const industries = await synthesizeTargetIndustries(input, industryResearch);
-
-    // Emit partial with industries
-    job = update(jobId, {
-      industries,
-      progress: 50,
-      currentStep: 'Industry classification complete. Researching sub-segments…',
-    });
-    emit(jobId, 'progress', job);
-
-    // Step 3: Research sub-segments for all discovered industries
-    job = update(jobId, {
-      status: 'drilling',
-      progress: 55,
-      currentStep: 'Researching industry sub-segments via Parallel.AI…',
-    });
-    emit(jobId, 'progress', job);
-
-    const industryNames = industries.map((i) => i.industry);
-    const subSegmentResearch = await researchIndustrySubSegments(
-      industryNames,
-      input.productDescription
-    );
-
-    // Step 4: Synthesize sub-segments
-    job = update(jobId, {
-      status: 'synthesizing',
-      progress: 80,
-      currentStep: 'Classifying sub-segments into growth-volume quadrants…',
-    });
-    emit(jobId, 'progress', job);
-
-    const subSegments = await synthesizeSubSegments(
-      industryNames,
-      input.productDescription,
-      subSegmentResearch
-    );
+    const topics = await synthesizeNicheTopics(input, research);
 
     // Done
     job = update(jobId, {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
-      industries,
-      subSegments,
+      topics,
       completedAt: new Date().toISOString(),
     });
     emit(jobId, 'result', job);
 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Analysis failed';
-    console.error(`[targetIndustry] job ${jobId} failed:`, message);
+    console.error(`[nicheIndustry] job ${jobId} failed:`, message);
     const job = update(jobId, { status: 'error', error: message });
     emit(jobId, 'error', job);
   }

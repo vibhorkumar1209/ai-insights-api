@@ -1816,50 +1816,71 @@ CRITICAL RULES:
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TARGET INDUSTRY SYNTHESIS
+// HIGH GROWTH NICHE INDUSTRY SYNTHESIS
 // ══════════════════════════════════════════════════════════════════════════════
 
 import {
-  TargetIndustryInput, TargetIndustryRow,
-  TargetSubSegmentRow,
+  NicheIndustryInput, NicheTopicRow,
   MarketingStrategyInput, StrategyDimensionRow,
 } from '../types';
 
-export async function synthesizeTargetIndustries(
-  input: TargetIndustryInput,
+export async function synthesizeNicheTopics(
+  input: NicheIndustryInput,
   research: string
-): Promise<TargetIndustryRow[]> {
-  const systemPrompt = `You are a senior market research analyst at McKinsey & Company, specializing in market entry strategy and industry targeting.
+): Promise<NicheTopicRow[]> {
+  const modeLabel =
+    input.outputMode === 'white_space' ? 'white-space'
+    : input.outputMode === 'bestseller' ? 'bestseller'
+    : 'white-space AND bestseller';
+
+  const depthNote = input.segmentationDepth === 'deep'
+    ? 'Also include application layer and buyer type as segmentation axes.'
+    : '';
+
+  const systemPrompt = `You are a senior market intelligence strategist specializing in syndicated research report topic identification, with deep expertise in how firms like MarketsandMarkets, GlobalData, Grand View Research, Global Market Insights, and Market Research Future select and validate niche high-growth topics.
 Rules:
-- Be specific: cite market size figures, CAGR percentages, and analyst sources.
-- Every alignment rationale must reference specific use cases and buyer personas.
-- Classify every industry into exactly one quadrant.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON.
+- Every topic must be specific enough that a buyer would pay $3,000–$5,000 for a standalone report.
+- Cite analyst coverage gaps and research platform data where possible.
+- Output ONLY a valid JSON array. No markdown fences, no text outside the JSON.
 - ${RECENCY_DIRECTIVE}`;
 
-  const userPrompt = `Based on the following research, identify and classify target industries for this product/service.
+  const userPrompt = `Based on the following research, identify ${input.numberOfTopics} ${modeLabel} niche report topics.
 
-PRODUCT/SERVICE:
-${input.productDescription}
-${input.websiteUrl ? `Website: ${input.websiteUrl}` : ''}
-${input.additionalContext ? `Additional context: ${input.additionalContext.slice(0, 3000)}` : ''}
+INDUSTRY VERTICAL: ${input.industryVertical}
+${input.subSegmentOrTheme ? `SUB-SEGMENT / THEME: ${input.subSegmentOrTheme}` : ''}
+GEOGRAPHY: ${input.geography}
+MINIMUM CAGR: ≥${input.minimumCAGR}%
+SEGMENTATION: ${input.segmentationDepth === 'deep' ? 'Deep (technology, region, end-use, application layer, buyer type)' : 'Standard (technology, region, end-use)'}
+${input.additionalContext ? `ADDITIONAL CONTEXT: ${input.additionalContext.slice(0, 3000)}` : ''}
 
 RESEARCH:
 ${research.slice(0, 55000)}
 
-Return a JSON array of 12-16 industries with this structure:
+Apply ALL THREE filters:
+FILTER 1 — SPECIFICITY: Narrow enough for a $3K–$5K standalone report. Generic parent-level topics fail.
+FILTER 2 — GROWTH SIGNAL: Structural CAGR ≥${input.minimumCAGR}% driven by ≥2 megatrends.
+FILTER 3 — SEGMENTABILITY: Segmentable along ≥3 axes. ${depthNote}
+
+For white-space topics: NO major platform has a standalone report yet, OR coverage is 3+ years old. Justify the gap.
+For bestseller topics: mirror highest-selling reports — specific product + specific application + geographic qualifier + near-future forecast window.
+
+Return a JSON array of exactly ${input.numberOfTopics} objects with these keys:
 [
   {
-    "industry": "Industry name",
-    "category": "High Volume" | "High Growth" | "High Growth–Low Volume" | "High Volume–Low Growth",
-    "estimatedMarketSize": "$X.XB (source, year)",
-    "estimatedGrowthCAGR": "X.X% CAGR (2024-2030)",
-    "alignmentScore": "High" | "Medium" | "Low",
-    "alignmentRationale": "2-3 sentences explaining specific use cases, pain points addressed, and buyer personas in this industry"
+    "topic_title": "Specific report title in MarketsandMarkets/Grand View Research style",
+    "type": "white_space" | "bestseller",
+    "estimated_cagr": "18–22%",
+    "base_market_size": "$2.4B (2024)",
+    "white_space_score": 8,
+    "competition_level": "none" | "low" | "moderate" | "high",
+    "primary_growth_driver": "One sentence naming the specific megatrend(s)",
+    "segmentation_axes": ["Technology Type", "Region", "End-Use", "Application Layer"],
+    "verdict": "strong buy" | "pursue" | "monitor",
+    "rationale": "2 sentences max explaining why this topic qualifies"
   }
 ]
 
-Ensure 3-4 industries per category. Sort by alignmentScore (High first), then by market size within each category.`;
+Sort by verdict (strong buy first), then by white_space_score descending.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -1870,58 +1891,8 @@ Ensure 3-4 industries per category. Sort by alignmentScore (High first), then by
 
   const raw = (message.content[0] as { type: string; text: string }).text;
   const items = safeParseJsonArray(raw);
-  if (!items || items.length === 0) throw new Error('No valid target industries parsed');
-  return (items as TargetIndustryRow[]).filter((r) => r.industry && r.category && r.estimatedMarketSize);
-}
-
-export async function synthesizeSubSegments(
-  industries: string[],
-  productDescription: string,
-  research: string
-): Promise<TargetSubSegmentRow[]> {
-  const systemPrompt = `You are a senior market research analyst at McKinsey & Company.
-Rules:
-- Be specific with market size figures and growth rates, citing sources.
-- Each sub-segment must reference its parent industry.
-- Output ONLY valid JSON. No markdown fences.
-- ${RECENCY_DIRECTIVE}`;
-
-  const userPrompt = `Based on the research, identify sub-segments within these target industries.
-
-PRODUCT/SERVICE: ${productDescription.slice(0, 2000)}
-
-TARGET INDUSTRIES:
-${industries.map((i, idx) => `${idx + 1}. ${i}`).join('\n')}
-
-RESEARCH:
-${research.slice(0, 55000)}
-
-Return a JSON array of 3-5 sub-segments per industry:
-[
-  {
-    "parentIndustry": "Parent Industry Name",
-    "subSegment": "Sub-segment name",
-    "category": "High Volume" | "High Growth" | "High Growth–Low Volume" | "High Volume–Low Growth",
-    "estimatedMarketSize": "$X.XB (source, year)",
-    "estimatedGrowthCAGR": "X.X% CAGR (2024-2030)",
-    "alignmentScore": "High" | "Medium" | "Low",
-    "alignmentRationale": "2-3 sentences explaining specific use cases in this sub-segment"
-  }
-]
-
-Sort by parentIndustry, then by alignmentScore (High first).`;
-
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const raw = (message.content[0] as { type: string; text: string }).text;
-  const items = safeParseJsonArray(raw);
-  if (!items || items.length === 0) throw new Error('No valid sub-segments parsed');
-  return (items as TargetSubSegmentRow[]).filter((r) => r.parentIndustry && r.subSegment && r.category);
+  if (!items || items.length === 0) throw new Error('No valid niche topics parsed');
+  return (items as NicheTopicRow[]).filter((r) => r.topic_title && r.type && r.estimated_cagr && r.verdict);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
