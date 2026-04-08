@@ -95,8 +95,16 @@ export async function runThemesAnalysis(jobId: string, input: ThemeInput): Promi
     updateThemeJob(jobId, completed);
     emit(jobId, 'result', { ...jobs.get(jobId) });
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    updateThemeJob(jobId, { status: 'error', error: errorMsg, progress: 0 });
-    emit(jobId, 'error', { error: errorMsg });
+    const raw = err instanceof Error ? err.message : 'Unknown error';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const status = (err as any)?.status;
+    const friendly =
+      status === 529 || /overloaded/i.test(raw)
+        ? 'Anthropic API is temporarily overloaded. Please retry in a minute.'
+        : status === 429 || /rate limit/i.test(raw)
+        ? 'Rate limit hit on the AI provider. Please wait a moment and retry.'
+        : raw;
+    updateThemeJob(jobId, { status: 'error', error: friendly, progress: 0 });
+    emit(jobId, 'error', { error: friendly });
   }
 }

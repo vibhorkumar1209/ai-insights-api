@@ -22,7 +22,53 @@ function isEmptyResearch(text: string): boolean {
   return !text || text.startsWith('Research unavailable') || text.trim().length < 50;
 }
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const rawClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ── Retry wrapper — handles transient Anthropic overload / rate-limit errors ──
+// 529 overloaded_error, 529, 503, 500, and 429 are all retryable. We retry up
+// to 5 times with exponential backoff + jitter (≈1s, 2s, 4s, 8s, 16s). The
+// underlying SDK already retries network errors; this layer adds resilience to
+// Anthropic-side capacity events that previously failed jobs outright.
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 529]);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isRetryable(err: any): boolean {
+  if (!err) return false;
+  const status = err.status ?? err.statusCode;
+  if (typeof status === 'number' && RETRYABLE_STATUSES.has(status)) return true;
+  const msg = String(err.message || err).toLowerCase();
+  return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('timeout');
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const originalCreate = rawClient.messages.create.bind(rawClient.messages);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+rawClient.messages.create = (async (...args: any[]) => {
+  const maxAttempts = 5;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await (originalCreate as any)(...args);
+    } catch (err) {
+      lastErr = err;
+      if (attempt === maxAttempts || !isRetryable(err)) throw err;
+      const base = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s, 8s
+      const jitter = Math.floor(Math.random() * 500);
+      const delay = base + jitter;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[claudeAI] attempt ${attempt}/${maxAttempts} failed (${(err as { status?: number })?.status ?? '?'}), retrying in ${delay}ms`
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+}) as any;
+
+const client = rawClient;
 
 const MAX_OUTPUT_TOKENS = 16384; // claude-sonnet-4-6 supports up to 16384
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
