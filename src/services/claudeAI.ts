@@ -563,7 +563,9 @@ Rules:
     .map((r: FinancialStatementRow) => `${r.label}: ${r.value}`)
     .join(' | ');
 
+  const reportingCurrency = yahooData.currency || 'USD';
   const userPrompt = `Analyse the financial data for "${input.companyName}" (ticker: ${yahooData.ticker || 'N/A'}) and produce structured insights.
+Reporting currency: ${reportingCurrency}. Use the correct currency symbol for ${reportingCurrency} in all formatted monetary values (e.g. revenueFormatted, segment/geo revenue strings, P&L/BS/CF value fields). Do NOT default to "$" if the currency is not USD.
 
 ## Google Finance Data (structured, pre-verified numbers)
 Revenue History: ${revenueStr || 'NOT AVAILABLE'}
@@ -643,7 +645,7 @@ Return a single JSON object with EXACTLY this structure:
 }
 
 Extraction rules:
-- revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer USD (e.g. 383285000000). Percentages as numbers not strings.
+- revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer in ${yahooData.currency || 'USD'} (e.g. 383285000000). Percentages as numbers not strings. All monetary values should use ${yahooData.currency || 'USD'} currency.
 - plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. MUST include BOTH current year ("value") AND previous year ("previousValue") for every data row. Include "yoy" percentage change where calculable. isSection=true for category headers (value=""). isBold=true for subtotals/totals. The "value" field is the most recent fiscal year; "previousValue" is the year before that.
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
 - For segmentRevenue and geoRevenue: populate from research if available, otherwise populate from your training knowledge for this company. Return [] only if you genuinely don't know the segment/geo breakdown.

@@ -13,7 +13,7 @@ const router = Router();
 
 /** POST /api/challenges-growth — start analysis */
 router.post('/', aiLimiter, async (req: Request, res: Response) => {
-  const { companyName, userOrganization, solutionPortfolio } = req.body;
+  const { companyName, userOrganization, solutionPortfolio, companyDomain } = req.body;
 
   if (!companyName || typeof companyName !== 'string') {
     return res.status(400).json({ error: 'companyName is required' });
@@ -23,6 +23,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     companyName: String(companyName).slice(0, 200),
     userOrganization: userOrganization ? String(userOrganization).slice(0, 200) : undefined,
     solutionPortfolio: solutionPortfolio ? String(solutionPortfolio).slice(0, 1000) : undefined,
+    companyDomain: companyDomain ? String(companyDomain).slice(0, 200) : undefined,
   };
 
   const jobId = createChallengesGrowthJob();

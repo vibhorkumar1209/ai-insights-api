@@ -76,7 +76,8 @@ export async function runThemesAnalysis(jobId: string, input: ThemeInput): Promi
 
     step(`Researching ${input.companyName}...`, 10);
 
-    const research = await researchCompanyThemes(input.companyName, input.themeType);
+    const companyLabel = `${input.companyName}${input.companyDomain ? ` (website: ${input.companyDomain})` : ''}`;
+    const research = await researchCompanyThemes(companyLabel, input.themeType);
 
     step('Synthesizing themes...', 65);
     updateThemeJob(jobId, { status: 'synthesizing' });

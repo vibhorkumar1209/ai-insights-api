@@ -20,7 +20,7 @@ const VALID_THEME_TYPES: ThemeType[] = ['business', 'technology', 'sustainabilit
  * Returns: { jobId }
  */
 router.post('/', aiLimiter, async (req: Request, res: Response) => {
-  const { companyName, themeType, userOrganization, solutionPortfolio } = req.body;
+  const { companyName, themeType, userOrganization, solutionPortfolio, companyDomain } = req.body;
 
   if (!companyName || typeof companyName !== 'string') {
     return res.status(400).json({ error: 'companyName is required' });
@@ -37,6 +37,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     themeType: themeType as ThemeType,
     userOrganization: userOrganization ? String(userOrganization).slice(0, 200) : undefined,
     solutionPortfolio: solutionPortfolio ? String(solutionPortfolio).slice(0, 1000) : undefined,
+    companyDomain: companyDomain ? String(companyDomain).slice(0, 200) : undefined,
   };
 
   const jobId = createThemeJob();

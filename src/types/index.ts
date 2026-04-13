@@ -66,6 +66,7 @@ export interface ThemeInput {
   themeType: ThemeType;
   userOrganization?: string;
   solutionPortfolio?: string;
+  companyDomain?: string;
 }
 
 export interface ThemeRow {
@@ -94,6 +95,7 @@ export interface ChallengesGrowthInput {
   companyName: string;
   userOrganization?: string;
   solutionPortfolio?: string;
+  companyDomain?: string;
 }
 
 export interface ChallengesGrowthRow {
