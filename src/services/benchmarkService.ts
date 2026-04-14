@@ -59,8 +59,9 @@ export function unsubscribeFromJob(jobId: string, cb: SSECallback) {
 }
 
 function emit(jobId: string, event: string, data: unknown) {
-  const cbs = subscribers.get(jobId) || [];
-  cbs.forEach((cb) => cb(event, data));
+  (subscribers.get(jobId) || []).forEach((cb) => {
+    try { cb(event, data); } catch { /* ignore closed connections */ }
+  });
 }
 
 // ── Main benchmark runner ────────────────────────────────────────────────────
@@ -91,18 +92,16 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
 
     step(`Gathering intelligence on ${totalCompanies} companies...`, 20);
 
-    // Track progress as each company research completes
+    // Research companies sequentially to avoid peak-RAM spike
     const companyResearch: Record<string, string> = {};
 
-    await Promise.all(
-      allCompanies.map(async (company) => {
-        const research = await researchSingle(company, input);
-        companyResearch[company] = research;
-        researched++;
-        const progress = 20 + Math.floor((researched / totalCompanies) * 40);
-        step(`Researched ${researched}/${totalCompanies} companies...`, progress);
-      })
-    );
+    for (const company of allCompanies) {
+      const research = await researchSingle(company, input);
+      companyResearch[company] = research;
+      researched++;
+      const progress = 20 + Math.floor((researched / totalCompanies) * 40);
+      step(`Researched ${researched}/${totalCompanies} companies...`, progress);
+    }
 
     step('Synthesizing benchmarking table...', 65);
     updateJob(jobId, { status: 'synthesizing' });
@@ -119,6 +118,8 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
       companyResearch,
       benchmarkingTable
     );
+    // Free research data from memory after synthesis
+    for (const key of Object.keys(companyResearch)) delete companyResearch[key];
 
     const completed: Partial<BenchmarkResult> = {
       status: 'complete',

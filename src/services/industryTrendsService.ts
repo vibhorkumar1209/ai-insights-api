@@ -45,7 +45,9 @@ export function unsubscribeFromJob(jobId: string, cb: SSECallback) {
 }
 
 function emit(jobId: string, event: string, data: unknown) {
-  (subscribers.get(jobId) || []).forEach((cb) => cb(event, data));
+  (subscribers.get(jobId) || []).forEach((cb) => {
+    try { cb(event, data); } catch { /* ignore closed connections */ }
+  });
 }
 
 // ── Main runner ───────────────────────────────────────────────────────────────

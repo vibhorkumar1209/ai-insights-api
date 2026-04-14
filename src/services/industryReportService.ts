@@ -45,7 +45,10 @@ const JOB_TTL_MS = 2 * 60 * 60 * 1000;
 const cleanupTimer = setInterval(() => {
   const cutoff = Date.now() - JOB_TTL_MS;
   for (const [id, job] of jobs.entries()) {
-    if (new Date(job.createdAt).getTime() < cutoff) jobs.delete(id);
+    if (new Date(job.createdAt).getTime() < cutoff) {
+      jobs.delete(id);
+      abortedJobs.delete(id);
+    }
   }
 }, 30 * 60 * 1000);
 cleanupTimer.unref();

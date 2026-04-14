@@ -56,8 +56,9 @@ export function unsubscribeFromThemeJob(jobId: string, cb: SSECallback) {
 }
 
 function emit(jobId: string, event: string, data: unknown) {
-  const cbs = subscribers.get(jobId) || [];
-  cbs.forEach((cb) => cb(event, data));
+  (subscribers.get(jobId) || []).forEach((cb) => {
+    try { cb(event, data); } catch { /* ignore closed connections */ }
+  });
 }
 
 // ── Main themes runner ────────────────────────────────────────────────────────

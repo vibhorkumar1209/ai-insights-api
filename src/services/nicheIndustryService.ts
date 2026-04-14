@@ -13,7 +13,7 @@ setInterval(() => {
   for (const [id, job] of jobs.entries()) {
     if (new Date(job.createdAt).getTime() < cutoff) jobs.delete(id);
   }
-}, 30 * 60 * 1000);
+}, 30 * 60 * 1000).unref();
 
 // ── SSE subscribers ────────────────────────────────────────────────────────────
 
@@ -33,7 +33,9 @@ export function unsubscribeFromJob(jobId: string, cb: SSECallback): void {
 }
 
 function emit(jobId: string, event: string, data: unknown): void {
-  (subscribers.get(jobId) || []).forEach((cb) => cb(event, data));
+  (subscribers.get(jobId) || []).forEach((cb) => {
+    try { cb(event, data); } catch { /* ignore closed connections */ }
+  });
 }
 
 function update(jobId: string, patch: Partial<NicheIndustryResult>): NicheIndustryResult {
