@@ -17,11 +17,11 @@ export const apiLimiter = rateLimit({
 // Stricter limiter for expensive AI endpoints
 export const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    error: 'AI analysis rate limit reached. Maximum 10 benchmark analyses per hour.',
+    error: 'AI analysis rate limit reached. Maximum 50 analyses per hour.',
     retryAfter: 3600,
   },
 });
