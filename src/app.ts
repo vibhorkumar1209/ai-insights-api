@@ -1,7 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import { corsMiddleware } from './middleware/cors';
-import { apiLimiter } from './middleware/rateLimiter';
+import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
 import competitorsRouter from './routes/competitors';
 import benchmarkRouter from './routes/benchmark';
 import themesRouter from './routes/themes';
@@ -18,6 +18,14 @@ import marketingStrategyRouter from './routes/marketingStrategy';
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
+// ── Keep process alive — log but never exit on unhandled errors ───────────────
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException] caught — keeping process alive:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection] caught — keeping process alive:', reason);
+});
+
 // ── Global middleware ────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(corsMiddleware);
@@ -29,18 +37,18 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0' });
 });
 
-app.use('/api/competitors', competitorsRouter);
-app.use('/api/benchmark', benchmarkRouter);
-app.use('/api/themes', themesRouter);
-app.use('/api/challenges-growth', challengesGrowthRouter);
-app.use('/api/financial-analysis', financialAnalysisRouter);
-app.use('/api/sales-play', salesPlayRouter);
-app.use('/api/key-buyers', keyBuyersRouter);
-app.use('/api/industry-trends', industryTrendsRouter);
-app.use('/api/industry-report', industryReportRouter);
-app.use('/api/business-description', businessDescriptionRouter);
-app.use('/api/niche-industries', nicheIndustryRouter);
-app.use('/api/marketing-strategy', marketingStrategyRouter);
+app.use('/api/competitors', memoryGuard, competitorsRouter);
+app.use('/api/benchmark', memoryGuard, benchmarkRouter);
+app.use('/api/themes', memoryGuard, themesRouter);
+app.use('/api/challenges-growth', memoryGuard, challengesGrowthRouter);
+app.use('/api/financial-analysis', memoryGuard, financialAnalysisRouter);
+app.use('/api/sales-play', memoryGuard, salesPlayRouter);
+app.use('/api/key-buyers', memoryGuard, keyBuyersRouter);
+app.use('/api/industry-trends', memoryGuard, industryTrendsRouter);
+app.use('/api/industry-report', memoryGuard, industryReportRouter);
+app.use('/api/business-description', memoryGuard, businessDescriptionRouter);
+app.use('/api/niche-industries', memoryGuard, nicheIndustryRouter);
+app.use('/api/marketing-strategy', memoryGuard, marketingStrategyRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {

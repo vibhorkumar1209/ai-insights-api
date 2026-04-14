@@ -3,8 +3,8 @@ import { Competitor } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 300000; // 5 minutes — allow extra headroom for complex queries
-const MAX_RETRIES = 1;          // retry once on timeout
+const TASK_TIMEOUT_MS = 90000;  // 90 seconds — fail fast to free memory
+const MAX_RETRIES = 0;          // no retry — saves memory on Render free tier
 
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────
 // AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
