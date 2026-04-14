@@ -18,6 +18,9 @@ import marketingStrategyRouter from './routes/marketingStrategy';
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
+// Trust Render/Vercel reverse proxy so express-rate-limit reads the real client IP
+app.set('trust proxy', 1);
+
 // ── Keep process alive — log but never exit on unhandled errors ───────────────
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException] caught — keeping process alive:', err.message);
