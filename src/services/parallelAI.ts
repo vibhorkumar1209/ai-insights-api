@@ -704,17 +704,17 @@ Provide specific, evidence-based findings. Cite every claim with a source. State
 export async function researchIndustryReport(
   queries: string[]
 ): Promise<string[]> {
-  const results = await Promise.all(
-    queries.slice(0, 4).map(async (query, idx) => {
-      try {
-        return await runResearch(query, 'base');
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Research failed';
-        console.warn(`[parallelAI] Industry report query ${idx + 1} failed: ${msg}`);
-        return `Research unavailable for query ${idx + 1}: ${msg}`;
-      }
-    })
-  );
+  // Sequential — prevent 4 concurrent large JSON buffers OOM-killing the 512MB container
+  const results: string[] = [];
+  for (const [idx, query] of queries.slice(0, 4).entries()) {
+    try {
+      results.push(await runResearch(query, 'base'));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Research failed';
+      console.warn(`[parallelAI] Industry report query ${idx + 1} failed: ${msg}`);
+      results.push(`Research unavailable for query ${idx + 1}: ${msg}`);
+    }
+  }
   return results;
 }
 
