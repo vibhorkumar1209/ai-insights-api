@@ -75,7 +75,7 @@ const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
 
 // ── Truncate research to stay within token budget ───────────────────────────
 
-function truncateResearch(research: Record<string, string>, maxChars = 60000): Record<string, string> {
+function truncateResearch(research: Record<string, string>, maxChars = 30000): Record<string, string> {
   const perCompany = Math.floor(maxChars / Math.max(Object.keys(research).length, 1));
   return Object.fromEntries(
     Object.entries(research).map(([company, text]) => [
@@ -289,7 +289,7 @@ export async function synthesizeGapAnalysis(
   benchmarkingTable: BenchmarkDimension[]
 ): Promise<GapAnalysisRow[]> {
   // Keep per-company research short — the table is the primary source
-  const safeResearch = truncateResearch(companyResearch, 24000);
+  const safeResearch = truncateResearch(companyResearch, 15000);
   const peerNames = input.selectedCompetitors.join(', ');
 
   const missingResearch = Object.entries(safeResearch)
@@ -391,7 +391,7 @@ export async function synthesizeThemes(
 
 ${config.hint}
 
-${hasResearch ? `RESEARCH:\n${research.slice(0, 60000)}` : `[No live research available — use your training knowledge about ${input.companyName}. Label estimates as "(est.)".]`}
+${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available — use your training knowledge about ${input.companyName}. Label estimates as "(est.)".]`}
 
 ${input.userOrganization ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}` : ''}
 
@@ -455,7 +455,7 @@ Cover EXACTLY these 8 dimensions (one array element each, in this order):
 8. Talent & Workforce
 
 ${hasResearch
-  ? `RESEARCH:\n${research.slice(0, 60000)}`
+  ? `RESEARCH:\n${research.slice(0, 20000)}`
   : `[No live research available — use training knowledge about ${input.companyName}. Label estimates as "(est.)".]`}
 
 ${input.userOrganization
@@ -582,7 +582,7 @@ ${needBSExtract      ? '⚠ Balance Sheet MISSING from Finance API — EXTRACT f
 ${needCFExtract      ? '⚠ Cash Flow MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Cash Flow available above — set cashFlowExtracted: []'}
 
 ## Additional Research (annual reports, investor presentations, financial news)
-${hasParallelResearch ? parallelResearch.slice(0, 48000) : '[Not available — use the Google Finance data above and your training knowledge]'}
+${hasParallelResearch ? parallelResearch.slice(0, 20000) : '[Not available — use the Google Finance data above and your training knowledge]'}
 
 Return a single JSON object with EXACTLY this structure:
 {
@@ -1015,7 +1015,7 @@ Rules:
 The table should map senior executives to their publicly stated business focus areas, making it easy for a sales team to tailor their pitch.
 
 ${hasResearch
-  ? `RESEARCH:\n${research.slice(0, 60000)}`
+  ? `RESEARCH:\n${research.slice(0, 20000)}`
   : `[No live research available — use training knowledge about ${input.companyName}'s key executives and their known strategic priorities. Label estimates as "(est.)".]`}
 
 Return a JSON array with 10-15 rows, EXACTLY this shape:
@@ -1108,7 +1108,7 @@ ${examplesRule}
   const userPrompt = `Analyse the following research on the "${input.industrySegment}" industry and produce an Industry Trends report in TWO blocks.${geoContext}
 
 ${hasResearch
-  ? `RESEARCH:\n${research.slice(0, 60000)}`
+  ? `RESEARCH:\n${research.slice(0, 20000)}`
   : `[No live research available — use training knowledge about ${input.industrySegment} industry trends${isGlobal ? '' : ` in ${geography}`}. Label estimates as "(est.)".]`}
 
 Return a JSON object with EXACTLY this shape:

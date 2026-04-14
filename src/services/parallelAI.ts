@@ -93,7 +93,8 @@ async function pollTask(runId: string): Promise<string> {
         (typeof content === 'string' ? content : '') ||
         '';
 
-      return text;
+      // Hard cap raw response to 25KB to prevent OOM on Render free (512MB)
+      return text.length > 25_000 ? text.slice(0, 25_000) + '\n[truncated]' : text;
     }
   }
 
@@ -254,13 +255,10 @@ export async function researchAllCompanies(
 ): Promise<Record<string, string>> {
   const results: Record<string, string> = {};
 
-  // Run all research tasks in parallel (max 5 companies)
-  const tasks = companies.slice(0, 5).map(async (company) => {
-    const research = await researchCompany(company, targetCompany, industryContext);
-    results[company] = research;
-  });
-
-  await Promise.all(tasks);
+  // Sequential (not parallel) to stay within Render free 512MB RAM limit
+  for (const company of companies.slice(0, 5)) {
+    results[company] = await researchCompany(company, targetCompany, industryContext);
+  }
   return results;
 }
 
