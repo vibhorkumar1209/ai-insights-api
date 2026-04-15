@@ -1316,9 +1316,9 @@ RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 2048,
-    temperature: 0.1,
-    system: `You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
+    max_tokens: 2500,  // slightly increased but with better error handling
+    temperature: 0.0,  // fully deterministic for JSON generation
+    system: `You are a senior market research analyst. Output ONLY one valid JSON object. No markdown, no explanations, no arrays. NO trailing text after the JSON. Ensure all quotes and special characters are properly escaped. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1326,10 +1326,43 @@ RULES:
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
 
   const raw = content.text;
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in wizard scope response');
 
-  const parsed = JSON.parse(jsonMatch[0]) as ScopeWizardResult;
+  let parsed: ScopeWizardResult | null = null;
+
+  // Strategy 1: Try to extract and parse the main JSON object
+  try {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON object found');
+
+    parsed = JSON.parse(jsonMatch[0]) as ScopeWizardResult;
+  } catch (err) {
+    // Strategy 2: Try to extract individual components if full parse fails
+    console.warn('[extractScope] Full JSON parse failed, attempting partial extraction:', err instanceof Error ? err.message : err);
+
+    try {
+      // Extract scope, suggestedSegments, and suggestedPlayers separately
+      const scopeMatch = raw.match(/"scope"\s*:\s*\{[^}]*\}/);
+      const segmentsMatch = raw.match(/"suggestedSegments"\s*:\s*\[[^\]]*\]/);
+      const playersMatch = raw.match(/"suggestedPlayers"\s*:\s*\[[^\]]*\]/);
+      const tocMatch = raw.match(/"tocPreview"\s*:\s*\{[^}]*\}/);
+
+      if (!scopeMatch || !segmentsMatch || !playersMatch) {
+        throw new Error('Could not extract required scope components');
+      }
+
+      // Reconstruct object from components
+      const reconstructed = `{
+        ${scopeMatch[0]},
+        ${segmentsMatch[0]},
+        ${playersMatch[0]}
+        ${tocMatch ? ',' + tocMatch[0] : ''}
+      }`;
+
+      parsed = JSON.parse(reconstructed) as ScopeWizardResult;
+    } catch (componentErr) {
+      throw new Error(`Scope extraction failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
 
   if (!parsed.scope?.industry || !parsed.suggestedSegments?.length || !parsed.suggestedPlayers?.length) {
     throw new Error('Incomplete wizard scope extraction');
@@ -1638,7 +1671,12 @@ ${safeResearch}
 Draft the following ${sectionIds.length} sections:
 ${sectionInstructions}
 
-Return ONLY a valid JSON array. Each element:
+Return each section as ONE COMPLETE JSON object per line (NDJSON format). NO array wrapper. Each line must be a standalone valid JSON object:
+Line 1: {...section 1...}
+Line 2: {...section 2...}
+etc.
+
+Each object structure:
 {
   "id": "section_id", "title": "...",
   "bodyParagraphs": ["..."] (use • bullet points; may be empty [] for swot/porters/tei),
@@ -1672,9 +1710,9 @@ CRITICAL RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 6000,  // reduced from 8192 to force concise output and prevent JSON errors
-    temperature: 0.1,  // reduced from 0.2 for more deterministic, valid JSON
-    system: `You are a senior industry analyst. Output ONLY valid JSON array with NO trailing text. Ensure all strings are properly escaped. ${RECENCY_DIRECTIVE}`,
+    max_tokens: 7000,  // NDJSON format is more resilient to truncation, so can use higher limit
+    temperature: 0.1,  // deterministic JSON output
+    system: `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1684,38 +1722,49 @@ CRITICAL RULES:
   const raw = content.text;
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}, stop_reason: ${message.stop_reason}`);
 
-  // Pre-process: Try to fix common JSON issues before parsing
-  let processed = raw;
-
-  // Attempt 1: Extract just the JSON array part
-  const jsonMatch = raw.match(/\[\s*\{[\s\S]*\}\s*\]/);
-  if (jsonMatch) {
-    processed = jsonMatch[0];
-  }
-
-  // Attempt 2: Fix common issues - unescaped newlines and quotes in string values
-  // This regex looks for quotes followed by content then quote, and escapes internal quotes
-  processed = processed
-    // Fix unescaped quotes inside string values: find patterns like "text"content"text"
-    .replace(/": "([^"]*)"([^"]*)"([^"]*)",/g, '": "$1\\"$2\\"$3",')
-    .replace(/": "([^"]*)"([^"]*)"([^"]*)"/g, '": "$1\\"$2\\"$3"');
-
+  // Parse NDJSON format (newline-delimited JSON, more resilient to truncation)
   let parsed: unknown[] | null = null;
+
   try {
-    parsed = safeParseJsonArray(processed);
+    // Try NDJSON format first (one JSON object per line)
+    const lines = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && line.startsWith('{'));
+
+    if (lines.length > 0) {
+      const objects: unknown[] = [];
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          objects.push(obj);
+        } catch (lineErr) {
+          console.warn(`[draftV2] Skipped malformed line in NDJSON:`, line.slice(0, 100));
+        }
+      }
+      if (objects.length > 0) {
+        parsed = objects;
+        console.log(`[draftV2] Parsed ${objects.length} sections from NDJSON format`);
+      }
+    }
+
+    // Fallback: try JSON array format if NDJSON didn't work
+    if (!parsed || parsed.length === 0) {
+      console.log(`[draftV2] NDJSON parsing returned 0 objects, trying JSON array format...`);
+      parsed = safeParseJsonArray(raw);
+    }
   } catch (parseErr) {
     console.error(`[draftV2] Parse error for batch [${sectionIds.join(', ')}]:`, parseErr instanceof Error ? parseErr.message : parseErr);
-    // Try to extract position of error if available
     const errorMsg = String(parseErr);
     const posMatch = errorMsg.match(/position (\d+)/);
     if (posMatch) {
       const pos = parseInt(posMatch[1], 10);
       const start = Math.max(0, pos - 150);
-      const end = Math.min(processed.length, pos + 150);
-      console.error(`[draftV2] Error at position ${pos}, context:`, processed.slice(start, end));
+      const end = Math.min(raw.length, pos + 150);
+      console.error(`[draftV2] Error at position ${pos}, context:`, raw.slice(start, end));
     }
 
-    // Final fallback: try to extract ANY complete JSON objects from the response
+    // Final fallback: extract individual objects
     console.warn(`[draftV2] Attempting object extraction fallback for batch [${sectionIds.join(', ')}]`);
     parsed = safeParseJsonArray(raw);
   }
