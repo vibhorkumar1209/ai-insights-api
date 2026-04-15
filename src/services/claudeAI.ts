@@ -1337,17 +1337,16 @@ Return ONLY valid JSON with this exact shape:
 }
 
 RULES:
-- Suggest 8-12 market segments covering: organized/unorganized (if applicable), geo, product type, application, distribution, channel, pricing, end-use industry, and any other relevant breakdowns
-- Each segment must have 3-8 realistic sub-segments specific to this industry
-- Suggest 15-20 key players with estimated market shares. Pre-select the top 10.
-- ONLY include ACTIVE, OPERATING companies as key players. Do NOT suggest companies that have shut down, filed for bankruptcy, been liquidated, or permanently exited the market. If notable players have recently gone defunct, you may mention them in the player description as context (e.g. "Note: XYZ Corp exited this market in 2024") but do NOT include them as a separate player entry.
-- searchQueries: 10-20 words each, optimised for web search with current year data
+- Suggest 6-8 market segments. Each must have 3-4 sub-segments (no more).
+- Suggest exactly 10 key players. Pre-select top 5. Keep descriptions to 1 short sentence.
+- ONLY include ACTIVE, OPERATING companies as key players.
+- searchQueries: 10-15 words each, optimised for web search with current year data
 - Be specific to the industry — do not use generic placeholder names
 `.trim();
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 2048,
     temperature: 0.1,
     system: `You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
