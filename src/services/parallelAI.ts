@@ -11,22 +11,44 @@ const MAX_RETRIES = 0;          // no retry — saves memory on Render free tier
 // node-fetch v2.  Use a manual AbortController + setTimeout instead.
 // Read response body up to maxBytes — stops streaming early to avoid massive RAM spikes.
 // Parallel.AI raw responses can be 50-100 MB; we only need the first ~300 KB to parse the JSON wrapper.
-async function readBodyLimited(res: import('node-fetch').Response, maxBytes = 300_000): Promise<string> {
+async function readBodyLimited(res: import('node-fetch').Response, maxBytes = 300_000, timeoutMs = 25_000): Promise<string> {
   const body = res.body;
   if (!body) return '';
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const raw of body as AsyncIterable<unknown>) {
-    const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
-    if (total + chunk.length >= maxBytes) {
-      chunks.push(chunk.slice(0, maxBytes - total));
-      total = maxBytes;
-      break;
-    }
-    chunks.push(chunk);
-    total += chunk.length;
-  }
-  return Buffer.concat(chunks, total).toString('utf-8');
+
+  // Race body reading against a hard timeout — stalled streams hang forever otherwise
+  return new Promise<string>((resolve) => {
+    const timer = setTimeout(() => {
+      try { (body as unknown as { destroy?: () => void }).destroy?.(); } catch { /* ignore */ }
+      resolve('');
+    }, timeoutMs);
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+
+    (body as NodeJS.ReadableStream)
+      .on('data', (raw: unknown) => {
+        const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+        const remaining = maxBytes - total;
+        if (chunk.length >= remaining) {
+          chunks.push(chunk.slice(0, remaining));
+          total = maxBytes;
+          clearTimeout(timer);
+          try { (body as unknown as { destroy?: () => void }).destroy?.(); } catch { /* ignore */ }
+          resolve(Buffer.concat(chunks, maxBytes).toString('utf-8'));
+        } else {
+          chunks.push(chunk);
+          total += chunk.length;
+        }
+      })
+      .on('end', () => {
+        clearTimeout(timer);
+        resolve(Buffer.concat(chunks, total).toString('utf-8'));
+      })
+      .on('error', () => {
+        clearTimeout(timer);
+        resolve(Buffer.concat(chunks, total).toString('utf-8'));
+      });
+  });
 }
 
 function fetchWithTimeout(
