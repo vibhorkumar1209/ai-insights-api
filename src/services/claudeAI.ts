@@ -1299,10 +1299,10 @@ Return ONLY valid JSON with this exact shape:
     { "id": "seg_7", "label": "By Price Tier", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-Range", "Budget", "Entry-Level"] }
   ],
   "suggestedPlayers": [
-    { "name": "Company A", "marketShare": "25%", "headquarters": "US", "selected": true },
-    { "name": "Company B", "marketShare": "20%", "headquarters": "EU", "selected": true },
-    { "name": "Company C", "marketShare": "15%", "headquarters": "APAC", "selected": true },
-    { "name": "Company D", "marketShare": "10%", "headquarters": "US", "selected": false }
+    { "name": "Company A", "description": "Market leader in category X", "marketShare": "25%", "headquarters": "US", "revenue": "$X.XB", "selected": true },
+    { "name": "Company B", "description": "Strong competitor in segment Y", "marketShare": "20%", "headquarters": "EU", "revenue": "$X.XB", "selected": true },
+    { "name": "Company C", "description": "Growing player in region Z", "marketShare": "15%", "headquarters": "APAC", "revenue": "$X.XB", "selected": true },
+    { "name": "Company D", "description": "Emerging challenger", "marketShare": "10%", "headquarters": "US", "revenue": "$X.XB", "selected": false }
   ],
   "tocPreview": ${JSON.stringify(tocTitles)}
 }
@@ -1313,8 +1313,9 @@ RULES:
 - Each segment: comprehensive sub-segment list covering the full market breakdown for that dimension.
 - Example for "By Geography": North America, Europe, Asia-Pacific, Middle East Africa, Latin America, Emerging Markets (6 items).
 - Suggest 15-20 competitors. Pre-select top 10 (selected: true/false).
-- For each player: ONLY name, marketShare (XX%), headquarters (US/EU/APAC/etc).
-- CRITICAL: NO descriptions, NO special characters, NO quotes or newlines in any string.
+- For each player: name, description (1 short phrase: "Market leader in X", "Growing in segment Y", etc), marketShare (XX%), headquarters (US/EU/APAC/etc), revenue (estimated $X.XB format).
+- Description should be 3-8 words maximum, highlighting player's position or focus.
+- CRITICAL: NO special characters, NO quotes or newlines in any string, NO markdown.
 - Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
 - searchQueries: 6-10 words, simple English, current year focused.
 - Output must be VALID JSON with proper commas, no trailing commas.
@@ -1607,9 +1608,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   competition_analysis: {
     title: 'Competition Analysis',
-    tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Strength"]. List all players (selected + unselected) sorted by market share.',
-    chartHint: 'Include horizontal_bar chartSpec: data=[{label:"Company A",value:25},{label:"Company B",value:20},...]. Show market share for all companies.',
-    subsectionHint: 'First bodyParagraph: market concentration (oligopoly/etc), top 3-5 players with shares, competitive dynamics. Include bcgMatrixData: [{name,marketSize:<number>,growth:<number>,quadrant:"star|cash_cow|question_mark|dog"}] for ALL active players (numeric values only). Include competitorProfiles: [{name,parentCompany,hqLocation,keyProducts,overallRevenue,categoryRevenue,marketShare,manufacturingLocation,recentNews,jvMaPartnerships,otherInsights}] ONLY for KEY PLAYERS selected in input. Do NOT include subsections.',
+    tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Key Strength"]. List all players (selected + unselected) sorted by market share descending.',
+    chartHint: 'Include horizontal_bar chartSpec showing market share %. Data format: [{label:"Company A",value:25},{label:"Company B",value:20},...] sorted by value descending.',
+    subsectionHint: 'First bodyParagraph: competitive landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), top 3-5 players with market shares, competitive dynamics (price-led, innovation-led, etc). Include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for KEY PLAYERS (selected in input). Do NOT include subsections. Do NOT include bcgMatrixData.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
@@ -1739,10 +1740,9 @@ CRITICAL RULES:
 - DEFUNCT COMPANY GUARDRAIL: Do NOT build competitor profiles, BCG matrix entries, or key player listings for companies that have shut down operations, filed for bankruptcy, been liquidated, or permanently exited the market. Instead, highlight such companies separately as "⚠ Defunct / Bankrupt" with the year and reason. Only profile active, operating companies.
 `.trim();
 
-  // Use higher token limits for heavy sections (market_size_by_segment, competition_analysis)
-  // to prevent truncation; other sections use standard limit
+  // Prioritize quality over token reduction — use sufficient tokens for detailed analysis
   const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'competition_analysis'].includes(id));
-  const maxTokens = isHeavySection ? 8500 : 6000;
+  const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
