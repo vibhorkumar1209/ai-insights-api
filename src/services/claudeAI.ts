@@ -1291,34 +1291,29 @@ Return ONLY valid JSON with this exact shape:
   },
   "suggestedSegments": [
     { "id": "seg_1", "label": "Organized vs Unorganized", "type": "organized", "selected": true, "subSegments": ["Organized Market", "Unorganized Market"] },
-    { "id": "seg_2", "label": "By Region", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific", "..."] },
-    { "id": "seg_3", "label": "By Product Type", "type": "product_type", "selected": true, "subSegments": ["Type A", "Type B", "..."] },
-    { "id": "seg_4", "label": "By Application", "type": "application", "selected": true, "subSegments": ["App 1", "App 2", "..."] },
-    { "id": "seg_5", "label": "By Distribution Channel", "type": "distribution", "selected": true, "subSegments": ["Channel 1", "Channel 2", "..."] },
-    { "id": "seg_6", "label": "By Channel", "type": "channel", "selected": false, "subSegments": ["Online", "Offline", "..."] },
-    { "id": "seg_7", "label": "By Pricing Segment", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-range", "Economy"] },
-    { "id": "seg_8", "label": "By End-Use Industry", "type": "end_use", "selected": true, "subSegments": ["Industry 1", "Industry 2", "..."] }
+    { "label": "By Region", "subSegments": ["North America", "Europe", "Asia-Pacific"] },
+    { "label": "By Product Type", "subSegments": ["Type A", "Type B", "Type C"] }
   ],
   "suggestedPlayers": [
-    { "name": "Company A", "description": "Brief 1-line description", "marketShare": "XX%", "headquarters": "City, Country", "revenue": "$X.XB", "selected": true },
-    ...15-20 competitors total, top 10 pre-selected for profiling
+    { "name": "Company A", "selected": true },
+    { "name": "Company B", "selected": true }
   ],
   "tocPreview": ${JSON.stringify(tocTitles)}
 }
 
 RULES:
-- Suggest 6-8 market segments. Each must have 3-4 sub-segments (no more).
-- Suggest 15-20 competitors total. Pre-select top 10 for detailed profiling. Keep descriptions to 1 short sentence.
-- ONLY include ACTIVE, OPERATING companies as competitors.
-- searchQueries: 10-15 words each, optimised for web search with current year data
-- Be specific to the industry — do not use generic placeholder names
+- Suggest ONLY 2-3 major market segments. Each has 2-3 sub-segments.
+- Suggest ONLY 10-12 competitors. Pre-select top 10 (selected: true/false).
+- Names ONLY — no descriptions, no market share, no headquarters (keep JSON tiny).
+- searchQueries: 5-8 words, simple, optimized for 2024 data.
+- Output MUST be valid JSON with no special characters in strings.
 `.trim();
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 2500,  // slightly increased but with better error handling
-    temperature: 0.0,  // fully deterministic for JSON generation
-    system: `You are a senior market research analyst. Output ONLY one valid JSON object. No markdown, no explanations, no arrays. NO trailing text after the JSON. Ensure all quotes and special characters are properly escaped. ${RECENCY_DIRECTIVE}`,
+    max_tokens: 1500,  // drastically reduced — asking for minimal JSON only
+    temperature: 0.0,  // fully deterministic
+    system: `Output ONLY valid JSON. No text before or after. No markdown, no explanations. Keep response under 1500 chars. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
