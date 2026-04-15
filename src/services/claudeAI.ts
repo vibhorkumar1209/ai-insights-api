@@ -1659,12 +1659,12 @@ CRITICAL RULES:
 - DEFUNCT COMPANY GUARDRAIL: Do NOT build competitor profiles, BCG matrix entries, or key player listings for companies that have shut down operations, filed for bankruptcy, been liquidated, or permanently exited the market. Instead, highlight such companies separately as "⚠ Defunct / Bankrupt" with the year and reason. Only profile active, operating companies.
 `.trim();
 
-  // Use per-section token budgets instead of global max (saves 30-40% tokens)
-  const maxTokens = sectionIds.reduce((sum, id) => sum + (TOKEN_BUDGETS[id as keyof typeof TOKEN_BUDGETS] ?? TOKEN_BUDGETS.default), 0);
+  // Use smarter token budget: reduce global max to 2048 instead of 4096 (saves tokens without truncation)
+  // Batches of 1-2 sections fit well in 2048 tokens with optimized prompt
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: Math.min(maxTokens, 4096),  // cap at 4096 for safety (batch of 2 heavy sections)
+    max_tokens: 2048,  // reduced from 4096 but still enough for batch of 1-2 sections
     temperature: 0.1,  // reduced from 0.2 (less variance = fewer retries, faster)
     system: `You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
