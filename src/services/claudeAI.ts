@@ -1291,12 +1291,12 @@ Return ONLY valid JSON with this exact shape:
   },
   "suggestedSegments": [
     { "id": "seg_1", "label": "Organized vs Unorganized", "type": "organized", "selected": true, "subSegments": ["Organized Market", "Unorganized Market"] },
-    { "label": "By Geography", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific", "Middle East Africa", "Latin America", "Emerging Markets"] },
-    { "label": "By Product Type", "type": "product", "selected": true, "subSegments": ["Product Type A", "Product Type B", "Product Type C", "Product Type D", "Product Type E"] },
-    { "label": "By Application", "type": "application", "selected": true, "subSegments": ["Application 1", "Application 2", "Application 3", "Application 4", "Application 5", "Application 6"] },
-    { "label": "By Distribution Channel", "type": "distribution", "selected": true, "subSegments": ["Direct Sales", "Distributors", "E-commerce", "Retail", "OEM"] },
-    { "label": "By Customer Segment", "type": "customer", "selected": false, "subSegments": ["Enterprise", "Mid-Market", "SMB", "Startups"] },
-    { "label": "By Price Tier", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-Range", "Budget", "Entry-Level"] }
+    { "id": "seg_2", "label": "By Geography", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific", "Middle East Africa", "Latin America", "Emerging Markets"] },
+    { "id": "seg_3", "label": "By Product Type", "type": "product_type", "selected": true, "subSegments": ["Product Type A", "Product Type B", "Product Type C", "Product Type D", "Product Type E"] },
+    { "id": "seg_4", "label": "By Application", "type": "application", "selected": true, "subSegments": ["Application 1", "Application 2", "Application 3", "Application 4", "Application 5", "Application 6"] },
+    { "id": "seg_5", "label": "By Distribution Channel", "type": "distribution", "selected": true, "subSegments": ["Direct Sales", "Distributors", "E-commerce", "Retail", "OEM"] },
+    { "id": "seg_6", "label": "By Customer Segment", "type": "customer_segment", "selected": false, "subSegments": ["Enterprise", "Mid-Market", "SMB", "Startups"] },
+    { "id": "seg_7", "label": "By Price Tier", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-Range", "Budget", "Entry-Level"] }
   ],
   "suggestedPlayers": [
     { "name": "Company A", "marketShare": "25%", "headquarters": "US", "selected": true },
@@ -1379,6 +1379,19 @@ RULES:
   if (!parsed.scope?.industry || !parsed.suggestedSegments?.length || !parsed.suggestedPlayers?.length) {
     throw new Error('Incomplete wizard scope extraction');
   }
+
+  // Normalize segments: ensure all have IDs and selected fields
+  parsed.suggestedSegments = parsed.suggestedSegments.map((seg, idx) => ({
+    ...seg,
+    id: seg.id || `seg_${idx + 1}`,
+    selected: seg.selected ?? (idx < 3), // Pre-select first 3 segments if not specified
+  }));
+
+  // Normalize players: ensure all have selected fields
+  parsed.suggestedPlayers = parsed.suggestedPlayers.map((player, idx) => ({
+    ...player,
+    selected: player.selected ?? (idx < 10), // Pre-select top 10 if not specified
+  }));
 
   // Carry forward input fields to scope
   if (input.subIndustry) parsed.scope.subIndustry = input.subIndustry;
