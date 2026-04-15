@@ -1291,10 +1291,12 @@ Return ONLY valid JSON with this exact shape:
   },
   "suggestedSegments": [
     { "id": "seg_1", "label": "Organized vs Unorganized", "type": "organized", "selected": true, "subSegments": ["Organized Market", "Unorganized Market"] },
-    { "label": "By Geography", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific"] },
-    { "label": "By Product Type", "type": "product", "selected": true, "subSegments": ["Type A", "Type B", "Type C"] },
-    { "label": "By Application", "type": "application", "selected": true, "subSegments": ["App 1", "App 2"] },
-    { "label": "By Distribution", "type": "distribution", "selected": true, "subSegments": ["Direct", "Indirect"] }
+    { "label": "By Geography", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific", "Middle East Africa", "Latin America", "Emerging Markets"] },
+    { "label": "By Product Type", "type": "product", "selected": true, "subSegments": ["Product Type A", "Product Type B", "Product Type C", "Product Type D", "Product Type E"] },
+    { "label": "By Application", "type": "application", "selected": true, "subSegments": ["Application 1", "Application 2", "Application 3", "Application 4", "Application 5", "Application 6"] },
+    { "label": "By Distribution Channel", "type": "distribution", "selected": true, "subSegments": ["Direct Sales", "Distributors", "E-commerce", "Retail", "OEM"] },
+    { "label": "By Customer Segment", "type": "customer", "selected": false, "subSegments": ["Enterprise", "Mid-Market", "SMB", "Startups"] },
+    { "label": "By Price Tier", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-Range", "Budget", "Entry-Level"] }
   ],
   "suggestedPlayers": [
     { "name": "Company A", "marketShare": "25%", "headquarters": "US", "selected": true },
@@ -1306,18 +1308,21 @@ Return ONLY valid JSON with this exact shape:
 }
 
 RULES:
-- Suggest 6-10 market segments. Each has 2-3 sub-segments ONLY.
+- Suggest 6-10 market segments. Each has 3-6 sub-segments (be exhaustive).
+- Segments must cover ALL major market dimensions: geography, product type, application, channel, customer segment, technology, price tier, use case.
+- Each segment: comprehensive sub-segment list covering the full market breakdown for that dimension.
+- Example for "By Geography": North America, Europe, Asia-Pacific, Middle East Africa, Latin America, Emerging Markets (6 items).
 - Suggest 15-20 competitors. Pre-select top 10 (selected: true/false).
 - For each player: ONLY name, marketShare (XX%), headquarters (US/EU/APAC/etc).
 - CRITICAL: NO descriptions, NO special characters, NO quotes or newlines in any string.
-- Sub-segment names: Keep SHORT (max 3 words). Use standard industry terms only.
+- Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
 - searchQueries: 6-10 words, simple English, current year focused.
-- Output must be VALID JSON with proper comma placement and no trailing commas.
+- Output must be VALID JSON with proper commas, no trailing commas.
 `.trim();
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 2500,  // accommodate 6-10 segments + 15-20 competitors
+    max_tokens: 3000,  // accommodate 6-10 segments with 3-6 sub-segments each + 15-20 competitors
     temperature: 0.0,  // fully deterministic JSON generation
     system: `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
