@@ -1291,29 +1291,34 @@ Return ONLY valid JSON with this exact shape:
   },
   "suggestedSegments": [
     { "id": "seg_1", "label": "Organized vs Unorganized", "type": "organized", "selected": true, "subSegments": ["Organized Market", "Unorganized Market"] },
-    { "label": "By Region", "subSegments": ["North America", "Europe", "Asia-Pacific"] },
-    { "label": "By Product Type", "subSegments": ["Type A", "Type B", "Type C"] }
+    { "label": "By Geography", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific"] },
+    { "label": "By Product Type", "type": "product", "selected": true, "subSegments": ["Type A", "Type B", "Type C"] },
+    { "label": "By Application", "type": "application", "selected": true, "subSegments": ["App 1", "App 2"] },
+    { "label": "By Distribution", "type": "distribution", "selected": true, "subSegments": ["Direct", "Indirect"] }
   ],
   "suggestedPlayers": [
-    { "name": "Company A", "selected": true },
-    { "name": "Company B", "selected": true }
+    { "name": "Company A", "marketShare": "25%", "headquarters": "US", "selected": true },
+    { "name": "Company B", "marketShare": "20%", "headquarters": "EU", "selected": true },
+    { "name": "Company C", "marketShare": "15%", "headquarters": "APAC", "selected": true },
+    { "name": "Company D", "marketShare": "10%", "headquarters": "US", "selected": false }
   ],
   "tocPreview": ${JSON.stringify(tocTitles)}
 }
 
 RULES:
-- Suggest ONLY 2-3 major market segments. Each has 2-3 sub-segments.
-- Suggest ONLY 10-12 competitors. Pre-select top 10 (selected: true/false).
-- Names ONLY — no descriptions, no market share, no headquarters (keep JSON tiny).
-- searchQueries: 5-8 words, simple, optimized for 2024 data.
-- Output MUST be valid JSON with no special characters in strings.
+- Suggest 4-6 market segments. Each has 2-3 sub-segments only (NO MORE).
+- Suggest 12-15 competitors. Pre-select top 10 (selected: true/false).
+- For each player: name, marketShare (e.g. "25%"), headquarters (2-letter country code). NO descriptions.
+- ALL string values: use ONLY alphanumeric + spaces + hyphens. NO quotes, newlines, special chars.
+- searchQueries: 5-8 words each, simple, optimized for current market data.
+- Output MUST be valid JSON. Double-check all quotes are escaped.
 `.trim();
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 1500,  // drastically reduced — asking for minimal JSON only
-    temperature: 0.0,  // fully deterministic
-    system: `Output ONLY valid JSON. No text before or after. No markdown, no explanations. Keep response under 1500 chars. ${RECENCY_DIRECTIVE}`,
+    max_tokens: 2000,  // balanced: more data than minimal, but still constrained
+    temperature: 0.0,  // fully deterministic for JSON
+    system: `Output ONLY valid JSON object. No markdown, no text before/after. Ensure all string values contain ONLY alphanumeric, spaces, hyphens. No quotes or special chars inside strings. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1324,38 +1329,44 @@ RULES:
 
   let parsed: ScopeWizardResult | null = null;
 
+  // Pre-process: Remove any markdown code blocks if present
+  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
   // Strategy 1: Try to extract and parse the main JSON object
   try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON object found');
 
     parsed = JSON.parse(jsonMatch[0]) as ScopeWizardResult;
   } catch (err) {
-    // Strategy 2: Try to extract individual components if full parse fails
-    console.warn('[extractScope] Full JSON parse failed, attempting partial extraction:', err instanceof Error ? err.message : err);
+    console.warn('[extractScope] Full parse failed, attempting component extraction:', err instanceof Error ? err.message : err);
 
     try {
-      // Extract scope, suggestedSegments, and suggestedPlayers separately
-      const scopeMatch = raw.match(/"scope"\s*:\s*\{[^}]*\}/);
-      const segmentsMatch = raw.match(/"suggestedSegments"\s*:\s*\[[^\]]*\]/);
-      const playersMatch = raw.match(/"suggestedPlayers"\s*:\s*\[[^\]]*\]/);
-      const tocMatch = raw.match(/"tocPreview"\s*:\s*\{[^}]*\}/);
+      // Strategy 2: Extract components with better nested handling
+      let scopeMatch, segmentsMatch, playersMatch, tocMatch;
+
+      // Extract scope object (handle nested braces)
+      scopeMatch = cleaned.match(/"scope"\s*:\s*\{(?:[^{}]|(?:\{[^{}]*\}))*\}/);
+
+      // Extract segments array
+      segmentsMatch = cleaned.match(/"suggestedSegments"\s*:\s*\[[\s\S]*?\]/);
+
+      // Extract players array
+      playersMatch = cleaned.match(/"suggestedPlayers"\s*:\s*\[[\s\S]*?\]/);
+
+      // Extract toc preview
+      tocMatch = cleaned.match(/"tocPreview"\s*:\s*\{(?:[^{}]|(?:\{[^{}]*\}))*\}/);
 
       if (!scopeMatch || !segmentsMatch || !playersMatch) {
-        throw new Error('Could not extract required scope components');
+        throw new Error('Missing required components');
       }
 
-      // Reconstruct object from components
-      const reconstructed = `{
-        ${scopeMatch[0]},
-        ${segmentsMatch[0]},
-        ${playersMatch[0]}
-        ${tocMatch ? ',' + tocMatch[0] : ''}
-      }`;
+      // Reconstruct with proper formatting
+      const reconstructed = `{${scopeMatch[0]},${segmentsMatch[0]},${playersMatch[0]}${tocMatch ? ',' + tocMatch[0] : ''}}`;
 
       parsed = JSON.parse(reconstructed) as ScopeWizardResult;
     } catch (componentErr) {
-      throw new Error(`Scope extraction failed: ${err instanceof Error ? err.message : err}`);
+      throw new Error(`Scope extraction failed: ${componentErr instanceof Error ? componentErr.message : String(err)}`);
     }
   }
 
