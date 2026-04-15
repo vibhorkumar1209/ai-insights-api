@@ -9,6 +9,26 @@ const MAX_RETRIES = 0;          // no retry — saves memory on Render free tier
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────
 // AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
 // node-fetch v2.  Use a manual AbortController + setTimeout instead.
+// Read response body up to maxBytes — stops streaming early to avoid massive RAM spikes.
+// Parallel.AI raw responses can be 50-100 MB; we only need the first ~300 KB to parse the JSON wrapper.
+async function readBodyLimited(res: import('node-fetch').Response, maxBytes = 300_000): Promise<string> {
+  const body = res.body;
+  if (!body) return '';
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const raw of body as AsyncIterable<unknown>) {
+    const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+    if (total + chunk.length >= maxBytes) {
+      chunks.push(chunk.slice(0, maxBytes - total));
+      total = maxBytes;
+      break;
+    }
+    chunks.push(chunk);
+    total += chunk.length;
+  }
+  return Buffer.concat(chunks, total).toString('utf-8');
+}
+
 function fetchWithTimeout(
   url: string,
   options: import('node-fetch').RequestInit,
@@ -82,18 +102,25 @@ async function pollTask(runId: string): Promise<string> {
         throw new Error(`Parallel.AI result fetch failed (${resultRes.status})`);
       }
 
-      const resultData = (await resultRes.json()) as {
-        output?: { content?: { output?: string } | string };
-      };
+      // Read at most 300 KB — Parallel.AI responses can be 50-100 MB raw.
+      // Allocating the full body before truncation was OOM-crashing the 512MB container.
+      const rawText = await readBodyLimited(resultRes);
+      let resultData: { output?: { content?: { output?: string } | string } };
+      try {
+        resultData = JSON.parse(rawText);
+      } catch {
+        // Body was truncated mid-JSON — extract text via regex fallback
+        const m = rawText.match(/"output"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        const extracted = m ? m[1].replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\') : '';
+        return extracted.slice(0, 25_000);
+      }
 
-      // Extract text: output.content.output (string) or output.content (string)
       const content = resultData?.output?.content;
       const text =
         (typeof content === 'object' && content !== null ? content.output : undefined) ||
         (typeof content === 'string' ? content : '') ||
         '';
 
-      // Hard cap raw response to 25KB to prevent OOM on Render free (512MB)
       return text.length > 25_000 ? text.slice(0, 25_000) + '\n[truncated]' : text;
     }
   }
