@@ -109,21 +109,44 @@ function safeParseJsonArray(raw: string): unknown[] | null {
   const objects: unknown[] = [];
   let depth = 0;
   let start = -1;
+  let inString = false;
+  let escapeNext = false;
 
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
-    if (ch === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        try {
-          objects.push(JSON.parse(raw.slice(start, i + 1)));
-        } catch {
-          // skip malformed object
+
+    // Track string boundaries to avoid counting braces inside strings
+    if (ch === '"' && !escapeNext) {
+      inString = !inString;
+    }
+    escapeNext = ch === '\\' && !escapeNext;
+
+    if (!inString) {
+      if (ch === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          const objStr = raw.slice(start, i + 1);
+          try {
+            objects.push(JSON.parse(objStr));
+          } catch (parseErr) {
+            // Try to fix common JSON issues before giving up
+            try {
+              // Remove any unescaped newlines inside strings
+              const fixed = objStr
+                .replace(/(\": \"[^"]*)\n([^"]*\")/g, '$1\\n$2') // fix newlines in strings
+                .replace(/([^\\])"([^"]*)"([^}]*"[^"]*)"/g, '$1\\"$2\\"$3'); // fix extra quotes
+              const parsed = JSON.parse(fixed);
+              objects.push(parsed);
+            } catch {
+              // skip malformed object
+              console.warn(`[safeParseJsonArray] Skipping malformed object:`, objStr.slice(0, 100));
+            }
+          }
+          start = -1;
         }
-        start = -1;
       }
     }
   }

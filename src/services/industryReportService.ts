@@ -141,15 +141,17 @@ export async function runIndustryReportV2(
       ? scope.selectedSections
       : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'competition_analysis', 'regulatory_overview', 'forecast', 'swot', 'porters_five_forces', 'tei_analysis'];
 
-    // Group into batches — each heavy section gets its own batch to avoid token limits
+    // Group into batches — each batch with 1-2 sections max to reduce JSON complexity
     const batchDefs = [
-      ['market_overview'],             // combo chart + 4 subsections — own batch
-      ['market_size_by_segment'],      // per-segment tables + charts — own batch (can be heavy)
-      ['market_dynamics'],             // 4 tables — heavy
-      ['competition_analysis'],        // 10 profiles + BCG matrix — heavy
-      ['regulatory_overview'],         // 4 tables — heavy
+      ['market_overview'],             // combo chart + 4 subsections
+      ['market_size_by_segment'],      // per-segment tables + charts (heavy)
+      ['market_dynamics'],             // 4 tables
+      ['competition_analysis'],        // 10 profiles + BCG matrix (heavy)
+      ['regulatory_overview'],         // 4 tables
       ['forecast'],                    // 3 charts + 2 tables
-      ['swot', 'porters_five_forces', 'tei_analysis'],
+      ['swot'],                        // SWOT only
+      ['porters_five_forces'],         // Porter's only
+      ['tei_analysis'],                // TEI only
     ];
     const batches = batchDefs
       .map((ids) => ids.filter((id) => selected.includes(id)))
