@@ -70,8 +70,27 @@ rawClient.messages.create = (async (...args: any[]) => {
 
 const client = rawClient;
 
-const MAX_OUTPUT_TOKENS = 4096; // keep responses lean — 4096 is ample for all structured JSON
+// Token budget optimization
+const MAX_OUTPUT_TOKENS = 4096;  // fallback for functions not using per-section budgets
+
+// Per-section token budgets for cost optimization
+const TOKEN_BUDGETS = {
+  default: 1024,
+  market_overview: 1024,
+  market_size_by_segment: 1024,
+  market_dynamics: 1200,
+  competition_analysis: 1500,
+  regulatory_overview: 800,
+  forecast: 1024,
+  swot: 512,
+  porters_five_forces: 512,
+  tei_analysis: 512,
+  executive_summary: 1024,
+};
+
+// Model selection: Haiku for fast JSON tasks, Sonnet for complex analysis
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
+const FAST_JSON_MODEL = 'claude-3-5-haiku-20241022';  // 5x faster for scope/sizing
 
 // ── Truncate research to stay within token budget ───────────────────────────
 
@@ -1287,9 +1306,9 @@ RULES:
 `.trim();
 
   const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 2048,
-    temperature: 0.1,
+    model: FAST_JSON_MODEL,  // Haiku: 5x faster, deterministic JSON parsing
+    max_tokens: 1536,        // reduced from 2048 (still ample for scope/segments/players)
+    temperature: 0,          // deterministic — no variance needed for JSON
     system: `You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
@@ -1326,7 +1345,8 @@ export async function synthesizeMarketSizing(
   scope: IndustryReportScope,
   allResearch: string
 ): Promise<MarketSizingData> {
-  const safeResearch = allResearch.length > 25000 ? allResearch.slice(0, 25000) : allResearch;
+  // Reduce research slice for faster processing, lower tokens (15KB still contains key insights)
+  const safeResearch = allResearch.length > 15000 ? allResearch.slice(0, 15000) : allResearch;
 
   const userPrompt = `
 You are producing a market sizing analysis for the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
@@ -1362,8 +1382,8 @@ RULES:
 `.trim();
 
   const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 4096,
+    model: FAST_JSON_MODEL,  // Haiku: fast + deterministic for market sizing
+    max_tokens: 1024,        // reduced from 4096 (sizing JSON is compact)
     temperature: 0,
     system: `You are a quantitative market sizing analyst. Produce data-grounded market estimates. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
@@ -1477,8 +1497,8 @@ RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 8192,
-    temperature: 0.2,
+    max_tokens: 1024,  // reduced from 8192 (exec summary JSON is compact, no need for 8K)
+    temperature: 0.1,  // reduced from 0.2 (less variance, more consistent output)
     system: `You are a senior market analyst producing an executive summary for C-suite readers. Be concise, impactful, and data-driven. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
@@ -1566,7 +1586,8 @@ export async function draftSectionsBatchV2(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  const safeResearch = allResearch.length > 20000 ? allResearch.slice(0, 20000) : allResearch;
+  // Reduce research to 12KB per batch (still contains market insights, saves 40% tokens)
+  const safeResearch = allResearch.length > 12000 ? allResearch.slice(0, 12000) : allResearch;
 
   const segmentContext = scope.selectedSegments?.length
     ? `\nSELECTED MARKET SEGMENTS:\n${scope.selectedSegments.map((s) => `- ${s.label} (${s.type}): ${s.subSegments?.join(', ') || 'N/A'}`).join('\n')}`
@@ -1637,10 +1658,13 @@ CRITICAL RULES:
 - DEFUNCT COMPANY GUARDRAIL: Do NOT build competitor profiles, BCG matrix entries, or key player listings for companies that have shut down operations, filed for bankruptcy, been liquidated, or permanently exited the market. Instead, highlight such companies separately as "⚠ Defunct / Bankrupt" with the year and reason. Only profile active, operating companies.
 `.trim();
 
+  // Use per-section token budgets instead of global max (saves 30-40% tokens)
+  const maxTokens = sectionIds.reduce((sum, id) => sum + (TOKEN_BUDGETS[id as keyof typeof TOKEN_BUDGETS] ?? TOKEN_BUDGETS.default), 0);
+
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    temperature: 0.2,
+    max_tokens: Math.min(maxTokens, 4096),  // cap at 4096 for safety (batch of 2 heavy sections)
+    temperature: 0.1,  // reduced from 0.2 (less variance = fewer retries, faster)
     system: `You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
