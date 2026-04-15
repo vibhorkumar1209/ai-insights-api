@@ -114,9 +114,11 @@ export async function runIndustryReport(
     step('Scope extracted', 10, 'scoping');
     checkAbort(jobId);
 
-    // ── Step 2: Parallel research (10-50%) ──
-    step('Researching market data...', 15, 'researching');
-    const researchResults = await researchIndustryReport(scope.searchQueries);
+    // ── Step 2: Research (10-50%) — sequential, 2 queries, progress per query ──
+    step('Researching market data (1/2)...', 15, 'researching');
+    const researchResults = await researchIndustryReport(scope.searchQueries, (done, total) => {
+      if (done < total) step(`Researching market data (${done + 1}/${total})...`, 15 + Math.round(done * 30), 'researching');
+    });
     const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
     step('Research complete', 50, 'researching');
     checkAbort(jobId);
@@ -200,9 +202,11 @@ export async function runIndustryReportV2(
     step('Scope configured', 5, 'scoping');
     checkAbort(jobId);
 
-    // ── Step 2: Parallel research (5-50%) ──
-    step('Researching market data...', 10, 'researching');
-    const researchResults = await researchIndustryReport(scope.searchQueries);
+    // ── Step 2: Research (5-50%) — sequential, 2 queries, progress per query ──
+    step('Researching market data (1/2)...', 10, 'researching');
+    const researchResults = await researchIndustryReport(scope.searchQueries, (done, total) => {
+      if (done < total) step(`Researching market data (${done + 1}/${total})...`, 10 + Math.round(done * 35), 'researching');
+    });
     const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
     step('Research complete', 50, 'researching');
     checkAbort(jobId);

@@ -70,7 +70,7 @@ rawClient.messages.create = (async (...args: any[]) => {
 
 const client = rawClient;
 
-const MAX_OUTPUT_TOKENS = 16384; // claude-sonnet-4-6 supports up to 16384
+const MAX_OUTPUT_TOKENS = 4096; // keep responses lean — 4096 is ample for all structured JSON
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
 
 // ── Truncate research to stay within token budget ───────────────────────────
@@ -1385,7 +1385,7 @@ export async function synthesizeMarketSizing(
   scope: IndustryReportScope,
   allResearch: string
 ): Promise<MarketSizingData> {
-  const safeResearch = allResearch.length > 50000 ? allResearch.slice(0, 50000) : allResearch;
+  const safeResearch = allResearch.length > 25000 ? allResearch.slice(0, 25000) : allResearch;
 
   const userPrompt = `
 You are producing a market sizing analysis for the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
@@ -1504,7 +1504,7 @@ export async function draftSectionsBatch(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  const safeResearch = allResearch.length > 45000 ? allResearch.slice(0, 45000) : allResearch;
+  const safeResearch = allResearch.length > 20000 ? allResearch.slice(0, 20000) : allResearch;
 
   const sectionInstructions = sectionIds.map((id) => {
     const def = SECTION_DEFINITIONS[id];
@@ -1757,7 +1757,7 @@ export async function draftSectionsBatchV2(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  const safeResearch = allResearch.length > 45000 ? allResearch.slice(0, 45000) : allResearch;
+  const safeResearch = allResearch.length > 20000 ? allResearch.slice(0, 20000) : allResearch;
 
   const segmentContext = scope.selectedSegments?.length
     ? `\nSELECTED MARKET SEGMENTS:\n${scope.selectedSegments.map((s) => `- ${s.label} (${s.type}): ${s.subSegments?.join(', ') || 'N/A'}`).join('\n')}`

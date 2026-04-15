@@ -702,11 +702,13 @@ Provide specific, evidence-based findings. Cite every claim with a source. State
 // Runs up to 4 research queries concurrently for a comprehensive industry report.
 
 export async function researchIndustryReport(
-  queries: string[]
+  queries: string[],
+  onQueryDone?: (completedIdx: number, total: number) => void
 ): Promise<string[]> {
-  // Sequential — prevent 4 concurrent large JSON buffers OOM-killing the 512MB container
+  // 2 queries max, sequential — keeps peak RSS well under 512 MB
+  const limited = queries.slice(0, 2);
   const results: string[] = [];
-  for (const [idx, query] of queries.slice(0, 4).entries()) {
+  for (const [idx, query] of limited.entries()) {
     try {
       results.push(await runResearch(query, 'base'));
     } catch (err) {
@@ -714,6 +716,7 @@ export async function researchIndustryReport(
       console.warn(`[parallelAI] Industry report query ${idx + 1} failed: ${msg}`);
       results.push(`Research unavailable for query ${idx + 1}: ${msg}`);
     }
+    onQueryDone?.(idx + 1, limited.length);
   }
   return results;
 }
