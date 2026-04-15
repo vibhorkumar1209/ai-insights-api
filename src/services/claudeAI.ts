@@ -1666,6 +1666,10 @@ CRITICAL RULES:
     throw new Error(`No V2 sections parsed for batch [${sectionIds.join(', ')}]`);
   }
 
+  // Debug: log what was parsed
+  console.log(`[draftV2] Parsed ${parsed.length} sections: ${(parsed as any[]).map((s: any) => s.id || '?').join(', ')}`);
+
+
   // Sections with specialized data (swot/porters/tei) may have empty bodyParagraphs
   // Sections with tables/charts instead of bodyParagraphs (market_dynamics, regulatory) are valid
   const valid = (parsed as ReportSection[]).filter((s) => {
@@ -1681,6 +1685,9 @@ CRITICAL RULES:
     return hasBody || hasSpecialData || hasTables || hasCharts || hasProfiles || hasBcg || hasSubsections;
   });
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
+  if (valid.length < parsed.length) {
+    console.warn(`[draftV2] Filtered out ${parsed.length - valid.length} sections. Filtered:`, (parsed as any[]).filter((s: any) => !valid.includes(s)).map((s: any) => `${s.id} (bodyParagraphs:${s.bodyParagraphs?.length || 0}, tables:${s.tables?.length || 0}, charts:${s.charts?.length || 0})`).join(', '));
+  }
   return valid;
 }
 
