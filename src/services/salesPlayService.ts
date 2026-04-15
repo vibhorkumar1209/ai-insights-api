@@ -7,6 +7,15 @@ import { synthesizeSalesPlay } from './claudeAI';
 
 const jobs = new Map<string, SalesPlayResult>();
 
+const JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const cleanupTimer = setInterval(() => {
+  const cutoff = Date.now() - JOB_TTL_MS;
+  for (const [id, job] of jobs.entries()) {
+    if (new Date(job.createdAt).getTime() < cutoff) jobs.delete(id);
+  }
+}, 30 * 60 * 1000);
+cleanupTimer.unref();
+
 // ── Event pub/sub (SSE delivery) ──────────────────────────────────────────────
 
 type Listener = (event: string, data: unknown) => void;
@@ -14,7 +23,7 @@ const listeners = new Map<string, Set<Listener>>();
 
 function emit(jobId: string, event: string, data: unknown) {
   const subs = listeners.get(jobId);
-  if (subs) subs.forEach((fn) => fn(event, data));
+  if (subs) subs.forEach((fn) => { try { fn(event, data); } catch { /* closed */ } });
 }
 
 export function subscribeToJob(jobId: string, fn: Listener) {

@@ -3,7 +3,6 @@ import { aiLimiter } from '../middleware/rateLimiter';
 import {
   createIndustryReportJob,
   getIndustryReportJob,
-  runIndustryReport,
   runIndustryReportV2,
   scopeWithWizard,
   subscribeToJob,
@@ -12,28 +11,6 @@ import {
 } from '../services/industryReportService';
 
 const router = Router();
-
-// POST /api/industry-report — Start a new industry report
-router.post('/', aiLimiter, (req: Request, res: Response) => {
-  const { query, geography } = req.body;
-
-  if (!query || typeof query !== 'string' || query.trim().length < 3) {
-    res.status(400).json({ error: 'query is required (minimum 3 characters)' });
-    return;
-  }
-
-  const input = {
-    query: query.trim(),
-    geography: geography?.trim() || undefined,
-  };
-
-  const jobId = createIndustryReportJob(input);
-  runIndustryReport(jobId, input).catch((err) =>
-    console.error(`[industryReport] Unhandled error for job ${jobId}:`, err)
-  );
-
-  res.status(202).json({ jobId });
-});
 
 // POST /api/industry-report/scope — Wizard: extract scope + suggest segments & players
 router.post('/scope', aiLimiter, async (req: Request, res: Response) => {

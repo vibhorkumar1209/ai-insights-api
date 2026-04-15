@@ -5,10 +5,8 @@ import {
 } from '../types';
 import { researchIndustryReport } from './parallelAI';
 import {
-  extractReportScope,
   extractScopeWithWizard,
   synthesizeMarketSizing,
-  draftSectionsBatch,
   draftSectionsBatchV2,
   synthesizeExecutiveSummary,
 } from './claudeAI';
@@ -96,86 +94,6 @@ function updateJob(jobId: string, updates: Partial<IndustryReportResult>) {
 }
 
 // ── Main runner ──────────────────────────────────────────────────────────────
-
-export async function runIndustryReport(
-  jobId: string,
-  input: IndustryReportInput
-): Promise<void> {
-  const step = (msg: string, progress: number, status: IndustryReportResult['status'] = 'researching') => {
-    updateJob(jobId, { currentStep: msg, progress, status });
-    emit(jobId, 'progress', { currentStep: msg, progress, status });
-  };
-
-  try {
-    // ── Step 1: Scope extraction (0-10%) ──
-    step('Extracting report scope...', 5, 'scoping');
-    const scope = await extractReportScope(input);
-    updateJob(jobId, { scope });
-    step('Scope extracted', 10, 'scoping');
-    checkAbort(jobId);
-
-    // ── Step 2: Research (10-50%) — sequential, 2 queries, progress per query ──
-    step('Researching market data (1/2)...', 15, 'researching');
-    const researchResults = await researchIndustryReport(scope.searchQueries, (done, total) => {
-      if (done < total) step(`Researching market data (${done + 1}/${total})...`, 15 + Math.round(done * 30), 'researching');
-    });
-    const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
-    step('Research complete', 50, 'researching');
-    checkAbort(jobId);
-
-    // ── Step 3: Market sizing (50-60%) ──
-    step('Analysing market size...', 55, 'sizing');
-    const marketSizing = await synthesizeMarketSizing(scope, allResearch);
-    updateJob(jobId, { marketSizing });
-    step('Market sizing complete', 60, 'sizing');
-    checkAbort(jobId);
-
-    // ── Step 4: Section drafting (60-85%) — 3 batches ──
-    step('Drafting report sections (1/3)...', 62, 'drafting');
-    const batch1 = await draftSectionsBatch(scope, allResearch, marketSizing, ['introduction', 'market_size', 'segmentation']);
-    updateJob(jobId, { sections: batch1 });
-    checkAbort(jobId);
-    step('Drafting report sections (2/3)...', 72, 'drafting');
-
-    const batch2 = await draftSectionsBatch(scope, allResearch, marketSizing, ['dynamics_trends', 'technology', 'competitive']);
-    const sectionsAfter2 = [...batch1, ...batch2];
-    updateJob(jobId, { sections: sectionsAfter2 });
-    checkAbort(jobId);
-    step('Drafting report sections (3/3)...', 80, 'drafting');
-
-    const batch3 = await draftSectionsBatch(scope, allResearch, marketSizing, ['regulatory', 'forecast']);
-    const allSections: ReportSection[] = [...sectionsAfter2, ...batch3];
-    updateJob(jobId, { sections: allSections });
-    checkAbort(jobId);
-    step('All sections drafted', 85, 'drafting');
-
-    // ── Step 5: Executive summary (85-100%) ──
-    step('Generating executive summary...', 90, 'summarizing');
-    const executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
-    checkAbort(jobId);
-
-    // ── Complete ──
-    updateJob(jobId, {
-      status: 'complete',
-      progress: 100,
-      currentStep: 'Complete',
-      executiveSummary,
-      completedAt: new Date().toISOString(),
-    });
-    emit(jobId, 'result', jobs.get(jobId));
-
-  } catch (err) {
-    if (err instanceof JobAbortedError) {
-      console.log(`[industryReport] Job ${jobId} aborted by user.`);
-      abortedJobs.delete(jobId);
-      return;
-    }
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`[industryReport] Job ${jobId} failed:`, errorMsg);
-    updateJob(jobId, { status: 'error', error: errorMsg });
-    emit(jobId, 'error', { error: errorMsg });
-  }
-}
 
 // ── Wizard: scope extraction with segments + players ────────────────────────
 
