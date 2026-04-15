@@ -1278,15 +1278,15 @@ Return ONLY valid JSON with this exact shape:
   ],
   "suggestedPlayers": [
     { "name": "Company A", "description": "Brief 1-line description", "marketShare": "XX%", "headquarters": "City, Country", "revenue": "$X.XB", "selected": true },
-    ...15-20 players total, top 10 pre-selected
+    ...15-20 competitors total, top 10 pre-selected for profiling
   ],
   "tocPreview": ${JSON.stringify(tocTitles)}
 }
 
 RULES:
 - Suggest 6-8 market segments. Each must have 3-4 sub-segments (no more).
-- Suggest exactly 10 key players. Pre-select top 5. Keep descriptions to 1 short sentence.
-- ONLY include ACTIVE, OPERATING companies as key players.
+- Suggest 15-20 competitors total. Pre-select top 10 for detailed profiling. Keep descriptions to 1 short sentence.
+- ONLY include ACTIVE, OPERATING companies as competitors.
 - searchQueries: 10-15 words each, optimised for web search with current year data
 - Be specific to the industry — do not use generic placeholder names
 `.trim();
