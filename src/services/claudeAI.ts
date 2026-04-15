@@ -1667,11 +1667,18 @@ CRITICAL RULES:
   }
 
   // Sections with specialized data (swot/porters/tei) may have empty bodyParagraphs
+  // Sections with tables/charts instead of bodyParagraphs (market_dynamics, regulatory) are valid
   const valid = (parsed as ReportSection[]).filter((s) => {
     if (!s.id || !s.title) return false;
     const hasBody = s.bodyParagraphs?.length > 0;
     const hasSpecialData = s.swotData || s.portersData || s.macroTeiData;
-    return hasBody || hasSpecialData;
+    const hasTables = (s.tables && s.tables.length > 0) || s.keyTable;
+    const hasCharts = (s.charts && s.charts.length > 0) || s.chartSpec;
+    const hasProfiles = s.competitorProfiles && s.competitorProfiles.length > 0;
+    const hasBcg = s.bcgMatrixData && s.bcgMatrixData.length > 0;
+    const hasSubsections = s.subsections && s.subsections.length > 0;
+    // Valid if it has: body OR special data OR (tables/charts) OR profiles/BCG OR subsections
+    return hasBody || hasSpecialData || hasTables || hasCharts || hasProfiles || hasBcg || hasSubsections;
   });
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
   return valid;
