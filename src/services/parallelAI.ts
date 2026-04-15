@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { Readable } from 'stream';
 import { Competitor } from '../types';
 
 const BASE_URL = 'https://api.parallel.ai';
@@ -25,7 +26,7 @@ async function readBodyLimited(res: import('node-fetch').Response, maxBytes = 30
     const chunks: Buffer[] = [];
     let total = 0;
 
-    (body as NodeJS.ReadableStream)
+    (body as unknown as Readable)
       .on('data', (raw: unknown) => {
         const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
         const remaining = maxBytes - total;
