@@ -1571,21 +1571,23 @@ export async function draftSectionsBatchV2(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  const safeResearch = allResearch.length > 20000 ? allResearch.slice(0, 20000) : allResearch;
+  // Reduce research size even more to prevent JSON errors from large context
+  const safeResearch = allResearch.length > 15000 ? allResearch.slice(0, 15000) : allResearch;
 
   const segmentContext = scope.selectedSegments?.length
-    ? `\nSELECTED MARKET SEGMENTS:\n${scope.selectedSegments.map((s) => `- ${s.label} (${s.type}): ${s.subSegments?.join(', ') || 'N/A'}`).join('\n')}`
+    ? `\nMARKET SEGMENTS: ${scope.selectedSegments.slice(0, 6).map((s) => `${s.label} (${s.subSegments?.slice(0, 2).join(', ') || ''})`).join(' | ')}`
     : '';
 
   const selectedNames = new Set((scope.selectedPlayers || []).map((p) => p.name));
   const unselectedPlayers = (scope.allPlayers || []).filter((p) => !selectedNames.has(p.name));
 
+  // Summarize player context to keep it compact
   const playerContext = scope.selectedPlayers?.length
-    ? `\nSELECTED KEY PLAYERS (build detailed profiles for these):\n${scope.selectedPlayers.map((p) => `- ${p.name} (${p.headquarters || 'N/A'}) — ${p.marketShare || 'N/A'} share, ${p.revenue || 'N/A'} revenue`).join('\n')}`
+    ? `\nKEY PLAYERS FOR PROFILING: ${scope.selectedPlayers.slice(0, 10).map((p) => `${p.name} (${p.marketShare || '?'})`).join(', ')}`
     : '';
 
   const unselectedPlayerContext = unselectedPlayers.length
-    ? `\nOTHER KNOWN PLAYERS (do NOT build profiles, but MUST mention in executive summary and competition analysis body text):\n${unselectedPlayers.map((p) => `- ${p.name} (${p.headquarters || 'N/A'}) — ${p.marketShare || 'N/A'} share, ${p.revenue || 'N/A'} revenue`).join('\n')}`
+    ? `\nOTHER PLAYERS: ${unselectedPlayers.slice(0, 10).map((p) => `${p.name}`).join(', ')}`
     : '';
 
   const sectionInstructions = sectionIds.map((id) => {
@@ -1631,6 +1633,9 @@ Return ONLY a valid JSON array. Each element:
 }
 
 CRITICAL RULES:
+- OUTPUT VALID JSON: Ensure all quotes in strings are properly escaped. All arrays/objects complete with closing brackets/braces.
+- All string values must escape special characters: use \\n for newlines, \\" for quotes, \\\\ for backslashes.
+- Never include unescaped newlines or quotes within JSON strings. Use bullet points (•) instead of line breaks.
 - chartSpec.data and charts[].data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
 - For swot/porters/tei sections: include ONLY the specialized data field. bodyParagraphs can be empty [].
 - For market_dynamics and regulatory_overview: use "tables" array (NOT keyTable) for multiple tables.
@@ -1655,9 +1660,26 @@ CRITICAL RULES:
 
   const raw = content.text;
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}, stop_reason: ${message.stop_reason}`);
-  const parsed = safeParseJsonArray(raw);
+
+  let parsed: unknown[] | null = null;
+  try {
+    parsed = safeParseJsonArray(raw);
+  } catch (parseErr) {
+    console.error(`[draftV2] Parse error for batch [${sectionIds.join(', ')}]:`, parseErr instanceof Error ? parseErr.message : parseErr);
+    // Try to extract position of error if available
+    const errorMsg = String(parseErr);
+    const posMatch = errorMsg.match(/position (\d+)/);
+    if (posMatch) {
+      const pos = parseInt(posMatch[1], 10);
+      const start = Math.max(0, pos - 100);
+      const end = Math.min(raw.length, pos + 100);
+      console.error(`[draftV2] Context around error position ${pos}:`, raw.slice(start, end));
+    }
+  }
+
   if (!parsed || parsed.length === 0) {
     console.error(`[draftV2] Failed to parse batch [${sectionIds.join(', ')}]. First 500 chars:`, raw.slice(0, 500));
+    console.error(`[draftV2] Last 500 chars:`, raw.slice(-500));
     // If this is a single-section retry, return empty instead of throwing so the report can continue
     if (sectionIds.length === 1) {
       console.warn(`[draftV2] Skipping section ${sectionIds[0]} — parse failed even on individual retry.`);
