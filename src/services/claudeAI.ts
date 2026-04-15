@@ -1283,10 +1283,9 @@ export async function extractScopeWithWizard(
   // Build the TOC section titles based on user-selected sections
   const sectionTitleMap: Record<string, string> = {
     market_overview: 'Market Overview',
-    segmentation_analysis: 'Market Segmentation Analysis',
-    trends_drivers_barriers: 'Trends, Drivers & Barriers',
-    tech_trends: 'Technology Trends',
-    competitive_landscape: 'Competitive Landscape',
+    market_size_by_segment: 'Market Size by Segment',
+    market_dynamics: 'Market Dynamics',
+    competition_analysis: 'Competition Analysis',
     regulatory_overview: 'Regulatory Overview',
     forecast: 'Market Forecast',
     swot: 'SWOT Analysis',
