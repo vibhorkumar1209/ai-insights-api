@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "AI Insights REST API — Peer Benchmarking & Financial Analysis",
   "main": "dist/app.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "npm install --include=dev && tsc",
