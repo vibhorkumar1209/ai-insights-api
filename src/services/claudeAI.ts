@@ -1594,8 +1594,8 @@ export async function draftSectionsBatchV2(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  // Reduce research size even more to prevent JSON errors from large context
-  const safeResearch = allResearch.length > 15000 ? allResearch.slice(0, 15000) : allResearch;
+  // Drastically reduce research size to prevent JSON errors and response bloat
+  const safeResearch = allResearch.length > 10000 ? allResearch.slice(0, 10000) : allResearch;
 
   const segmentContext = scope.selectedSegments?.length
     ? `\nMARKET SEGMENTS: ${scope.selectedSegments.slice(0, 6).map((s) => `${s.label} (${s.subSegments?.slice(0, 2).join(', ') || ''})`).join(' | ')}`
@@ -1672,9 +1672,9 @@ CRITICAL RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 8192,  // increased from 4096 — sections need full completion for valid JSON
-    temperature: 0.2,
-    system: `You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
+    max_tokens: 6000,  // reduced from 8192 to force concise output and prevent JSON errors
+    temperature: 0.1,  // reduced from 0.2 for more deterministic, valid JSON
+    system: `You are a senior industry analyst. Output ONLY valid JSON array with NO trailing text. Ensure all strings are properly escaped. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1684,9 +1684,25 @@ CRITICAL RULES:
   const raw = content.text;
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}, stop_reason: ${message.stop_reason}`);
 
+  // Pre-process: Try to fix common JSON issues before parsing
+  let processed = raw;
+
+  // Attempt 1: Extract just the JSON array part
+  const jsonMatch = raw.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (jsonMatch) {
+    processed = jsonMatch[0];
+  }
+
+  // Attempt 2: Fix common issues - unescaped newlines and quotes in string values
+  // This regex looks for quotes followed by content then quote, and escapes internal quotes
+  processed = processed
+    // Fix unescaped quotes inside string values: find patterns like "text"content"text"
+    .replace(/": "([^"]*)"([^"]*)"([^"]*)",/g, '": "$1\\"$2\\"$3",')
+    .replace(/": "([^"]*)"([^"]*)"([^"]*)"/g, '": "$1\\"$2\\"$3"');
+
   let parsed: unknown[] | null = null;
   try {
-    parsed = safeParseJsonArray(raw);
+    parsed = safeParseJsonArray(processed);
   } catch (parseErr) {
     console.error(`[draftV2] Parse error for batch [${sectionIds.join(', ')}]:`, parseErr instanceof Error ? parseErr.message : parseErr);
     // Try to extract position of error if available
@@ -1694,10 +1710,14 @@ CRITICAL RULES:
     const posMatch = errorMsg.match(/position (\d+)/);
     if (posMatch) {
       const pos = parseInt(posMatch[1], 10);
-      const start = Math.max(0, pos - 100);
-      const end = Math.min(raw.length, pos + 100);
-      console.error(`[draftV2] Context around error position ${pos}:`, raw.slice(start, end));
+      const start = Math.max(0, pos - 150);
+      const end = Math.min(processed.length, pos + 150);
+      console.error(`[draftV2] Error at position ${pos}, context:`, processed.slice(start, end));
     }
+
+    // Final fallback: try to extract ANY complete JSON objects from the response
+    console.warn(`[draftV2] Attempting object extraction fallback for batch [${sectionIds.join(', ')}]`);
+    parsed = safeParseJsonArray(raw);
   }
 
   if (!parsed || parsed.length === 0) {
