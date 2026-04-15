@@ -88,9 +88,10 @@ const TOKEN_BUDGETS = {
   executive_summary: 1024,
 };
 
-// Model selection: Haiku for fast JSON tasks, Sonnet for complex analysis
+// Model selection
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
-const FAST_JSON_MODEL = 'claude-3-5-haiku-20241022';  // 5x faster for scope/sizing
+// Note: Haiku model (claude-3-5-haiku-20241022) not available in current API access
+// Keeping Sonnet for all tasks, but optimized with lower token budgets and temperatures
 
 // ── Truncate research to stay within token budget ───────────────────────────
 
@@ -1306,7 +1307,7 @@ RULES:
 `.trim();
 
   const message = await client.messages.create({
-    model: FAST_JSON_MODEL,  // Haiku: 5x faster, deterministic JSON parsing
+    model: SYNTHESIS_MODEL,  // Keep Sonnet, but with optimized token budget + temperature
     max_tokens: 1536,        // reduced from 2048 (still ample for scope/segments/players)
     temperature: 0,          // deterministic — no variance needed for JSON
     system: `You are a senior market research analyst with deep knowledge of market segmentation and competitive intelligence. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
@@ -1382,7 +1383,7 @@ RULES:
 `.trim();
 
   const message = await client.messages.create({
-    model: FAST_JSON_MODEL,  // Haiku: fast + deterministic for market sizing
+    model: SYNTHESIS_MODEL,  // Keep Sonnet, optimized token budget
     max_tokens: 1024,        // reduced from 4096 (sizing JSON is compact)
     temperature: 0,
     system: `You are a quantitative market sizing analyst. Produce data-grounded market estimates. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
