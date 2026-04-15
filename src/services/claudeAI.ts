@@ -1644,7 +1644,7 @@ CRITICAL RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 8192,  // increased from 4096 — sections need full completion for valid JSON
     temperature: 0.2,
     system: `You are a senior industry analyst drafting a market intelligence report. Be specific, data-driven, and cite sources. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
