@@ -1595,9 +1595,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   market_size_by_segment: {
     title: 'Market Size by Segment',
-    tableHint: 'For EACH SELECTED SEGMENT and EACH SUB-SEGMENT within it, create detailed analysis. In each subsection\'s keyTable, show headers: ["Sub-segment Name", "Est. Market Size (Value)", "Est. Market Size (Volume)", "Share of Segment %", "Est. CAGR (n to n+5)", "Key Players"]. Include ALL sub-segments listed in the input for comprehensive market breakdown.',
-    chartHint: 'For EACH SELECTED SEGMENT, build ONE "stacked_bar" chart showing that segment\'s sub-segments stacked by value, plus CAGR line. If volume data is available, use that for stacking instead. Chart structure: data: [{label: "2024", "<sub1_name>": <val>, "<sub2_name>": <val>, ..., "cagrTrend": <cagr_pct>}, {label: "2025", ...}, ...], series: [{key: "<sub1_name>", name: "Sub-segment 1", type: "bar", yAxisId: "left", stack: "segment"}, ..., {key: "cagrTrend", name: "CAGR %", type: "line", yAxisId: "right", color: "#3491E8"}].',
-    subsectionHint: 'MANDATORY STRUCTURE:\n1. Create ONE SUBSECTION for EACH SELECTED MARKET SEGMENT (e.g., "By Geography", "By Product Type", etc.)\n2. For EACH subsection:\n   - title: The segment dimension name (e.g., "By Geography", "By Distribution Channel")\n   - content: 3-5 bullet-point analysis covering: which sub-segments dominate by market size, growth rates by sub-segment, emerging sub-segments, sub-segment specific trends, regulatory or channel-specific impacts\n   - keyTable: Table with all sub-segments for that dimension (show ALL sub-segments, not just top ones)\n   - chartSpec: Stacked bar chart for that segment\'s sub-segments with CAGR line\n3. Do NOT create a single catch-all subsection — create separate subsections for EACH selected segment dimension.\n4. If SELECTED MARKET SEGMENTS are not provided, identify 4-6 major market segments from research and apply the same structure.\nThis section MUST be comprehensive with multiple subsections (one per segment dimension).',
+    tableHint: 'For each segment subsection, include keyTable with headers: ["Sub-segment", "Market Size", "% of Segment", "CAGR", "Key Players"]. Show ALL sub-segments from input.',
+    chartHint: 'For each segment, build stacked_bar chart: data=[{label:"2024","<sub1>":<val>,"<sub2>":<val>,"cagrTrend":<pct>},{label:"2025",...}], series=[{key:"<sub1>",name:"Sub-seg 1",type:"bar",stack:"segment"},{key:"cagrTrend",name:"CAGR %",type:"line",yAxisId:"right"}].',
+    subsectionHint: 'Create ONE subsection per selected segment (e.g., "By Geography", "By Product Type"). Each subsection: title=segment name, content=3-5 bullets analyzing that segment\'s breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. If no segments provided, identify 4-6 from research.',
   },
   market_dynamics: {
     title: 'Market Dynamics',
@@ -1607,9 +1607,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   competition_analysis: {
     title: 'Competition Analysis',
-    tableHint: 'MANDATORY: Include keyTable with headers: ["Company", "Market Share (%)", "Revenue ($B)", "HQ", "Key Strength / Focus Area"]. Include ALL players: both KEY PLAYERS FOR PROFILING (marked as selected in input) and OTHER PLAYERS from the market context. Sort by market share descending.',
-    chartHint: 'MANDATORY: Include "horizontal_bar" chartSpec showing market share % for ALL companies (selected + unselected) in descending order. Data format: [{label: "Company A", value: 25}, {label: "Company B", value: 20}, ...]. This chart MUST include both profiled companies and other known players to show full competitive landscape.',
-    subsectionHint: 'MANDATORY SECTIONS:\n1. FIRST bodyParagraph MUST provide: (a) market concentration type (oligopoly/duopoly/fragmented/etc), (b) top 3-5 player names with market shares, (c) organized vs unorganized split if applicable, (d) competitive dynamics (price-based, innovation-based, etc). CRITICAL: List EVERY company mentioned in the input at least once in this paragraph.\n2. MANDATORY bcgMatrixData array: Generate [{name: "Company", marketSize: <numeric_revenue_in_billions>, growth: <numeric_growth_rate_percent>, quadrant: "star|cash_cow|question_mark|dog"}, ...] for EVERY active/operating company in the market context. EXCLUDE defunct/bankrupted companies from this array. Use market share x company revenue to estimate relative market size. Numeric values MUST be numbers, not strings.\n3. MANDATORY competitorProfiles array: Create detailed profiles ONLY for KEY PLAYERS FOR PROFILING (the ones in input as selectedPlayers). Each profile object: {name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}. Do NOT profile unselected/other known players.\n4. OPTIONAL: If any major companies have shut down/filed bankruptcy (rare in recent markets), add a final bodyParagraph titled "⚠ Defunct / Bankrupt Players" with: company name, year, brief reason, market impact.\nDo NOT include subsections — use bcgMatrixData and competitorProfiles instead.',
+    tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Strength"]. List all players (selected + unselected) sorted by market share.',
+    chartHint: 'Include horizontal_bar chartSpec: data=[{label:"Company A",value:25},{label:"Company B",value:20},...]. Show market share for all companies.',
+    subsectionHint: 'First bodyParagraph: market concentration (oligopoly/etc), top 3-5 players with shares, competitive dynamics. Include bcgMatrixData: [{name,marketSize:<number>,growth:<number>,quadrant:"star|cash_cow|question_mark|dog"}] for ALL active players (numeric values only). Include competitorProfiles: [{name,parentCompany,hqLocation,keyProducts,overallRevenue,categoryRevenue,marketShare,manufacturingLocation,recentNews,jvMaPartnerships,otherInsights}] ONLY for KEY PLAYERS selected in input. Do NOT include subsections.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
@@ -1652,29 +1652,29 @@ export async function draftSectionsBatchV2(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  // Drastically reduce research size to prevent JSON errors and response bloat
-  const safeResearch = allResearch.length > 10000 ? allResearch.slice(0, 10000) : allResearch;
+  // Reduce research size to stay within token limits — 8KB is optimal for detailed analysis without overflow
+  const safeResearch = allResearch.length > 8000 ? allResearch.slice(0, 8000) : allResearch;
 
-  // CRITICAL: Include ALL sub-segments for each segment so Claude can generate complete market size tables/charts
+  // CRITICAL: Include ALL sub-segments but keep context compact
   const segmentContext = scope.selectedSegments?.length
-    ? `\nMARKET SEGMENTS (with ALL sub-segments for detailed analysis):\n${scope.selectedSegments.slice(0, 8).map((s) => `- ${s.label}: ${s.subSegments?.join(', ') || '(no subsegments)'}`).join('\n')}`
+    ? `\nMARKET SEGMENTS:\n${scope.selectedSegments.slice(0, 8).map((s) => `${s.label}: ${(s.subSegments || []).join(', ')}`).join('\n')}`
     : '';
 
   const selectedNames = new Set((scope.selectedPlayers || []).map((p) => p.name));
   const allPlayers = scope.allPlayers || scope.selectedPlayers || [];
   const unselectedPlayers = allPlayers.filter((p) => !selectedNames.has(p.name));
 
-  // Include ALL players for BCG matrix and market share analysis — both selected (for detailed profiles) and unselected (for full market coverage)
+  // Compact format: selected players with shares, all players for BCG
   const playerContext = scope.selectedPlayers?.length
-    ? `\nKEY PLAYERS FOR DETAILED PROFILING (Top 10): ${scope.selectedPlayers.slice(0, 10).map((p) => `${p.name} (${p.marketShare || '?'})`).join(', ')}`
+    ? `\nKEY PLAYERS FOR PROFILING: ${scope.selectedPlayers.slice(0, 10).map((p) => `${p.name} (${p.marketShare || '?'})`).join(' | ')}`
     : '';
 
   const allPlayersList = allPlayers.length > 0
-    ? `\nALL PLAYERS IN MARKET (for BCG matrix and market share analysis):\n${allPlayers.slice(0, 20).map((p) => `- ${p.name} (${p.marketShare || '?'}, ${p.headquarters || '?'})`).join('\n')}`
+    ? `\nALL PLAYERS (for BCG matrix): ${allPlayers.slice(0, 20).map((p) => `${p.name} ${p.marketShare ? `(${p.marketShare})` : ''}`).join(' | ')}`
     : '';
 
   const unselectedPlayerContext = unselectedPlayers.length > 0
-    ? `\nOTHER PLAYERS NOT PROFILED: ${unselectedPlayers.slice(0, 10).map((p) => `${p.name}`).join(', ')}`
+    ? `\nOTHER PLAYERS: ${unselectedPlayers.slice(0, 10).map((p) => p.name).join(', ')}`
     : '';
 
   const sectionInstructions = sectionIds.map((id) => {
@@ -1739,9 +1739,14 @@ CRITICAL RULES:
 - DEFUNCT COMPANY GUARDRAIL: Do NOT build competitor profiles, BCG matrix entries, or key player listings for companies that have shut down operations, filed for bankruptcy, been liquidated, or permanently exited the market. Instead, highlight such companies separately as "⚠ Defunct / Bankrupt" with the year and reason. Only profile active, operating companies.
 `.trim();
 
+  // Use higher token limits for heavy sections (market_size_by_segment, competition_analysis)
+  // to prevent truncation; other sections use standard limit
+  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'competition_analysis'].includes(id));
+  const maxTokens = isHeavySection ? 8500 : 6000;
+
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 7000,  // NDJSON format is more resilient to truncation, so can use higher limit
+    max_tokens: maxTokens,
     temperature: 0.1,  // deterministic JSON output
     system: `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
