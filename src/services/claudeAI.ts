@@ -1306,19 +1306,20 @@ Return ONLY valid JSON with this exact shape:
 }
 
 RULES:
-- Suggest 4-6 market segments. Each has 2-3 sub-segments only (NO MORE).
-- Suggest 12-15 competitors. Pre-select top 10 (selected: true/false).
-- For each player: name, marketShare (e.g. "25%"), headquarters (2-letter country code). NO descriptions.
-- ALL string values: use ONLY alphanumeric + spaces + hyphens. NO quotes, newlines, special chars.
-- searchQueries: 5-8 words each, simple, optimized for current market data.
-- Output MUST be valid JSON. Double-check all quotes are escaped.
+- Suggest 6-10 market segments. Each has 2-3 sub-segments ONLY.
+- Suggest 15-20 competitors. Pre-select top 10 (selected: true/false).
+- For each player: ONLY name, marketShare (XX%), headquarters (US/EU/APAC/etc).
+- CRITICAL: NO descriptions, NO special characters, NO quotes or newlines in any string.
+- Sub-segment names: Keep SHORT (max 3 words). Use standard industry terms only.
+- searchQueries: 6-10 words, simple English, current year focused.
+- Output must be VALID JSON with proper comma placement and no trailing commas.
 `.trim();
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 2000,  // balanced: more data than minimal, but still constrained
-    temperature: 0.0,  // fully deterministic for JSON
-    system: `Output ONLY valid JSON object. No markdown, no text before/after. Ensure all string values contain ONLY alphanumeric, spaces, hyphens. No quotes or special chars inside strings. ${RECENCY_DIRECTIVE}`,
+    max_tokens: 2500,  // accommodate 6-10 segments + 15-20 competitors
+    temperature: 0.0,  // fully deterministic JSON generation
+    system: `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
