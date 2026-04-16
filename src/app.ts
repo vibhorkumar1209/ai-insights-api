@@ -14,6 +14,7 @@ import industryReportRouter from './routes/industryReport';
 import businessDescriptionRouter from './routes/businessDescription';
 import nicheIndustryRouter from './routes/nicheIndustry';
 import marketingStrategyRouter from './routes/marketingStrategy';
+import personaRouter from './routes/persona';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -52,6 +53,7 @@ app.use('/api/industry-report', memoryGuard, industryReportRouter);
 app.use('/api/business-description', memoryGuard, businessDescriptionRouter);
 app.use('/api/niche-industries', memoryGuard, nicheIndustryRouter);
 app.use('/api/marketing-strategy', memoryGuard, marketingStrategyRouter);
+app.use('/api/persona', memoryGuard, personaRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
