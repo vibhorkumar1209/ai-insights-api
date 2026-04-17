@@ -15,7 +15,7 @@ import {
   ReportSection, ExecutiveSummary, ExecutiveSummaryTickerBox,
   ScopeWizardResult, MarketSegmentOption, KeyPlayerOption,
   MacroTEIData, BCGMatrixItem, CompetitorProfile,
-} from '../types';
+} from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
 function isEmptyResearch(text: string): boolean {
@@ -159,7 +159,7 @@ const RECENCY_DIRECTIVE = 'RECENCY RULE: Prioritize information from the last 3 
 
 // ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
 
-import { Competitor } from '../types';
+import { Competitor } from '@ai-insights/types';
 
 export async function discoverCompetitorsFast(
   targetCompany: string,
@@ -1867,7 +1867,7 @@ CRITICAL RULES:
 import {
   NicheIndustryInput, NicheTopicRow,
   MarketingStrategyInput, StrategyDimensionRow,
-} from '../types';
+} from '@ai-insights/types';
 
 export async function synthesizeNicheTopics(
   input: NicheIndustryInput,

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { IndustryTrendsInput, IndustryTrendsResult } from '../types';
+import { IndustryTrendsInput, IndustryTrendsResult } from '@ai-insights/types';
 import { researchIndustryTrends } from './parallelAI';
 import { synthesizeIndustryTrends } from './claudeAI';
 

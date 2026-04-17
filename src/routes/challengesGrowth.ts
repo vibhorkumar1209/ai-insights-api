@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { ChallengesGrowthInput } from '../types';
+import { ChallengesGrowthInput } from '@ai-insights/types';
 import {
   createChallengesGrowthJob,
   getChallengesGrowthJob,

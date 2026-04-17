@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import { Readable } from 'stream';
-import { Competitor } from '../types';
+import { Competitor } from '@ai-insights/types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;

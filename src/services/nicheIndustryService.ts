@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { NicheIndustryInput, NicheIndustryResult } from '../types';
+import { NicheIndustryInput, NicheIndustryResult } from '@ai-insights/types';
 import { researchNicheIndustries } from './parallelAI';
 import { synthesizeNicheTopics } from './claudeAI';
 

@@ -11,7 +11,7 @@ import {
   FinancialStatementRow,
   CompanyInfo,
   QuarterlyDataPoint,
-} from '../types';
+} from '@ai-insights/types';
 
 const FMP_API_KEY = process.env.FMP_API_KEY || '1d16301a73791aa9231a3e2d60147fca';
 const FMP_BASE = 'https://financialmodelingprep.com/stable';

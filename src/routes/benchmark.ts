@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { BenchmarkInput } from '../types';
+import { BenchmarkInput } from '@ai-insights/types';
 import {
   createJob,
   getJob,

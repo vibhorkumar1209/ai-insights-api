@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { ThemeInput, ThemeType } from '../types';
+import { ThemeInput, ThemeType } from '@ai-insights/types';
 import {
   createThemeJob,
   getThemeJob,

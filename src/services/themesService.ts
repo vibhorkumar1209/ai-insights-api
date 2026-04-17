@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ThemeInput, ThemeResult } from '../types';
+import { ThemeInput, ThemeResult } from '@ai-insights/types';
 import { researchCompanyThemes } from './parallelAI';
 import { synthesizeThemes } from './claudeAI';
 

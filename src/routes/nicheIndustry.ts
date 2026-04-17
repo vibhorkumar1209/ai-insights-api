@@ -7,7 +7,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/nicheIndustryService';
-import { NicheOutputMode, NicheSegmentationDepth } from '../types';
+import { NicheOutputMode, NicheSegmentationDepth } from '@ai-insights/types';
 
 const router = Router();
 

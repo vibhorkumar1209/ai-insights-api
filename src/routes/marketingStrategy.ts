@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
-import { StrategyFramework } from '../types';
+import { StrategyFramework } from '@ai-insights/types';
 import {
   createMarketingStrategyJob,
   getMarketingStrategyJob,
