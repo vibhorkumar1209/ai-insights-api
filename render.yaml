@@ -1,17 +1,18 @@
 services:
   - type: web
     name: ai-insights-api
-    env: node
-    plan: free
-    buildCommand: npm install && npm run build
+    runtime: node
+    buildCommand: |
+      pnpm install
+      pnpm build --filter=@ai-insights/types
+      pnpm build --filter=ai-insights-api
+      pnpm circular:api
+      pnpm dead-code
     startCommand: node --max-old-space-size=300 dist/app.js
-    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PARALLEL_API_KEY
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ALLOWED_ORIGINS
-        sync: false
+      - key: PORT
+        value: 4000
+    healthCheckPath: /health
+    autoDeploy: true
