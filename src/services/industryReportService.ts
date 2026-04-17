@@ -212,3 +212,13 @@ export async function runIndustryReportV2(
     emit(jobId, 'error', { error: errorMsg });
   }
 }
+
+// ── Job manager for error handling utilities ──────────────────────────────────
+
+export function getJobManager() {
+  return {
+    updateJob,
+    emit,
+    getJob: getIndustryReportJob,
+  };
+}

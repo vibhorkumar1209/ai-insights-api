@@ -354,3 +354,13 @@ async function runPrivatePath(
   });
   emit(jobId, 'result', job);
 }
+
+// ── Job manager for error handling utilities ──────────────────────────────────
+
+export function getJobManager() {
+  return {
+    updateJob: update,
+    emit,
+    getJob: getFinancialJob,
+  };
+}

@@ -8,7 +8,9 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
   abortJob,
+  getJobManager as getIndustryJobManager,
 } from '../services/industryReportService';
+import { handleJobError } from '../utils/jobErrorHandler';
 
 const router = Router();
 
@@ -60,8 +62,9 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
 
   const input = { query: scope.industry, geography: scope.geography };
   const jobId = createIndustryReportJob(input);
+  const manager = getIndustryJobManager();
   runIndustryReportV2(jobId, enrichedScope).catch((err) =>
-    console.error(`[industryReport] Unhandled V2 error for job ${jobId}:`, err)
+    handleJobError(jobId, err, manager)
   );
 
   res.status(202).json({ jobId });

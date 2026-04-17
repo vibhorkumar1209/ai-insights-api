@@ -6,8 +6,10 @@ import {
   runFinancialAnalysis,
   subscribeToJob,
   unsubscribeFromJob,
+  getJobManager as getFinancialJobManager,
 } from '../services/financialAnalysisService';
 import { FinancialAnalysisInput } from '../types';
+import { handleJobError } from '../utils/jobErrorHandler';
 
 const router = Router();
 
@@ -27,11 +29,12 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   });
 
   // Run async (fire and forget)
+  const manager = getFinancialJobManager();
   runFinancialAnalysis(jobId, {
     companyName: companyName.trim().slice(0, 200),
     companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined,
     isPublic: typeof isPublic === 'boolean' ? isPublic : undefined,
-  }).catch((err: Error) => console.error('[financialAnalysis] unhandled error:', err.message));
+  }).catch((err: Error) => handleJobError(jobId, err, manager));
 
   res.status(202).json({ jobId });
 });

@@ -148,3 +148,13 @@ async function researchSingle(company: string, input: BenchmarkInput): Promise<s
     return `Research unavailable for ${company}: ${msg}`;
   }
 }
+
+// ── Job manager for error handling utilities ──────────────────────────────────
+
+export function getJobManager() {
+  return {
+    updateJob,
+    emit,
+    getJob,
+  };
+}

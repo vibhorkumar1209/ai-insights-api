@@ -6,8 +6,10 @@ import {
   runBenchmark,
   subscribeToJob,
   unsubscribeFromJob,
+  getJobManager as getBenchmarkJobManager,
 } from '../services/benchmarkService';
 import { aiLimiter } from '../middleware/rateLimiter';
+import { handleJobError } from '../utils/jobErrorHandler';
 
 const router = Router();
 
@@ -59,8 +61,9 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   const jobId = createJob();
 
   // Run benchmark asynchronously — client streams progress via SSE
+  const manager = getBenchmarkJobManager();
   runBenchmark(jobId, input).catch((err) => {
-    console.error(`[benchmark] Job ${jobId} failed:`, err);
+    handleJobError(jobId, err, manager);
   });
 
   return res.status(202).json({ jobId });
