@@ -1,16 +1,35 @@
 #!/bin/bash
 set -e
 
+echo "=========================================="
 echo "Installing pnpm globally..."
-npm install -g pnpm
+echo "=========================================="
+npm install -g pnpm || true
 
-echo "Installing dependencies with pnpm..."
+echo ""
+echo "=========================================="
+echo "Pnpm version:"
+pnpm --version
+
+echo ""
+echo "=========================================="
+echo "Installing dependencies..."
+echo "=========================================="
 pnpm install
 
+echo ""
+echo "=========================================="
 echo "Building types package..."
+echo "=========================================="
 pnpm --filter=@ai-insights/types build
 
-echo "Building API..."
+echo ""
+echo "=========================================="
+echo "Building API package..."
+echo "=========================================="
 pnpm --filter=ai-insights-api build
 
-echo "Build complete!"
+echo ""
+echo "=========================================="
+echo "✓ Build successful!"
+echo "=========================================="

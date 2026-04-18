@@ -2,7 +2,7 @@ services:
   - type: web
     name: ai-insights-api
     runtime: node
-    buildCommand: npm install -g pnpm && pnpm install && pnpm --filter=@ai-insights/types build && pnpm --filter=ai-insights-api build
+    buildCommand: bash build.sh
     startCommand: node --max-old-space-size=300 dist/app.js
     envVars:
       - key: NODE_ENV
