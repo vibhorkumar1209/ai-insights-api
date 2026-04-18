@@ -5,7 +5,8 @@ services:
     buildCommand: |
       npm install -g pnpm
       pnpm install
-      pnpm build
+      pnpm --filter=@ai-insights/types build
+      pnpm --filter=ai-insights-api build
     startCommand: node --max-old-space-size=300 dist/app.js
     envVars:
       - key: NODE_ENV
