@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express } from 'express';
 import helmet from 'helmet';
 import { corsMiddleware } from './middleware/cors';
 import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
@@ -16,7 +16,7 @@ import nicheIndustryRouter from './routes/nicheIndustry';
 import marketingStrategyRouter from './routes/marketingStrategy';
 import personaRouter from './routes/persona';
 
-const app = express();
+const app: Express = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
 // Trust Render/Vercel reverse proxy so express-rate-limit reads the real client IP

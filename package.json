@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "prebuild": "cd packages/types && tsc",
     "build": "tsc",
     "start": "node --max-old-space-size=300 dist/app.js",
     "test": "jest --coverage --forceExit",

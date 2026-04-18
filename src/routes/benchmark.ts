@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, Express as ExpressType } from 'express';
 import { BenchmarkInput } from '@ai-insights/types';
 import {
   createJob,
@@ -11,7 +11,7 @@ import {
 import { aiLimiter } from '../middleware/rateLimiter';
 import { handleJobError } from '../utils/jobErrorHandler';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 /**
  * POST /api/benchmark

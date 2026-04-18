@@ -4,10 +4,7 @@ services:
     runtime: node
     buildCommand: |
       pnpm install
-      pnpm build --filter=@ai-insights/types
-      pnpm build --filter=ai-insights-api
-      pnpm circular:api
-      pnpm dead-code
+      pnpm build
     startCommand: node --max-old-space-size=300 dist/app.js
     envVars:
       - key: NODE_ENV
