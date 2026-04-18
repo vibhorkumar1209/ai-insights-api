@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { SalesPlayResult, SalesPlayInput } from '../types';
+import { SalesPlayResult, SalesPlayInput } from '@ai-insights/types';
 import { researchSalesPlayContext } from './parallelAI';
 import { synthesizeSalesPlay } from './claudeAI';
 

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { KeyBuyersInput, KeyBuyersResult } from '../types';
+import { KeyBuyersInput, KeyBuyersResult } from '@ai-insights/types';
 import { researchKeyBuyers } from './parallelAI';
 import { synthesizeKeyBuyers } from './claudeAI';
 

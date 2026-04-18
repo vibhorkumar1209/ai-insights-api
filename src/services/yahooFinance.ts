@@ -6,7 +6,7 @@ import {
   FinancialStatementRow,
   CompanyInfo,
   QuarterlyDataPoint,
-} from '../types';
+} from '@ai-insights/types';
 
 // yahoo-finance2 v3 requires instantiation
 const yahooFinance = new YahooFinance();

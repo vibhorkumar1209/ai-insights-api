@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { FinancialAnalysisResult, FinancialAnalysisInput } from '../types';
+import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
 import {
   fmpSearchTicker, fmpFetchProfile, fmpFetchIncomeStatement,

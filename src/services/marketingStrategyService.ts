@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { MarketingStrategyInput, MarketingStrategyResult } from '../types';
+import { MarketingStrategyInput, MarketingStrategyResult } from '@ai-insights/types';
 import { researchMarketingStrategy } from './parallelAI';
 import { synthesizeMarketingStrategy } from './claudeAI';
 

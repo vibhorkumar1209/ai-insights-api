@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   IndustryReportInput, IndustryReportResult, IndustryReportScope,
   ReportSection, ScopeWizardResult,
-} from '../types';
+} from '@ai-insights/types';
 import { researchIndustryReport } from './parallelAI';
 import {
   extractScopeWithWizard,

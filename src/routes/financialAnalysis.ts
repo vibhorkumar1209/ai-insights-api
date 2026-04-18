@@ -8,7 +8,7 @@ import {
   unsubscribeFromJob,
   getJobManager as getFinancialJobManager,
 } from '../services/financialAnalysisService';
-import { FinancialAnalysisInput } from '../types';
+import { FinancialAnalysisInput } from '@ai-insights/types';
 import { handleJobError } from '../utils/jobErrorHandler';
 
 const router = Router();

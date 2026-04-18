@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
-import { SalesPlayInput } from '../types';
+import { SalesPlayInput } from '@ai-insights/types';
 import {
   createSalesPlayJob,
   runSalesPlay,

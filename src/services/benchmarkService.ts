@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { BenchmarkInput, BenchmarkResult } from '../types';
+import { BenchmarkInput, BenchmarkResult } from '@ai-insights/types';
 import { discoverCompetitors, researchAllCompanies } from './parallelAI';
 import { synthesizeBenchmarkingTable, synthesizeGapAnalysis } from './claudeAI';
 

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ChallengesGrowthInput, ChallengesGrowthResult } from '../types';
+import { ChallengesGrowthInput, ChallengesGrowthResult } from '@ai-insights/types';
 import { researchCompanyChallengesGrowth } from './parallelAI';
 import { synthesizeChallengesGrowth } from './claudeAI';
 

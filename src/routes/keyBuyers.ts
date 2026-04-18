@@ -7,7 +7,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/keyBuyersService';
-import { KeyBuyersInput } from '../types';
+import { KeyBuyersInput } from '@ai-insights/types';
 
 const router = Router();
 
