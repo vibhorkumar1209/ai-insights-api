@@ -3,8 +3,8 @@ services:
     name: ai-insights-api
     runtime: node
     buildCommand: |
-      npm install -g pnpm@9
-      pnpm install
+      npm install -g pnpm
+      pnpm install --frozen-lockfile
       pnpm build
     startCommand: node --max-old-space-size=300 dist/app.js
     envVars:
