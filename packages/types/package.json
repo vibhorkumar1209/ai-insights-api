@@ -1,0 +1,17 @@
+{
+  "name": "@ai-insights/types",
+  "version": "1.0.0",
+  "description": "Shared type definitions for AI Insights",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
