@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@ai-insights/types':
-        specifier: workspace:*
+        specifier: file:./packages/types
         version: link:packages/types
       '@anthropic-ai/sdk':
         specifier: ^0.28.0

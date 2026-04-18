@@ -23,7 +23,7 @@
     "node-fetch": "^2.7.0",
     "uuid": "^9.0.1",
     "yahoo-finance2": "^3.13.2",
-    "@ai-insights/types": "workspace:*"
+    "@ai-insights/types": "file:./packages/types"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
