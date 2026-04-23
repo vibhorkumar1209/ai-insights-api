@@ -466,6 +466,11 @@ export interface IndustryReportResult {
   marketSizing?: MarketSizingData;
   sections?: ReportSection[];
   executiveSummary?: ExecutiveSummary;
+  marketSizeValidation?: {
+    isValid: boolean;
+    discrepanciesCount?: number;
+    note?: string;
+  };
   wizardData?: ScopeWizardResult;
   error?: string;
   createdAt: string;

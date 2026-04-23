@@ -155,7 +155,10 @@ function safeParseJsonArray(raw: string): unknown[] | null {
 }
 
 // ── Shared recency directive (injected into all system prompts) ─────────────
-const RECENCY_DIRECTIVE = 'RECENCY RULE: Prioritize information from the last 3 years, with highest weight given to the most recent data. If conflicting data exists across time periods, always use the latest available information. Clearly note when data is older than 3 years.';
+// Current date context: April 23, 2026 (Q2, Jan-Sep range)
+// Base year: 2025 (current year-1 per user's date-based logic)
+// Market sizing prioritizes current year (2026); other sections prioritize base year (2025)
+const RECENCY_DIRECTIVE = 'RECENCY RULE: For market sizing sections (market_overview, market_size_by_segment): Prioritize 2026 data first, then 2025, then 2024. For all other sections: Prioritize 2025 (base year) first, then 2024, then 2023. If using data from 2023 or earlier, clearly label as "(2023 or earlier - historical context)". When conflicting data exists across years, use the most recent available year. Do NOT use pre-2023 data unless essential for historical/trend context and explicitly labeled.';
 
 // ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
 
@@ -1609,9 +1612,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   market_size_by_segment: {
     title: 'Market Size by Segment',
-    tableHint: 'For each segment subsection, include keyTable with headers: ["Sub-segment", "Market Size", "% of Segment", "CAGR", "Key Players"]. Show ALL sub-segments from input.',
+    tableHint: 'For each segment subsection, include keyTable with headers: ["Sub-segment", "Market Size", "% of Segment", "CAGR", "Key Players"]. Show ALL sub-segments from input. CRITICAL: For each year, the sum of all sub-segment market sizes MUST match the total market size declared in the Market Overview section for that same year (tolerance: ±2% for rounding). If Market Overview shows 2025 total = $75.2B, all segment sub-segments for 2025 must sum to approximately $75.2B.',
     chartHint: 'For each segment, build stacked_bar chart: data=[{label:"2024","<sub1>":<val>,"<sub2>":<val>,"cagrTrend":<pct>},{label:"2025",...}], series=[{key:"<sub1>",name:"Sub-seg 1",type:"bar",stack:"segment"},{key:"cagrTrend",name:"CAGR %",type:"line",yAxisId:"right"}].',
-    subsectionHint: 'Create ONE subsection per selected segment (e.g., "By Geography", "By Product Type"). Each subsection: title=segment name, content=3-5 bullets analyzing that segment\'s breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. If no segments provided, identify 4-6 from research.',
+    subsectionHint: 'Create ONE subsection per selected segment (e.g., "By Geography", "By Product Type"). Each subsection: title=segment name, content=3-5 bullets analyzing that segment\'s breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. If no segments provided, identify 4-6 from research. YEAR PRIORITY: Market sizing uses 2026 data (latest), then 2025, then 2024. Ensure all years reference the most recent available data.',
   },
   market_dynamics: {
     title: 'Market Dynamics',
@@ -1713,6 +1716,10 @@ MARKET SIZING CONTEXT:
 RESEARCH DATA:
 ${safeResearch}
 
+YEAR PRIORITY:
+- For market sizing sections (market_overview, market_size_by_segment): Prioritize 2026 data, then 2025, then 2024. Use the latest available market data.
+- For all other sections: Prioritize 2025 (base year), then 2024, then 2023. Pre-2023 data requires "(2023 or earlier - historical context)" label.
+
 Draft the following ${sectionIds.length} sections:
 ${sectionInstructions}
 
@@ -1734,7 +1741,6 @@ Each object structure:
   "swotData": {...} OR null,
   "portersData": {...} OR null,
   "macroTeiData": {"items": [...]} OR null,
-  "bcgMatrixData": [{name, marketSize, growth, quadrant}, ...] OR null,
   "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null
 }
 
@@ -1746,11 +1752,11 @@ CRITICAL RULES:
 - For swot/porters/tei sections: include ONLY the specialized data field. bodyParagraphs can be empty [].
 - For market_dynamics and regulatory_overview: use "tables" array (NOT keyTable) for multiple tables.
 - For forecast: use "tables" array for assumption/summary tables AND "charts" array for 3 scenario charts.
-- For competition_analysis: include bcgMatrixData AND competitorProfiles alongside keyTable and chartSpec.
+- For competition_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix).
+- For market_size_by_segment: Ensure that for each year shown in the table, the sum of all sub-segment market sizes equals the total market size from Market Overview (tolerance: ±2% for rounding). This maintains consistency across sections.
 - Be specific: cite figures, company names, percentages, dates.
-- bcgMatrixData.marketSize and .growth must be numeric values (not strings).
 - EVERY subsection MUST have a non-empty "content" string with substantive bullet-point analysis. Never leave subsection content as "" or null.
-- DEFUNCT COMPANY GUARDRAIL: Do NOT build competitor profiles, BCG matrix entries, or key player listings for companies that have shut down operations, filed for bankruptcy, been liquidated, or permanently exited the market. Instead, highlight such companies separately as "⚠ Defunct / Bankrupt" with the year and reason. Only profile active, operating companies.
+- DEFUNCT COMPANY GUARDRAIL: Do NOT build competitor profiles or key player listings for companies that have shut down operations, filed for bankruptcy, been liquidated, or permanently exited the market. Instead, highlight such companies separately as "⚠ Defunct / Bankrupt" with the year and reason. Only profile active, operating companies.
 `.trim();
 
   // Prioritize quality over token reduction — use sufficient tokens for detailed analysis

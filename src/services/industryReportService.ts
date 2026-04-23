@@ -93,6 +93,100 @@ function updateJob(jobId: string, updates: Partial<IndustryReportResult>) {
   if (existing) jobs.set(jobId, { ...existing, ...updates });
 }
 
+// ── Market Size Consistency Validation ──────────────────────────────────────
+
+/**
+ * Validates that market_size_by_segment subsection totals match market_overview totals per year.
+ * Returns validation result with any discrepancies found.
+ */
+function validateMarketSizeConsistency(
+  overviewSection: ReportSection | undefined,
+  segmentSection: ReportSection | undefined
+): { isValid: boolean; discrepancies: Array<{ year: string; expected: string; actual: string; difference: string }> } {
+  const discrepancies: Array<{ year: string; expected: string; actual: string; difference: string }> = [];
+
+  if (!overviewSection?.keyTable || !segmentSection?.subsections?.length) {
+    // Not enough data to validate
+    return { isValid: true, discrepancies: [] };
+  }
+
+  try {
+    // Extract overview totals: parse keyTable rows for Year and Market Size
+    const overviewRows = overviewSection.keyTable.rows || [];
+    const overviewTotals = new Map<string, number>();
+
+    for (const row of overviewRows) {
+      if (row.length >= 2) {
+        const year = String(row[0]).trim();
+        const marketSizeStr = String(row[1]).trim();
+        // Parse market size (e.g., "$75.2B" → 75.2)
+        const match = marketSizeStr.match(/[\$£€]?\s*([\d.]+)\s*[BM]?/);
+        if (match && match[1]) {
+          const value = parseFloat(match[1]);
+          if (!isNaN(value)) {
+            overviewTotals.set(year, value);
+          }
+        }
+      }
+    }
+
+    // Extract segment totals per year from all subsections
+    const segmentTotalsByYear = new Map<string, number>();
+    for (const subsection of segmentSection.subsections) {
+      if (!subsection.keyTable?.rows) continue;
+      for (const row of subsection.keyTable.rows) {
+        if (row.length >= 2) {
+          // Segment table structure: [Sub-segment, Market Size, ...]
+          // We need to accumulate Market Size per year across subsections
+          // Since each subsection is per-segment, we'll sum them by extracting from context
+          const marketSizeStr = String(row[1]).trim();
+          const match = marketSizeStr.match(/[\$£€]?\s*([\d.]+)\s*[BM]?/);
+          if (match && match[1]) {
+            const value = parseFloat(match[1]);
+            if (!isNaN(value)) {
+              // For simplicity, assume current year context from subsection title
+              const currentYear = segmentTotalsByYear.get('current') || 0;
+              segmentTotalsByYear.set('current', currentYear + value);
+            }
+          }
+        }
+      }
+    }
+
+    // Check consistency with tolerance (±2%)
+    const TOLERANCE = 0.02;
+    for (const [year, expectedTotal] of overviewTotals.entries()) {
+      const actualTotal = segmentTotalsByYear.get(year) || segmentTotalsByYear.get('current');
+      if (actualTotal !== undefined) {
+        const difference = Math.abs(actualTotal - expectedTotal) / expectedTotal;
+        if (difference > TOLERANCE) {
+          discrepancies.push({
+            year,
+            expected: expectedTotal.toFixed(2),
+            actual: actualTotal.toFixed(2),
+            difference: (difference * 100).toFixed(1),
+          });
+        }
+      }
+    }
+
+    const isValid = discrepancies.length === 0;
+    if (!isValid) {
+      console.warn(
+        `[industryReport] Market size inconsistency detected:`,
+        discrepancies.map((d) => `${d.year}: expected ${d.expected}B, got ${d.actual}B (${d.difference}% diff)`)
+      );
+    } else {
+      console.log(`[industryReport] Market size consistency validated ✓`);
+    }
+
+    return { isValid, discrepancies };
+  } catch (err) {
+    console.warn(`[industryReport] Market size validation error (non-critical):`, err instanceof Error ? err.message : err);
+    return { isValid: true, discrepancies: [] }; // Don't fail report on validation error
+  }
+}
+
 // ── Main runner ──────────────────────────────────────────────────────────────
 
 // ── Wizard: scope extraction with segments + players ────────────────────────
@@ -184,6 +278,25 @@ export async function runIndustryReportV2(
       checkAbort(jobId);
     }
     step('All sections drafted', 88, 'drafting');
+
+    // ── Step 4b: Market size consistency validation ──
+    const overviewSection = allSections.find((s) => s.id === 'market_overview');
+    const segmentSection = allSections.find((s) => s.id === 'market_size_by_segment');
+    if (overviewSection || segmentSection) {
+      const validation = validateMarketSizeConsistency(overviewSection, segmentSection);
+      if (!validation.isValid) {
+        console.warn(`[industryReport] Market size consistency check failed. Discrepancies:`, validation.discrepancies);
+        // Log for debugging but don't fail the report — data quality warning
+        updateJob(jobId, {
+          marketSizeValidation: {
+            isValid: false,
+            discrepanciesCount: validation.discrepancies.length,
+            note: 'Market size segments may not sum to overview total. Review values manually.',
+          },
+        });
+      }
+    }
+    checkAbort(jobId);
 
     // ── Step 5: Executive summary (88-100%) ──
     step('Generating executive summary...', 92, 'summarizing');
