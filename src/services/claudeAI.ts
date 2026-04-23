@@ -31,26 +31,27 @@ const rawClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // Anthropic-side capacity events that previously failed jobs outright.
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 529]);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isRetryable(err: any): boolean {
-  if (!err) return false;
-  const status = err.status ?? err.statusCode;
+function isRetryable(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const errObj = err as Record<string, unknown>;
+  const status = errObj.status ?? errObj.statusCode;
   if (typeof status === 'number' && RETRYABLE_STATUSES.has(status)) return true;
-  const msg = String(err.message || err).toLowerCase();
+  const msg = String(errObj.message || err).toLowerCase();
   return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('timeout');
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const originalCreate = rawClient.messages.create.bind(rawClient.messages);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-rawClient.messages.create = (async (...args: any[]) => {
+type MessageCreateArgs = Parameters<typeof rawClient.messages.create>;
+type MessageCreateReturn = ReturnType<typeof rawClient.messages.create>;
+
+rawClient.messages.create = (async (...args: MessageCreateArgs) => {
   const maxAttempts = 5;
   let lastErr: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await (originalCreate as any)(...args);
+      return await originalCreate(...args);
     } catch (err) {
       lastErr = err;
       if (attempt === maxAttempts || !isRetryable(err)) throw err;
@@ -65,8 +66,7 @@ rawClient.messages.create = (async (...args: any[]) => {
     }
   }
   throw lastErr;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}) as any;
+}) as unknown as typeof originalCreate;
 
 const client = rawClient;
 
@@ -462,25 +462,30 @@ export async function synthesizeChallengesGrowth(
 ): Promise<ChallengesGrowthRow[]> {
   const hasResearch = !isEmptyResearch(research);
 
-  const systemPrompt = `You are a senior B2B sales intelligence analyst producing executive-grade competitive analysis.
+  const systemPrompt = `You are a senior B2B sales intelligence analyst producing company-specific competitive analysis.
 Rules:
+- FOCUS ON THIS COMPANY: Analyze ${input.companyName}'s specific position, vulnerabilities, capabilities, and opportunities — NOT general industry trends.
 - Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
-- Be specific: cite programmes, metrics, named initiatives, competitor names, and market data.
+- Be specific: cite ${input.companyName}'s programmes, metrics, named initiatives, manufacturing/R&D locations, strategic partnerships, and specific business data.
+- For challenges: identify what pressures affect THIS company's performance, margins, growth, or competitive position.
+- For growth: identify where THIS company can expand, improve margins, enter new segments, or leverage its assets.
 - Every cell must have substantive content — no vague generalities, no empty fields.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${RECENCY_DIRECTIVE}`;
 
-  const userPrompt = `Analyse the following research on "${input.companyName}" and produce a Challenges & Growth analysis.
+  const userPrompt = `Analyse the following research on "${input.companyName}" and produce a company-focused Challenges & Growth analysis.
+
+CRITICAL: This analysis must be specific to ${input.companyName}'s situation, not general industry insights. Identify challenges that affect THIS company's performance and growth opportunities that THIS company can pursue.
 
 Cover EXACTLY these 8 dimensions (one array element each, in this order):
-1. Macroeconomics
-2. Supply Chain & Operations
-3. Demand & Customer
-4. Regulatory & Compliance
-5. Pricing & Margin
-6. Competition
-7. Technology & Innovation
-8. Talent & Workforce
+1. Macroeconomics — How are macroeconomic conditions, interest rates, currency, inflation affecting ${input.companyName}'s costs, revenues, and margins?
+2. Supply Chain & Operations — What supply chain, manufacturing, logistics, or operational vulnerabilities does ${input.companyName} face? Where can it improve efficiency?
+3. Demand & Customer — What customer/market demand headwinds is ${input.companyName} facing? What customer segments or geographies can it penetrate or expand in?
+4. Regulatory & Compliance — What specific regulatory risks, trade barriers, or compliance costs impact ${input.companyName}? Where can it exploit regulatory gaps?
+5. Pricing & Margin — What pricing pressure does ${input.companyName} face? Where can it improve margins or shift to higher-margin products/services?
+6. Competition — What competitive threats does ${input.companyName} face from specific rivals? What competitive advantages can it leverage?
+7. Technology & Innovation — What technology gaps or innovation shortfalls is ${input.companyName} experiencing? Where can it invest in R&D/digital to gain advantage?
+8. Talent & Workforce — What talent gaps, retention challenges, or skill shortages is ${input.companyName} experiencing? Where can it build competitive talent advantage?
 
 ${hasResearch
   ? `RESEARCH:\n${research.slice(0, 20000)}`
@@ -494,14 +499,14 @@ Return a JSON array with EXACTLY this shape (8 objects):
 [
   {
     "dimension": "Macroeconomics",
-    "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the most material challenge in this dimension — be specific, name rates, geographies, data points.",
-    "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): the most compelling growth opportunity — cite specific markets, demographics, or policy drivers."
+    "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the specific macroeconomic challenges affecting ${input.companyName}'s operations or profitability.",
+    "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): specific growth opportunities ${input.companyName} can pursue in response to macroeconomic conditions."
   }
 ]
 
 For EACH dimension:
-- "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges — cite data, name the threat, quantify where possible.
-- "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities — forward-looking, specific, actionable insights.`;
+- "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges for ${input.companyName} in this dimension — cite data, name the threat, quantify where possible, reference ${input.companyName}'s specific assets/operations.
+- "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -696,27 +701,31 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Claude did not return valid JSON for financial insights');
   try {
+    const parsed: unknown = JSON.parse(match[0]);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Parsed JSON is not an object');
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const parsed = JSON.parse(match[0]) as any;
+    const data = parsed as any;
 
     // Handle keyHighlights — may be structured object or legacy array
     let keyHighlights: KeyHighlightsStructured;
-    if (parsed.keyHighlights && typeof parsed.keyHighlights === 'object' && !Array.isArray(parsed.keyHighlights)) {
+    if (data.keyHighlights && typeof data.keyHighlights === 'object' && !Array.isArray(data.keyHighlights)) {
       keyHighlights = {
-        overallPerformance: parsed.keyHighlights.overallPerformance || '',
-        overallPerformanceTagline: parsed.keyHighlights.overallPerformanceTagline || undefined,
-        factorsDrivingGrowth: parsed.keyHighlights.factorsDrivingGrowth || '',
-        factorsDrivingGrowthTagline: parsed.keyHighlights.factorsDrivingGrowthTagline || undefined,
-        factorsInhibitingGrowth: parsed.keyHighlights.factorsInhibitingGrowth || '',
-        factorsInhibitingGrowthTagline: parsed.keyHighlights.factorsInhibitingGrowthTagline || undefined,
-        futureStrategy: parsed.keyHighlights.futureStrategy || '',
-        futureStrategyTagline: parsed.keyHighlights.futureStrategyTagline || undefined,
-        growthOutlook: parsed.keyHighlights.growthOutlook || '',
-        growthOutlookTagline: parsed.keyHighlights.growthOutlookTagline || undefined,
+        overallPerformance: data.keyHighlights.overallPerformance || '',
+        overallPerformanceTagline: data.keyHighlights.overallPerformanceTagline || undefined,
+        factorsDrivingGrowth: data.keyHighlights.factorsDrivingGrowth || '',
+        factorsDrivingGrowthTagline: data.keyHighlights.factorsDrivingGrowthTagline || undefined,
+        factorsInhibitingGrowth: data.keyHighlights.factorsInhibitingGrowth || '',
+        factorsInhibitingGrowthTagline: data.keyHighlights.factorsInhibitingGrowthTagline || undefined,
+        futureStrategy: data.keyHighlights.futureStrategy || '',
+        futureStrategyTagline: data.keyHighlights.futureStrategyTagline || undefined,
+        growthOutlook: data.keyHighlights.growthOutlook || '',
+        growthOutlookTagline: data.keyHighlights.growthOutlookTagline || undefined,
       };
     } else {
       // Legacy fallback: convert array to structured
-      const arr = Array.isArray(parsed.keyHighlights) ? parsed.keyHighlights : [];
+      const arr = Array.isArray(data.keyHighlights) ? data.keyHighlights : [];
       keyHighlights = {
         overallPerformance: arr[0] || '',
         factorsDrivingGrowth: arr[1] || '',
@@ -727,29 +736,29 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
     }
 
     return {
-      revenueInsight: parsed.revenueInsight || '',
-      marginInsight: parsed.marginInsight || '',
-      segmentInsight: parsed.segmentInsight || undefined,
-      geoInsight: parsed.geoInsight || undefined,
-      plInsight: parsed.plInsight || '',
-      bsInsight: parsed.bsInsight || '',
-      cfInsight: parsed.cfInsight || '',
+      revenueInsight: data.revenueInsight || '',
+      marginInsight: data.marginInsight || '',
+      segmentInsight: data.segmentInsight || undefined,
+      geoInsight: data.geoInsight || undefined,
+      plInsight: data.plInsight || '',
+      bsInsight: data.bsInsight || '',
+      cfInsight: data.cfInsight || '',
       keyHighlights,
-      chartInsights: Array.isArray(parsed.chartInsights) ? parsed.chartInsights : [],
-      geoSegmentInsights: Array.isArray(parsed.geoSegmentInsights) ? parsed.geoSegmentInsights : [],
-      segmentRevenue: Array.isArray(parsed.segmentRevenue) ? parsed.segmentRevenue : [],
-      geoRevenue: Array.isArray(parsed.geoRevenue) ? parsed.geoRevenue : [],
+      chartInsights: Array.isArray(data.chartInsights) ? data.chartInsights : [],
+      geoSegmentInsights: Array.isArray(data.geoSegmentInsights) ? data.geoSegmentInsights : [],
+      segmentRevenue: Array.isArray(data.segmentRevenue) ? data.segmentRevenue : [],
+      geoRevenue: Array.isArray(data.geoRevenue) ? data.geoRevenue : [],
       // Fallback arrays extracted from research
-      revenueHistoryExtracted: Array.isArray(parsed.revenueHistoryExtracted) && parsed.revenueHistoryExtracted.length > 0
-        ? parsed.revenueHistoryExtracted : undefined,
-      marginHistoryExtracted: Array.isArray(parsed.marginHistoryExtracted) && parsed.marginHistoryExtracted.length > 0
-        ? parsed.marginHistoryExtracted : undefined,
-      plStatementExtracted: Array.isArray(parsed.plStatementExtracted) && parsed.plStatementExtracted.length > 0
-        ? parsed.plStatementExtracted : undefined,
-      balanceSheetExtracted: Array.isArray(parsed.balanceSheetExtracted) && parsed.balanceSheetExtracted.length > 0
-        ? parsed.balanceSheetExtracted : undefined,
-      cashFlowExtracted: Array.isArray(parsed.cashFlowExtracted) && parsed.cashFlowExtracted.length > 0
-        ? parsed.cashFlowExtracted : undefined,
+      revenueHistoryExtracted: Array.isArray(data.revenueHistoryExtracted) && data.revenueHistoryExtracted.length > 0
+        ? data.revenueHistoryExtracted : undefined,
+      marginHistoryExtracted: Array.isArray(data.marginHistoryExtracted) && data.marginHistoryExtracted.length > 0
+        ? data.marginHistoryExtracted : undefined,
+      plStatementExtracted: Array.isArray(data.plStatementExtracted) && data.plStatementExtracted.length > 0
+        ? data.plStatementExtracted : undefined,
+      balanceSheetExtracted: Array.isArray(data.balanceSheetExtracted) && data.balanceSheetExtracted.length > 0
+        ? data.balanceSheetExtracted : undefined,
+      cashFlowExtracted: Array.isArray(data.cashFlowExtracted) && data.cashFlowExtracted.length > 0
+        ? data.cashFlowExtracted : undefined,
     };
   } catch {
     throw new Error('Failed to parse Claude financial insights JSON');
@@ -830,32 +839,36 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Claude did not return valid JSON for private company');
   try {
+    const parsed: unknown = JSON.parse(match[0]);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Parsed JSON is not an object');
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const parsed = JSON.parse(match[0]) as any;
+    const data = parsed as any;
 
     let privateKeyHighlights: KeyHighlightsStructured | undefined;
-    if (parsed.privateKeyHighlights && typeof parsed.privateKeyHighlights === 'object') {
+    if (data.privateKeyHighlights && typeof data.privateKeyHighlights === 'object') {
       privateKeyHighlights = {
-        overallPerformance: parsed.privateKeyHighlights.overallPerformance || '',
-        overallPerformanceTagline: parsed.privateKeyHighlights.overallPerformanceTagline || undefined,
-        factorsDrivingGrowth: parsed.privateKeyHighlights.factorsDrivingGrowth || '',
-        factorsDrivingGrowthTagline: parsed.privateKeyHighlights.factorsDrivingGrowthTagline || undefined,
-        factorsInhibitingGrowth: parsed.privateKeyHighlights.factorsInhibitingGrowth || '',
-        factorsInhibitingGrowthTagline: parsed.privateKeyHighlights.factorsInhibitingGrowthTagline || undefined,
-        futureStrategy: parsed.privateKeyHighlights.futureStrategy || '',
-        futureStrategyTagline: parsed.privateKeyHighlights.futureStrategyTagline || undefined,
-        growthOutlook: parsed.privateKeyHighlights.growthOutlook || '',
-        growthOutlookTagline: parsed.privateKeyHighlights.growthOutlookTagline || undefined,
+        overallPerformance: data.privateKeyHighlights.overallPerformance || '',
+        overallPerformanceTagline: data.privateKeyHighlights.overallPerformanceTagline || undefined,
+        factorsDrivingGrowth: data.privateKeyHighlights.factorsDrivingGrowth || '',
+        factorsDrivingGrowthTagline: data.privateKeyHighlights.factorsDrivingGrowthTagline || undefined,
+        factorsInhibitingGrowth: data.privateKeyHighlights.factorsInhibitingGrowth || '',
+        factorsInhibitingGrowthTagline: data.privateKeyHighlights.factorsInhibitingGrowthTagline || undefined,
+        futureStrategy: data.privateKeyHighlights.futureStrategy || '',
+        futureStrategyTagline: data.privateKeyHighlights.futureStrategyTagline || undefined,
+        growthOutlook: data.privateKeyHighlights.growthOutlook || '',
+        growthOutlookTagline: data.privateKeyHighlights.growthOutlookTagline || undefined,
       };
     }
 
     return {
-      estimatedRevenue: parsed.estimatedRevenue || 'Not publicly disclosed',
-      profitabilityMargin: parsed.profitabilityMargin || 'Not publicly disclosed',
-      estimatedYoyGrowth: parsed.estimatedYoyGrowth || 'Not publicly disclosed',
-      fundingInfo: parsed.fundingInfo,
-      lastValuation: parsed.lastValuation,
-      privateInsights: Array.isArray(parsed.privateInsights) ? parsed.privateInsights : [],
+      estimatedRevenue: data.estimatedRevenue || 'Not publicly disclosed',
+      profitabilityMargin: data.profitabilityMargin || 'Not publicly disclosed',
+      estimatedYoyGrowth: data.estimatedYoyGrowth || 'Not publicly disclosed',
+      fundingInfo: data.fundingInfo,
+      lastValuation: data.lastValuation,
+      privateInsights: Array.isArray(data.privateInsights) ? data.privateInsights : [],
       privateKeyHighlights,
     };
   } catch {
