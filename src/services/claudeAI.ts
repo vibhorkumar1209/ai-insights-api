@@ -569,6 +569,14 @@ export async function synthesizeFinancialInsights(
   const needBSExtract      = (yahooData.balanceSheet?.length   ?? 0) === 0;
   const needCFExtract      = (yahooData.cashFlow?.length       ?? 0) === 0;
 
+  // Truncate financial data to prevent token overflow on large companies
+  const truncateFinancialRows = (rows: any[] | undefined, maxRows: number = 10): any[] | undefined => {
+    if (!rows || rows.length === 0) return rows;
+    if (rows.length <= maxRows) return rows;
+    // Keep headers and most recent data
+    return rows.slice(0, maxRows);
+  };
+
   const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary.
 Rules:
 - Be specific: cite figures, percentages, year-on-year changes, named programmes.
@@ -579,23 +587,26 @@ Rules:
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.
 - ${RECENCY_DIRECTIVE}`;
 
-  // Compact the Yahoo data for context
-  const revenueStr = (yahooData.revenueHistory || [])
+  // Compact the Yahoo data for context (truncate to avoid token overflow on large datasets)
+  const revenueStr = (truncateFinancialRows(yahooData.revenueHistory, 8) || [])
     .map((r: RevenueDataPoint) => `${r.year}: ${r.revenueFormatted}${r.yoyGrowth != null ? ` (${r.yoyGrowth >= 0 ? '+' : ''}${r.yoyGrowth}% YoY)` : ''}`)
     .join(', ');
-  const marginStr = (yahooData.marginHistory || [])
+  const marginStr = (truncateFinancialRows(yahooData.marginHistory, 8) || [])
     .map((m: MarginDataPoint) => `${m.year}: Net ${m.netMargin}% / Op ${m.operatingMargin}%`)
     .join(', ');
-  const plStr = (yahooData.plStatement || [])
+  const plStr = (truncateFinancialRows(yahooData.plStatement, 12) || [])
     .filter((r: FinancialStatementRow) => r.isBold || r.isSection)
+    .slice(0, 10)
     .map((r: FinancialStatementRow) => `${r.label}: ${r.value}${r.yoy ? ` (${r.yoy} YoY)` : ''}`)
     .join(' | ');
-  const bsStr = (yahooData.balanceSheet || [])
+  const bsStr = (truncateFinancialRows(yahooData.balanceSheet, 12) || [])
     .filter((r: FinancialStatementRow) => r.isBold || r.isSection)
+    .slice(0, 10)
     .map((r: FinancialStatementRow) => `${r.label}: ${r.value}`)
     .join(' | ');
-  const cfStr = (yahooData.cashFlow || [])
+  const cfStr = (truncateFinancialRows(yahooData.cashFlow, 12) || [])
     .filter((r: FinancialStatementRow) => r.isBold || r.isSection)
+    .slice(0, 10)
     .map((r: FinancialStatementRow) => `${r.label}: ${r.value}`)
     .join(' | ');
 
@@ -687,12 +698,40 @@ Extraction rules:
 - For segmentRevenue and geoRevenue: populate from research if available, otherwise populate from your training knowledge for this company. Return [] only if you genuinely don't know the segment/geo breakdown.
 - For insights: draw on BOTH the Finance API data above and your training knowledge — be specific, cite figures.`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
+  // Retry logic: attempt up to 3 times with exponential backoff
+  let message;
+  let lastErr: Error = new Error('Financial synthesis failed');
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      // Add 60-second timeout for synthesis call
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Financial synthesis timeout (60s)')), 60000)
+      );
+
+      message = await Promise.race([
+        client.messages.create({
+          model: SYNTHESIS_MODEL,
+          max_tokens: Math.min(MAX_OUTPUT_TOKENS, 3000), // Reduced from 4096 to prevent overruns
+          temperature: 0.1, // Lower temperature for deterministic financial data
+          messages: [{ role: 'user', content: userPrompt }],
+          system: systemPrompt,
+        }),
+        timeoutPromise,
+      ]);
+      break; // Success
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error('Unknown error');
+      console.warn(`[synthesizeFinancialInsights] Attempt ${attempt}/3 failed:`, lastErr.message);
+
+      if (attempt < 3) {
+        // Exponential backoff: 2s, 4s
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  if (!message) throw lastErr;
 
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
