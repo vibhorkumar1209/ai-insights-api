@@ -103,6 +103,11 @@ export async function runFinancialAnalysis(
       let fmpTicker: string | null = null;
       try {
         fmpTicker = await fmpSearchTicker(input.companyName);
+        // Validate ticker: must be 1-5 alphanumeric characters, no special chars like "X1USD"
+        if (fmpTicker && !/^[A-Z0-9]{1,5}$/.test(fmpTicker)) {
+          console.warn('[financialAnalysis] FMP returned invalid ticker:', fmpTicker, '— discarding');
+          fmpTicker = null;
+        }
         if (fmpTicker) console.log('[financialAnalysis] FMP ticker found:', fmpTicker);
       } catch (err) {
         console.warn('[financialAnalysis] FMP ticker search failed, trying Yahoo:', err);
