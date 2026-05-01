@@ -74,6 +74,7 @@ export interface ThemeRow {
   description: string;
   examples: string;        // pipe-separated use cases
   strategicImpact: string;
+  source?: string;         // Source of information (e.g., "Company reports, analyst coverage")
 }
 
 export interface ThemeResult {
@@ -102,6 +103,7 @@ export interface ChallengesGrowthRow {
   dimension: string;      // e.g. "Macroeconomics", "Supply Chain", "Regulatory"
   challenge: string;      // Major challenge for this dimension
   growthProspect: string; // Key growth opportunity for this dimension
+  source?: string;        // Source of information (e.g., "Industry reports, earnings calls")
 }
 
 export interface ChallengesGrowthResult {
@@ -320,6 +322,7 @@ export interface KeyBuyerRow {
   reference: string;      // Event / reason — brief phrase
   excerpt: string;        // Direct quote or brief excerpt from the source
   keyExecutive: string;   // "Name, Title, Department"
+  source?: string;        // Source attribution (e.g., "LinkedIn, News articles, Press release")
 }
 
 export interface KeyBuyersResult {

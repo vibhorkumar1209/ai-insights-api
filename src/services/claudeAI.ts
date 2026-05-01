@@ -432,7 +432,8 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
     "theme": "Short punchy theme name (3-5 words)",
     "description": "3-4 bullet points (each starting with '• ' and separated by newlines): what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data where available.",
     "examples": "Concrete example 1 | Concrete example 2 | Concrete example 3",
-    "strategicImpact": "2-3 bullet points (each starting with '• ' and separated by newlines): the strategic significance and what it signals about ${input.companyName}'s direction."
+    "strategicImpact": "2-3 bullet points (each starting with '• ' and separated by newlines): the strategic significance and what it signals about ${input.companyName}'s direction.",
+    "source": "Source of information (e.g. 'Company reports, Analyst coverage', 'Press releases, News articles', 'Earnings calls, SEC filings')"
   }
 ]`;
 
@@ -503,13 +504,15 @@ Return a JSON array with EXACTLY this shape (8 objects):
   {
     "dimension": "Macroeconomics",
     "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the specific macroeconomic challenges affecting ${input.companyName}'s operations or profitability.",
-    "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): specific growth opportunities ${input.companyName} can pursue in response to macroeconomic conditions."
+    "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): specific growth opportunities ${input.companyName} can pursue in response to macroeconomic conditions.",
+    "source": "Source of information (e.g. 'Industry reports, Economic forecasts', 'Earnings calls, SEC filings', 'News articles, analyst research')"
   }
 ]
 
 For EACH dimension:
 - "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges for ${input.companyName} in this dimension — cite data, name the threat, quantify where possible, reference ${input.companyName}'s specific assets/operations.
-- "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.`;
+- "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.
+- "source": Source of the information — indicate whether based on research documents, company reports, analyst coverage, news, or training knowledge.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -1387,7 +1390,8 @@ Return a JSON array with 10-15 rows, EXACTLY this shape:
     "keyExecutive": "Full Name, Exact Title, Department (e.g. 'John Smith, Chief Technology Officer, Technology')",
     "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
     "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting 2024', 'Investor Day Keynote, Nov 2024', 'World Economic Forum Panel, Jan 2025', 'Q3 FY2025 Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
-    "excerpt": "2-3 bullet points (each starting with '• ' separated by newlines): key statements or quotes from the executive about this theme — cite specific data points, programme names, or initiatives mentioned."
+    "excerpt": "2-3 bullet points (each starting with '• ' separated by newlines): key statements or quotes from the executive about this theme — cite specific data points, programme names, or initiatives mentioned.",
+    "source": "Source type (e.g. 'LinkedIn', 'News articles', 'Earnings call transcript', 'Company press release', 'Investor presentation')"
   }
 ]
 
@@ -1398,7 +1402,8 @@ IMPORTANT:
 - Prioritise recent sources (2024-2025).
 - Each row should represent a unique, actionable insight for sales pitching.
 - The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting 2024", "NASSCOM Technology Leadership Forum", "Q2 FY2025 Earnings Call", "Banking Technology Summit, Feb 2025". NOT: "LinkedIn post", "Company website", "Press release".
-- The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".`;
+- The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
+- The "source" field must indicate the TYPE of source (e.g. 'LinkedIn', 'News articles', 'Earnings call transcript', 'Company press release', 'Investor presentation', 'Industry forum', 'Research report').`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
