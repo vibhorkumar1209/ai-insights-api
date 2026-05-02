@@ -15,6 +15,7 @@ import {
   ReportSection, ExecutiveSummary, ExecutiveSummaryTickerBox,
   ScopeWizardResult, MarketSegmentOption, KeyPlayerOption,
   MacroTEIData, BCGMatrixItem, CompetitorProfile,
+  BusinessSegment, TimelineBlock, StrategicEvolutionBullet,
 } from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
@@ -2378,5 +2379,150 @@ Requirements:
     frameworkSummary: parsed.frameworkSummary || '',
     dimensions: (parsed.dimensions || []).filter((d) => d.dimension && d.element && d.analysis),
     strategicRecommendations: parsed.strategicRecommendations || [],
+  };
+}
+
+// ── Business Segments & Timelines ────────────────────────────────────────────
+
+export async function synthesizeBusinessSegments(
+  companyName: string,
+  companyDomain: string | undefined,
+  research: string
+): Promise<{
+  segments: BusinessSegment[];
+  strategicEvolution: StrategicEvolutionBullet[];
+}> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are a senior McKinsey strategy consultant conducting a business structure analysis.
+Rules:
+- Identify CURRENT business segments from filings (10-K, annual reports, investor presentations)
+- Each segment description must be analytical, not marketing-focused
+- Descriptions must explain strategic role in the overall business model
+- Use official segment names where available
+- Every segment must be distinct and non-overlapping
+- Strategic evolution must be derived from business model changes over time
+- Output ONLY valid JSON. No markdown fences.
+- ${RECENCY_DIRECTIVE}`;
+
+  const userPrompt = `Analyze "${companyName}" and identify their current business segments.
+
+${hasResearch ? `RESEARCH (10-K, annual reports, earnings calls, presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}. Label as "(est.)" where appropriate.]`}
+
+Return a JSON object:
+{
+  "segments": [
+    {
+      "name": "Official segment name",
+      "description": "2-3 line analytical description: what the segment does, key offerings, strategic role in business model",
+      "source": "Source attribution (e.g., '10-K 2024', 'Investor Presentation Q4 2025')"
+    }
+  ],
+  "strategicEvolution": [
+    {
+      "point": "Single-sentence strategic insight about how the business model evolved (e.g., acquisitions, pivots, integration)"
+    }
+  ]
+}
+
+Requirements:
+- List 4-7 segments (the actual number for ${companyName})
+- Segment names should match official filings
+- Each description should reference revenues, customer types, or strategic purpose
+- Strategic Evolution: 5-6 bullets explaining business model shifts`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 2000,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected response type');
+
+  let parsed;
+  try {
+    const match = content.text.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(match ? match[0] : content.text);
+  } catch {
+    throw new Error('Failed to parse business segments JSON');
+  }
+
+  return {
+    segments: (parsed.segments || []).filter((s: any) => s.name && s.description),
+    strategicEvolution: (parsed.strategicEvolution || []).filter((e: any) => e.point),
+  };
+}
+
+export async function synthesizeBusinessTimeline(
+  companyName: string,
+  companyDomain: string | undefined,
+  research: string
+): Promise<{
+  timelineBlocks: TimelineBlock[];
+  strategicEvolution: StrategicEvolutionBullet[];
+}> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are a senior McKinsey strategy consultant reconstructing a company's strategic evolution.
+Rules:
+- Create a chronological timeline grouped into meaningful strategic phases (not year-by-year)
+- Include ONLY high-impact events: acquisitions, divestitures, launches, pivots, regulatory milestones, partnerships
+- Each block should represent a strategic phase (e.g., expansion, transformation, consolidation)
+- Narratives must be 2-4 lines of flowing text combining related events
+- Every narrative should clearly signal strategic intent
+- Use executive tone: crisp, insightful, no fluff
+- Output ONLY valid JSON. No markdown fences.
+- ${RECENCY_DIRECTIVE}`;
+
+  const userPrompt = `Reconstruct "${companyName}"'s business timeline as a strategic narrative.
+
+${hasResearch ? `RESEARCH (10-K, annual reports, press releases, investor presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}. Label as "(est.)" where appropriate.]`}
+
+Return a JSON object:
+{
+  "timelineBlocks": [
+    {
+      "period": "YYYY–YYYY or YYYY–Present",
+      "narrative": "2–4 line flowing narrative combining key events and signaling strategic intent",
+      "source": "Source attribution (e.g., '10-K filings', 'Press releases 2023–2024')"
+    }
+  ],
+  "strategicEvolution": [
+    {
+      "point": "Single-sentence strategic insight (5-6 bullets total)"
+    }
+  ]
+}
+
+Requirements:
+- Timeline blocks should represent strategic phases, NOT years
+- Each narrative must combine related events into a flowing paragraph (NOT bullet points)
+- Include only high-impact events: acquisitions, divestitures, new business launches, strategic pivots
+- Narratives should be 2-4 sentences, crisp, with clear strategic intent
+- Strategic Evolution: 5-6 bullets explaining business model evolution, inflection points, revenue driver shifts`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 2500,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected response type');
+
+  let parsed;
+  try {
+    const match = content.text.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(match ? match[0] : content.text);
+  } catch {
+    throw new Error('Failed to parse business timeline JSON');
+  }
+
+  return {
+    timelineBlocks: (parsed.timelineBlocks || []).filter((t: any) => t.period && t.narrative),
+    strategicEvolution: (parsed.strategicEvolution || []).filter((e: any) => e.point),
   };
 }

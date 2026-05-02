@@ -337,6 +337,50 @@ export interface KeyBuyersResult {
   completedAt?: string;
 }
 
+// ── Business Segments & Timelines ────────────────────────────────────────────
+
+export interface BusinessSegment {
+  name: string;
+  description: string;         // 2-3 line analytical description
+  source?: string;             // Attribution source
+}
+
+export interface TimelineBlock {
+  period: string;              // e.g. "2015–2017", "2020–Present"
+  narrative: string;           // 2–4 line flowing narrative combining events
+  source?: string;             // Attribution source
+}
+
+export interface StrategicEvolutionBullet {
+  point: string;               // Single strategic insight
+}
+
+export interface BusinessSegmentsResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName?: string;
+  segments?: BusinessSegment[];
+  strategicEvolution?: StrategicEvolutionBullet[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface BusinessTimelinesResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName?: string;
+  timelineBlocks?: TimelineBlock[];
+  strategicEvolution?: StrategicEvolutionBullet[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Industry Report ─────────────────────────────────────────────────────────
 
 export interface IndustryReportInput {
