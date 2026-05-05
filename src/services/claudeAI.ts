@@ -2298,12 +2298,13 @@ export async function synthesizeMarketingStrategy(
   dimensions: StrategyDimensionRow[];
   strategicRecommendations: string[];
 }> {
-  const systemPrompt = `You are a seasoned McKinsey senior partner with 25 years of strategy consulting experience. You produce institutional-grade strategic analyses that Fortune 500 CEOs rely on for decision-making.
+  const systemPrompt = `You are a seasoned McKinsey senior partner with 25 years of strategy consulting experience. You produce institutional grade strategic analyses that Fortune 500 CEOs rely on for decision making.
 Rules:
 - Every dimension must have specific data points, named companies, and quantified evidence.
-- Analysis must be 3-5 sentences — analytical, forward-looking, and actionable.
+- Analysis must be 3 to 5 sentences and analytical, forward looking, and actionable.
 - Strategic implications must be concrete enough to act on.
 - Priority ratings must be justified by evidence.
+- Write in natural business language without hyphens, dashes, or arrows.
 - Output ONLY valid JSON. No markdown fences.
 - ${RECENCY_DIRECTIVE}`;
 
@@ -2319,14 +2320,14 @@ Rules:
     'Flywheel Model': ['Acquisition', 'Activation', 'Retention', 'Revenue', 'Referral'],
     'Blue Ocean': ['Eliminate', 'Reduce', 'Raise', 'Create'],
     '7S Framework': ['Strategy', 'Structure', 'Systems', 'Shared Values', 'Style', 'Staff', 'Skills'],
-    'GE-McKinsey Matrix': ['Invest/Grow', 'Hold/Selective', 'Harvest/Divest'],
-    'Eisenhower Matrix': ['Urgent & Important', 'Important but Not Urgent', 'Urgent but Not Important', 'Neither Urgent nor Important'],
+    'GE-McKinsey Matrix': ['Invest and Grow Strategy', 'Hold and Selective Investment', 'Harvest and Divest Strategy'],
+    'Eisenhower Matrix': ['Urgent and Important', 'Important but Not Urgent', 'Urgent but Not Important', 'Neither Urgent nor Important'],
   };
 
   const dims = frameworkDimensions[input.framework] || ['Dimension 1', 'Dimension 2', 'Dimension 3'];
 
   const userPrompt = `Conduct a comprehensive ${input.framework} analysis for the "${input.industryOrSegment}" industry.
-${input.productContext ? `\nPRODUCT/SERVICE CONTEXT:\n${input.productContext.slice(0, 3000)}` : ''}
+${input.productContext ? `\nPRODUCT and SERVICE CONTEXT:\n${input.productContext.slice(0, 3000)}` : ''}
 ${input.additionalContext ? `\nADDITIONAL CONTEXT:\n${input.additionalContext.slice(0, 2000)}` : ''}
 
 RESEARCH:
@@ -2336,13 +2337,13 @@ The ${input.framework} dimensions are: ${dims.join(', ')}.
 
 Return a single JSON object:
 {
-  "frameworkSummary": "3-5 sentence executive summary of the ${input.framework} analysis findings — the most important takeaways a CEO needs to know.",
+  "frameworkSummary": "3 to 5 sentence executive summary of the ${input.framework} analysis findings — the most important takeaways a CEO needs to know.",
   "dimensions": [
     {
       "dimension": "${dims[0]}",
-      "element": "Specific item/factor within this dimension",
-      "analysis": "3-5 sentences of deep, data-driven analysis with specific figures and named examples",
-      "strategicImplication": "1-2 sentences on what this means for strategy and what action to take",
+      "element": "Specific item or factor within this dimension",
+      "analysis": "3 to 5 sentences of deep, data driven analysis with specific figures and named examples",
+      "strategicImplication": "1 to 2 sentences on what this means for strategy and what action to take",
       "priority": "High" | "Medium" | "Low"
     }
   ],
@@ -2354,8 +2355,8 @@ Return a single JSON object:
 }
 
 Requirements:
-- Provide 2-4 elements per dimension (${dims.length * 3} total elements minimum).
-- Provide 5-8 strategic recommendations.
+- Provide 2 to 4 elements per dimension (${dims.length * 3} total elements minimum).
+- Provide 5 to 8 strategic recommendations.
 - Every analysis must cite specific data, company names, or market figures.
 - Sort elements within each dimension by priority (High first).`;
 
