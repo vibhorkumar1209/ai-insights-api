@@ -736,7 +736,7 @@ export type StrategyFramework =
   | 'SWOT'
   | 'Porters Five Forces'
   | 'Ansoff Matrix'
-  | '4P/7P Marketing Mix'
+  | '4P and 7P Marketing Mix'
   | 'AIDA'
   | 'PESTEL'
   | 'North Star'

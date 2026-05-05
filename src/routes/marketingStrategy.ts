@@ -11,7 +11,7 @@ import {
 
 const VALID_FRAMEWORKS: StrategyFramework[] = [
   'BCG Matrix', 'SWOT', 'Porters Five Forces', 'Ansoff Matrix',
-  '4P/7P Marketing Mix', 'AIDA', 'PESTEL', 'North Star',
+  '4P and 7P Marketing Mix', 'AIDA', 'PESTEL', 'North Star',
   'Flywheel Model', 'Blue Ocean', '7S Framework',
   'GE-McKinsey Matrix', 'Eisenhower Matrix',
 ];
