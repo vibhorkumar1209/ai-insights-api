@@ -231,18 +231,17 @@ export async function generateBusinessDescription(
     max_tokens: 1024,
     messages: [{
       role: 'user',
-      content: `Write a concise business description of "${companyName}"${domainHint} in 100-250 words.
+      content: `Write a concise business description of "${companyName}"${domainHint} in 100-150 words.
 
 Include:
-- What the company does (core products/services)
-- Industry/sector it operates in
-- Target customers/markets
-- Key differentiators or market position
-- Approximate scale (if publicly known: revenue range, employee count, geography)
+- Core products and services
+- Industry and primary markets
+- Key competitive strengths
+- Approximate scale (revenue, employees, geography)
 
-Write in third person, professional tone. Return ONLY the description text — no headers, no bullet points, no markdown.`,
+Write in professional business language, third person. No headers, bullet points, or markdown.`,
     }],
-    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable. ${RECENCY_DIRECTIVE}`,
+    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE}`,
   });
 
   const content = message.content[0];
@@ -413,9 +412,10 @@ export async function synthesizeThemes(
   const hasResearch = !isEmptyResearch(research);
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing executive-grade theme analyses.
-- Draw on the provided research first; supplement with your training knowledge where research is sparse — label estimates "(est.)".
+- Draw on the provided research first; supplement with your training knowledge where research is sparse.
 - Each theme must be concrete and evidence-based, not generic.
 - Never produce empty fields — always provide a meaningful answer.
+- Write in natural business language without hyphens, dashes, or arrows in descriptions. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${RECENCY_DIRECTIVE}`;
 
@@ -423,7 +423,7 @@ export async function synthesizeThemes(
 
 ${config.hint}
 
-${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available — use your training knowledge about ${input.companyName}. Label estimates as "(est.)".]`}
+${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available — use your training knowledge about ${input.companyName}.]`}
 
 ${input.userOrganization ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}` : ''}
 
@@ -434,7 +434,7 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
     "description": "3-4 bullet points (each starting with '• ' and separated by newlines): what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data where available.",
     "examples": "Concrete example 1 | Concrete example 2 | Concrete example 3",
     "strategicImpact": "2-3 bullet points (each starting with '• ' and separated by newlines): the strategic significance and what it signals about ${input.companyName}'s direction.",
-    "source": "Source of information (e.g. 'Company reports, Analyst coverage', 'Press releases, News articles', 'Earnings calls, SEC filings')"
+    "source": "Source of information as clickable link (e.g. 'https://investor.company.com/reports | https://news.source.com/article' or 'SEC filings: https://sec.gov/cgi-bin/...', or 'Company press releases, analyst reports' if URLs unknown)"
   }
 ]`;
 
@@ -470,11 +470,12 @@ export async function synthesizeChallengesGrowth(
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing company-specific competitive analysis.
 Rules:
 - FOCUS ON THIS COMPANY: Analyze ${input.companyName}'s specific position, vulnerabilities, capabilities, and opportunities — NOT general industry trends.
-- Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
-- Be specific: cite ${input.companyName}'s programmes, metrics, named initiatives, manufacturing/R&D locations, strategic partnerships, and specific business data.
+- Use the provided research first; supplement with training knowledge where research is sparse.
+- Be specific: cite ${input.companyName}'s programmes, metrics, named initiatives, manufacturing and R&D locations, strategic partnerships, and specific business data.
 - For challenges: identify what pressures affect THIS company's performance, margins, growth, or competitive position.
 - For growth: identify where THIS company can expand, improve margins, enter new segments, or leverage its assets.
 - Every cell must have substantive content — no vague generalities, no empty fields.
+- Write in natural business language without hyphens, dashes, or arrows. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${RECENCY_DIRECTIVE}`;
 
@@ -494,7 +495,7 @@ Cover EXACTLY these 8 dimensions (one array element each, in this order):
 
 ${hasResearch
   ? `RESEARCH:\n${research.slice(0, 20000)}`
-  : `[No live research available — use training knowledge about ${input.companyName}. Label estimates as "(est.)".]`}
+  : `[No live research available — use training knowledge about ${input.companyName}.]`}
 
 ${input.userOrganization
   ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}`
@@ -506,14 +507,14 @@ Return a JSON array with EXACTLY this shape (8 objects):
     "dimension": "Macroeconomics",
     "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the specific macroeconomic challenges affecting ${input.companyName}'s operations or profitability.",
     "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): specific growth opportunities ${input.companyName} can pursue in response to macroeconomic conditions.",
-    "source": "Source of information (e.g. 'Industry reports, Economic forecasts', 'Earnings calls, SEC filings', 'News articles, analyst research')"
+    "source": "Source of information as clickable links where available (e.g. 'https://sec.gov/cgi-bin/... | https://earnings-call.com/...', or 'Industry reports, News articles' if specific URLs unknown)"
   }
 ]
 
 For EACH dimension:
 - "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges for ${input.companyName} in this dimension — cite data, name the threat, quantify where possible, reference ${input.companyName}'s specific assets/operations.
 - "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.
-- "source": Source of the information — indicate whether based on research documents, company reports, analyst coverage, news, or training knowledge.`;
+- "source": Source of the information as clickable URLs where possible (e.g., SEC filings, company reports, earnings calls, news articles). Include actual hyperlinks if known; otherwise describe the source type.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -1368,12 +1369,13 @@ export async function synthesizeKeyBuyers(
 ): Promise<KeyBuyerRow[]> {
   const hasResearch = !isEmptyResearch(research);
 
-  const systemPrompt = `You are a senior B2B sales intelligence analyst who specialises in executive-level stakeholder mapping.
+  const systemPrompt = `You are a senior B2B sales intelligence analyst who specialises in executive level stakeholder mapping.
 Rules:
-- Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
-- Focus on C-suite and SVP/VP level executives — the decision-makers.
+- Use the provided research first; supplement with training knowledge where research is sparse.
+- Focus on C suite and SVP/VP level executives — the decision makers.
 - Every row must have substantive, specific content — no vague generalities, no empty fields.
 - Prefer direct quotes in the excerpt field when available — use quotation marks.
+- Write in natural business language without hyphens, dashes, or arrows. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${RECENCY_DIRECTIVE}`;
 
@@ -1383,7 +1385,7 @@ The table should map senior executives to their publicly stated business focus a
 
 ${hasResearch
   ? `RESEARCH:\n${research.slice(0, 20000)}`
-  : `[No live research available — use training knowledge about ${input.companyName}'s key executives and their known strategic priorities. Label estimates as "(est.)".]`}
+  : `[No live research available — use training knowledge about ${input.companyName}'s key executives and their known strategic priorities.]`}
 
 Return a JSON array with 10-15 rows, EXACTLY this shape:
 [
@@ -1392,7 +1394,7 @@ Return a JSON array with 10-15 rows, EXACTLY this shape:
     "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
     "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting 2024', 'Investor Day Keynote, Nov 2024', 'World Economic Forum Panel, Jan 2025', 'Q3 FY2025 Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
     "excerpt": "2-3 bullet points (each starting with '• ' separated by newlines): key statements or quotes from the executive about this theme — cite specific data points, programme names, or initiatives mentioned.",
-    "source": "Source type (e.g. 'LinkedIn', 'News articles', 'Earnings call transcript', 'Company press release', 'Investor presentation')"
+    "source": "Source as clickable URL where available (e.g. 'https://linkedin.com/in/...' or 'https://earnings-call.com/...' or 'News article: https://...'), otherwise source type (e.g. 'LinkedIn', 'Earnings call transcript', 'Investor presentation')"
   }
 ]
 
@@ -1404,7 +1406,7 @@ IMPORTANT:
 - Each row should represent a unique, actionable insight for sales pitching.
 - The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting 2024", "NASSCOM Technology Leadership Forum", "Q2 FY2025 Earnings Call", "Banking Technology Summit, Feb 2025". NOT: "LinkedIn post", "Company website", "Press release".
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
-- The "source" field must indicate the TYPE of source (e.g. 'LinkedIn', 'News articles', 'Earnings call transcript', 'Company press release', 'Investor presentation', 'Industry forum', 'Research report').`;
+- The "source" field must include actual URLs where available (e.g., LinkedIn profile URL, news article link, earnings call recording). If specific URLs are not available, indicate the source type (e.g., 'LinkedIn', 'Earnings call transcript', 'Industry forum').`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
