@@ -2326,40 +2326,51 @@ Rules:
 
   const dims = frameworkDimensions[input.framework] || ['Dimension 1', 'Dimension 2', 'Dimension 3'];
 
-  const userPrompt = `Conduct a comprehensive ${input.framework} analysis for the "${input.industryOrSegment}" industry.
-${input.productContext ? `\nPRODUCT and SERVICE CONTEXT:\n${input.productContext.slice(0, 3000)}` : ''}
-${input.additionalContext ? `\nADDITIONAL CONTEXT:\n${input.additionalContext.slice(0, 2000)}` : ''}
-
-RESEARCH:
-${research.slice(0, 55000)}
-
-The ${input.framework} dimensions are: ${dims.join(', ')}.
-
-CRITICAL: Return ONLY valid, parseable JSON (no markdown, no extra text). Use this exact structure:
-{
-  "frameworkSummary": "3 to 5 sentence executive summary of key findings",
-  "dimensions": [
-    {
-      "dimension": "First dimension name",
-      "element": "Specific item or factor within this dimension",
-      "analysis": "3 to 5 sentences of analysis with specific figures and named examples",
-      "strategicImplication": "1 to 2 sentences on strategy impact and action",
+  // Build dimension examples to make prompt crystal clear
+  const dimExamples = dims.slice(0, 2).map((dim) => `{
+      "dimension": "${dim}",
+      "element": "Specific competitive factor or trend",
+      "analysis": "2 to 3 sentences with specific data, company names, and market figures",
+      "strategicImplication": "1 to 2 sentences on what this means for business strategy",
       "priority": "High"
-    }
+    }`).join(',\n    ');
+
+  const userPrompt = `TASK: Conduct a comprehensive ${input.framework} analysis for the "${input.industryOrSegment}" industry.
+${input.productContext ? `\nPRODUCT CONTEXT: ${input.productContext.slice(0, 2000)}` : ''}
+${input.additionalContext ? `\nADDITIONAL CONTEXT: ${input.additionalContext.slice(0, 1500)}` : ''}
+
+RESEARCH DATA:
+${research.slice(0, 45000)}
+
+DIMENSIONS TO ANALYZE: ${dims.join(', ')}
+
+OUTPUT: Return ONLY a valid JSON object (no markdown, no preamble, no explanation). The JSON must be parseable by JSON.parse() in JavaScript.
+
+EXACT JSON STRUCTURE REQUIRED:
+{
+  "frameworkSummary": "3 to 5 sentences summarizing the analysis",
+  "dimensions": [
+    ${dimExamples},
+    { "dimension": "Other dimension...", "element": "...", "analysis": "...", "strategicImplication": "...", "priority": "High|Medium|Low" }
   ],
   "strategicRecommendations": [
-    "Recommendation 1: Specific, actionable recommendation with expected impact",
-    "Recommendation 2: Next recommendation",
-    "Recommendation 3: Third recommendation"
+    "Recommendation 1: specific and actionable",
+    "Recommendation 2: specific and actionable",
+    "Recommendation 3: specific and actionable",
+    "Recommendation 4: specific and actionable",
+    "Recommendation 5: specific and actionable",
+    "Recommendation 6: specific and actionable"
   ]
 }
 
-Requirements:
-- Provide 2 to 4 elements per dimension (${dims.length * 3} total elements minimum).
-- Provide 5 to 8 strategic recommendations.
-- Every analysis must cite specific data, company names, or market figures.
-- Sort elements within each dimension by priority (High, Medium, or Low).
-- Return ONLY the JSON object. No explanations, no markdown, no extra text.`;
+RULES:
+- Provide exactly one element object per dimension (${dims.length} total).
+- Each element must have all four fields: dimension, element, analysis, strategicImplication, priority.
+- priority must be exactly one of: "High", "Medium", or "Low".
+- Analysis text must include specific company names, market data points, and percentages.
+- Do not use pipe characters (|) in the JSON — use actual values like "High" only.
+- All strings must be properly JSON-escaped (no unescaped quotes or newlines).
+- Return ONLY the JSON object itself, nothing else. No markdown code fences.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -2370,19 +2381,33 @@ Requirements:
 
   const raw = (message.content[0] as { type: string; text: string }).text;
 
-  // Remove markdown code fences if present
-  let jsonStr = raw.replace(/^```json\s*/, '').replace(/\n```\s*$/, '').replace(/^```\s*/, '').replace(/\n```\s*$/, '').trim();
+  // Remove markdown code fences
+  let jsonStr = raw
+    .replace(/^```[\w]*\n?/, '') // Remove opening code fence
+    .replace(/\n?```$/, '')  // Remove closing code fence
+    .trim();
 
   // Find JSON object
-  const match = jsonStr.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No valid JSON object in marketing strategy response');
+  const firstBrace = jsonStr.indexOf('{');
+  const lastBrace = jsonStr.lastIndexOf('}');
+
+  if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+    console.error('[synthesizeMarketingStrategy] Could not find JSON. Raw response:', jsonStr.slice(0, 300));
+    throw new Error('No valid JSON object in marketing strategy response');
+  }
+
+  const jsonCandidate = jsonStr.substring(firstBrace, lastBrace + 1);
 
   let parsed: { frameworkSummary?: string; dimensions?: StrategyDimensionRow[]; strategicRecommendations?: string[] };
   try {
-    parsed = JSON.parse(match[0]);
+    parsed = JSON.parse(jsonCandidate);
   } catch (e) {
-    console.error('[synthesizeMarketingStrategy] JSON parse error. Raw response:', jsonStr.slice(0, 500));
-    throw new Error(`Failed to parse marketing strategy JSON: ${e instanceof Error ? e.message : String(e)}`);
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.error('[synthesizeMarketingStrategy] JSON parse failed:', errorMsg);
+    console.error('[synthesizeMarketingStrategy] Response length:', jsonCandidate.length);
+    console.error('[synthesizeMarketingStrategy] First 500 chars:', jsonCandidate.slice(0, 500));
+    console.error('[synthesizeMarketingStrategy] Error position context:', jsonCandidate.slice(Math.max(0, 18600), 18750));
+    throw new Error(`JSON parse error: ${errorMsg}`);
   }
 
   return {
