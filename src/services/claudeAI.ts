@@ -2663,7 +2663,7 @@ export async function discoverTopPlayersByIndustryQuick(
   industry: string
 ): Promise<Array<{ name: string; headquarters: string; estimatedRevenue: string; relevanceScore: number }>> {
   const response = await client.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-opus-4-1-20250805',
     max_tokens: 1024,
     messages: [
       {
@@ -2697,7 +2697,7 @@ export async function discoverEmergingTechsQuick(
   industry: string
 ): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
   const response = await client.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-opus-4-1-20250805',
     max_tokens: 1024,
     messages: [
       {
@@ -2731,7 +2731,7 @@ export async function discoverIndustrySegmentsQuick(
   industry: string
 ): Promise<string[]> {
   const response = await client.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-opus-4-1-20250805',
     max_tokens: 512,
     messages: [
       {
