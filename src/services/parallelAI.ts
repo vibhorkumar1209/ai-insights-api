@@ -173,6 +173,155 @@ async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'):
 
 // ── Competitor Discovery ─────────────────────────────────────────────────────
 
+export async function discoverTopPlayersByIndustry(industry: string): Promise<Competitor[]> {
+  const query = `
+Research and identify the top 10 key players (major companies) in the "${industry}" industry.
+
+Focus on companies that are:
+- Market leaders by revenue or market share
+- Well-known and established in the industry
+- Actively operating and relevant as of 2025
+
+For each company provide:
+1. Company name (exact legal or commonly known name)
+2. Headquarters location (City, Country)
+3. Estimated annual revenue (USD) — most recent available
+4. Relevance/Leadership score (1-10, where 10 is top market leader)
+
+Format your response as a JSON array:
+[
+  {
+    "name": "Company Name",
+    "headquarters": "City, Country",
+    "estimatedRevenue": "$X billion",
+    "relevanceScore": 10
+  }
+]
+
+Return ONLY the JSON array, no additional text. Ensure 10 companies are returned.
+`.trim();
+
+  const raw = await runResearch(query, 'base');
+  return parseTopPlayers(raw);
+}
+
+export async function discoverEmergingTechnologiesByIndustry(industry: string): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
+  const query = `
+Research and identify the top 10 emerging and strategic technologies in the "${industry}" industry as of 2025.
+
+For each technology provide:
+1. Technology name
+2. Category/domain (e.g., "Artificial Intelligence", "Infrastructure", "Security")
+3. Current maturity level: "emerging", "growth", or "mainstream"
+
+Include both cutting-edge technologies just entering the market AND mature technologies becoming strategic. Prioritize technologies that are:
+- Actively being adopted by leading companies
+- Creating competitive advantage
+- Likely to disrupt the industry
+
+Format as JSON array:
+[
+  {
+    "name": "Technology Name",
+    "category": "Category",
+    "maturityLevel": "growth"
+  }
+]
+
+Return ONLY the JSON array. Ensure 10 technologies are returned.
+`.trim();
+
+  const raw = await runResearch(query, 'base');
+  return parseEmergingTechs(raw);
+}
+
+function parseEmergingTechs(raw: string): Array<{ name: string; category: string; maturityLevel: string }> {
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((t) => t.name && t.category)
+          .map((t) => ({
+            name: t.name,
+            category: t.category,
+            maturityLevel: t.maturityLevel || 'growth',
+          }))
+          .slice(0, 10);
+      }
+    }
+  } catch (e) {
+    console.error('[parallelAI] Tech parse error:', e);
+  }
+  return [];
+}
+
+export async function discoverIndustrySegmentsByIndustry(industry: string): Promise<string[]> {
+  const query = `
+Research and identify the top 10 major segments or subsectors within the "${industry}" industry as of 2025.
+
+Segments should represent distinct business areas, customer types, or value chains within the industry. Examples:
+- For banking: Retail Banking, Corporate Banking, Investment Banking, Wealth Management, etc.
+- For automotive: Electric Vehicles, Autonomous Driving, Manufacturing, Supply Chain, etc.
+
+For each segment provide the name only.
+
+Format as JSON array:
+[
+  "Segment Name 1",
+  "Segment Name 2"
+]
+
+Return ONLY the JSON array. Ensure 10 segments are returned.
+`.trim();
+
+  const raw = await runResearch(query, 'base');
+  return parseSegments(raw);
+}
+
+function parseSegments(raw: string): string[] {
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((s) => typeof s === 'string' && s.trim().length > 0)
+          .map((s) => s.trim())
+          .slice(0, 10);
+      }
+    }
+  } catch (e) {
+    console.error('[parallelAI] Segment parse error:', e);
+  }
+  return [];
+}
+
+function parseTopPlayers(raw: string): Competitor[] {
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((c) => c.name && c.headquarters)
+          .map((c) => ({
+            name: c.name,
+            headquarters: c.headquarters,
+            estimatedRevenue: c.estimatedRevenue || 'N/A',
+            relevanceScore: c.relevanceScore || 8,
+            description: `Leading player in the industry`,
+          }))
+          .slice(0, 10);
+      }
+    }
+  } catch (e) {
+    console.error('[parallelAI] JSON parse error:', e);
+  }
+  return [];
+}
+
 export async function discoverCompetitors(
   targetCompany: string,
   industryContext?: string

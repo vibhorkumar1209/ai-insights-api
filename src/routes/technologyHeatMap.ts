@@ -7,6 +7,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/technologyHeatMapService';
+import { discoverTopPlayersByIndustryQuick, discoverEmergingTechsQuick, discoverIndustrySegmentsQuick } from '../services/claudeAI';
 import { HeatMapInput } from '@ai-insights/types';
 
 const router = Router();
@@ -119,42 +120,66 @@ router.get('/:jobId/stream', (req: Request, res: Response): void => {
 });
 
 /** POST /api/technology-heat-map/discover-competitors */
-router.post('/discover-competitors', aiLimiter, (req: Request, res: Response): void => {
+router.post('/discover-competitors', aiLimiter, async (req: Request, res: Response): Promise<void> => {
   const { industry } = req.body;
   if (!industry) {
     res.status(400).json({ error: 'industry is required' });
     return;
   }
 
-  // Return hardcoded competitors for now (will be enhanced with AI discovery later)
-  const competitors = getCompetitorsForIndustry(industry);
-  res.json({ competitors });
+  try {
+    console.log('[discover-competitors] Discovering top players for industry:', industry);
+    const competitors = await discoverTopPlayersByIndustryQuick(industry);
+    console.log('[discover-competitors] Found', competitors.length, 'competitors');
+    res.json({ competitors });
+  } catch (error) {
+    console.error('[discover-competitors] Error:', error);
+    // Fallback to static data if discovery fails
+    const fallback = getCompetitorsForIndustry(industry);
+    res.json({ competitors: fallback });
+  }
 });
 
 /** POST /api/technology-heat-map/discover-technologies */
-router.post('/discover-technologies', aiLimiter, (req: Request, res: Response): void => {
+router.post('/discover-technologies', aiLimiter, async (req: Request, res: Response): Promise<void> => {
   const { industry } = req.body;
   if (!industry) {
     res.status(400).json({ error: 'industry is required' });
     return;
   }
 
-  // Return emerging technologies for the industry
-  const technologies = getTechnologiesForIndustry(industry);
-  res.json({ technologies });
+  try {
+    console.log('[discover-technologies] Discovering emerging technologies for industry:', industry);
+    const technologies = await discoverEmergingTechsQuick(industry);
+    console.log('[discover-technologies] Found', technologies.length, 'technologies');
+    res.json({ technologies });
+  } catch (error) {
+    console.error('[discover-technologies] Error:', error);
+    // Fallback to default if discovery fails
+    const fallback = getTechnologiesForIndustry(industry);
+    res.json({ technologies: fallback });
+  }
 });
 
 /** POST /api/technology-heat-map/discover-segments */
-router.post('/discover-segments', aiLimiter, (req: Request, res: Response): void => {
+router.post('/discover-segments', aiLimiter, async (req: Request, res: Response): Promise<void> => {
   const { industry } = req.body;
   if (!industry) {
     res.status(400).json({ error: 'industry is required' });
     return;
   }
 
-  // Return industry segments
-  const segments = getSegmentsForIndustry(industry);
-  res.json({ segments });
+  try {
+    console.log('[discover-segments] Discovering industry segments for:', industry);
+    const segments = await discoverIndustrySegmentsQuick(industry);
+    console.log('[discover-segments] Found', segments.length, 'segments');
+    res.json({ segments });
+  } catch (error) {
+    console.error('[discover-segments] Error:', error);
+    // Fallback to static data if discovery fails
+    const fallback = getSegmentsForIndustry(industry);
+    res.json({ segments: fallback });
+  }
 });
 
 // ── Helper functions ──────────────────────────────────────────────────────────

@@ -2656,3 +2656,103 @@ REQUIREMENTS:
     throw new Error('Failed to parse heat map data');
   }
 }
+
+// ── Technology Heat Map Discovery (Claude-based, fast) ────────────────────────
+
+export async function discoverTopPlayersByIndustryQuick(
+  industry: string
+): Promise<Array<{ name: string; headquarters: string; estimatedRevenue: string; relevanceScore: number }>> {
+  const response = await client.messages.create({
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: `Identify the top 10 key players (major companies by revenue/market share) in the "${industry}" industry as of 2025.
+
+Return ONLY a valid JSON array with exactly 10 companies. No other text. Each item must have: name, headquarters, estimatedRevenue, relevanceScore (1-10).
+
+Example format:
+[
+  {"name":"Company A","headquarters":"City, Country","estimatedRevenue":"$100B","relevanceScore":10},
+  {"name":"Company B","headquarters":"City, Country","estimatedRevenue":"$80B","relevanceScore":9}
+]`,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type === 'text') {
+    try {
+      return JSON.parse(content.text);
+    } catch {
+      console.error('[discoverTopPlayers] Parse error:', content.text);
+      return [];
+    }
+  }
+  return [];
+}
+
+export async function discoverEmergingTechsQuick(
+  industry: string
+): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
+  const response = await client.messages.create({
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: `List the top 10 emerging and strategic technologies in the "${industry}" industry as of 2025.
+
+Return ONLY a valid JSON array with exactly 10 technologies. No other text. Each must have: name, category, maturityLevel ("emerging", "growth", or "mainstream").
+
+Example:
+[
+  {"name":"AI/ML","category":"Artificial Intelligence","maturityLevel":"growth"},
+  {"name":"Blockchain","category":"Distributed Ledger","maturityLevel":"emerging"}
+]`,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type === 'text') {
+    try {
+      return JSON.parse(content.text);
+    } catch {
+      console.error('[discoverEmergingTechs] Parse error:', content.text);
+      return [];
+    }
+  }
+  return [];
+}
+
+export async function discoverIndustrySegmentsQuick(
+  industry: string
+): Promise<string[]> {
+  const response = await client.messages.create({
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 512,
+    messages: [
+      {
+        role: 'user',
+        content: `List the top 10 segments or subsectors within the "${industry}" industry.
+
+Return ONLY a JSON array of 10 segment names as strings. No other text.
+
+Example: ["Segment A","Segment B","Segment C",...]`,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type === 'text') {
+    try {
+      return JSON.parse(content.text);
+    } catch {
+      console.error('[discoverSegments] Parse error:', content.text);
+      return [];
+    }
+  }
+  return [];
+}
