@@ -21,16 +21,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  if (!Array.isArray(input.selectedCompetitors) || input.selectedCompetitors.length === 0) {
-    res.status(400).json({ error: 'selectedCompetitors array is required and must not be empty' });
-    return;
-  }
-
-  if (input.selectedCompetitors.length > 10) {
-    res.status(400).json({ error: 'Maximum 10 competitors allowed' });
-    return;
-  }
-
+  // Validate technologies (always required)
   if (!Array.isArray(input.selectedTechs) || input.selectedTechs.length === 0) {
     res.status(400).json({ error: 'selectedTechs array is required and must not be empty' });
     return;
@@ -41,12 +32,21 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  if (!Array.isArray(input.industrySegments) || input.industrySegments.length === 0) {
-    res.status(400).json({ error: 'industrySegments array is required and must not be empty' });
+  // Validate competitors OR segments (at least one required, not both)
+  const hasCompetitors = Array.isArray(input.selectedCompetitors) && input.selectedCompetitors.length > 0;
+  const hasSegments = Array.isArray(input.industrySegments) && input.industrySegments.length > 0;
+
+  if (!hasCompetitors && !hasSegments) {
+    res.status(400).json({ error: 'Either selectedCompetitors or industrySegments (or both) is required and must not be empty' });
     return;
   }
 
-  if (input.industrySegments.length > 10) {
+  if (hasCompetitors && input.selectedCompetitors.length > 10) {
+    res.status(400).json({ error: 'Maximum 10 competitors allowed' });
+    return;
+  }
+
+  if (hasSegments && input.industrySegments.length > 10) {
     res.status(400).json({ error: 'Maximum 10 industry segments allowed' });
     return;
   }
