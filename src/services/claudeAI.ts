@@ -293,7 +293,7 @@ ${input.focusAreas ? `- IMPORTANT: Ensure at least one dimension directly addres
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 5000,  // Benchmarking table: 5 dimensions × detailed analysis with research data
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
@@ -368,7 +368,7 @@ Return EXACTLY ${dimensions.length} objects, one per dimension above.`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 4500,  // Gap analysis: 5 dimensions × detailed comparisons with bullet points
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
@@ -2374,7 +2374,7 @@ RULES:
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 5000,  // Marketing Strategy: frameworkSummary + N dimensions (3-7) + 6 recommendations
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
