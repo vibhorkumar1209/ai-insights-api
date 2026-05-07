@@ -160,6 +160,20 @@ router.post('/discover-segments', aiLimiter, (req: Request, res: Response): void
 // ── Helper functions ──────────────────────────────────────────────────────────
 
 function getCompetitorsForIndustry(industry: string): any[] {
+  // Default/fallback competitors for any industry
+  const defaultCompetitors = [
+    { name: 'Apple', headquarters: 'Cupertino, USA', estimatedRevenue: '$408.2B', relevanceScore: 9 },
+    { name: 'Microsoft', headquarters: 'Redmond, USA', estimatedRevenue: '$221.9B', relevanceScore: 9 },
+    { name: 'Google', headquarters: 'Mountain View, USA', estimatedRevenue: '$307.4B', relevanceScore: 9 },
+    { name: 'Amazon', headquarters: 'Seattle, USA', estimatedRevenue: '$575.5B', relevanceScore: 8 },
+    { name: 'Meta', headquarters: 'Menlo Park, USA', estimatedRevenue: '$134.9B', relevanceScore: 8 },
+    { name: 'Tesla', headquarters: 'Austin, USA', estimatedRevenue: '$81.5B', relevanceScore: 8 },
+    { name: 'Nvidia', headquarters: 'Santa Clara, USA', estimatedRevenue: '$60.9B', relevanceScore: 8 },
+    { name: 'JPMorgan Chase', headquarters: 'New York, USA', estimatedRevenue: '$177.3B', relevanceScore: 7 },
+    { name: 'Berkshire Hathaway', headquarters: 'Omaha, USA', estimatedRevenue: '$302.1B', relevanceScore: 7 },
+    { name: 'Saudi Aramco', headquarters: 'Dhahran, Saudi Arabia', estimatedRevenue: '$160.2B', relevanceScore: 7 },
+  ];
+
   const competitorMap: Record<string, any[]> = {
     banking: [
       { name: 'JPMorgan Chase', headquarters: 'New York, USA', estimatedRevenue: '$177.3B', relevanceScore: 10 },
@@ -207,11 +221,12 @@ function getCompetitorsForIndustry(industry: string): any[] {
       { name: 'Costco', headquarters: 'Issaquah, USA', estimatedRevenue: '$248.1B', relevanceScore: 8 },
       { name: 'Home Depot', headquarters: 'Atlanta, USA', estimatedRevenue: '$158.0B', relevanceScore: 7 },
       { name: 'Lowe\'s', headquarters: 'Mooresville, USA', estimatedRevenue: '$96.3B', relevanceScore: 7 },
-      { name: 'Target', headquarters: 'Minneapolis, USA', estimatedRevenue: '$107.6B', relevanceScore: 7 },
+      { name: 'Walgreens', headquarters: 'Chicago, USA', estimatedRevenue: '$132.7B', relevanceScore: 7 },
     ],
   };
 
-  return competitorMap[industry.toLowerCase()] || [];
+  const normalizedIndustry = industry.toLowerCase().trim();
+  return competitorMap[normalizedIndustry] || defaultCompetitors;
 }
 
 function getTechnologiesForIndustry(industry: string): any[] {
@@ -233,6 +248,20 @@ function getTechnologiesForIndustry(industry: string): any[] {
 }
 
 function getSegmentsForIndustry(industry: string): string[] {
+  // Default segments for any industry
+  const defaultSegments = [
+    'Market Segment A',
+    'Market Segment B',
+    'Market Segment C',
+    'Geographic North',
+    'Geographic South',
+    'Geographic Europe',
+    'Geographic Asia',
+    'Customer Type 1',
+    'Customer Type 2',
+    'Emerging Opportunities',
+  ];
+
   const segmentMap: Record<string, string[]> = {
     banking: [
       'Retail Banking',
@@ -284,7 +313,7 @@ function getSegmentsForIndustry(industry: string): string[] {
     ],
   };
 
-  return segmentMap[industry.toLowerCase()] || [];
+  return segmentMap[industry.toLowerCase().trim()] || defaultSegments;
 }
 
 export default router;
