@@ -1328,7 +1328,7 @@ ${priorityCountNote}
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 6000,  // Sales Play requires more tokens due to complex multi-section JSON output
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
