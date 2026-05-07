@@ -17,6 +17,7 @@ import marketingStrategyRouter from './routes/marketingStrategy';
 import personaRouter from './routes/persona';
 import businessSegmentsRouter from './routes/businessSegments';
 import businessTimelinesRouter from './routes/businessTimelines';
+import technologyHeatMapRouter from './routes/technologyHeatMap';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -58,6 +59,7 @@ app.use('/api/marketing-strategy', memoryGuard, marketingStrategyRouter);
 app.use('/api/persona', memoryGuard, personaRouter);
 app.use('/api/business-segments', memoryGuard, businessSegmentsRouter);
 app.use('/api/business-timelines', memoryGuard, businessTimelinesRouter);
+app.use('/api/technology-heat-map', memoryGuard, technologyHeatMapRouter);
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {

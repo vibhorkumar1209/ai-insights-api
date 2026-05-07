@@ -2561,3 +2561,98 @@ Requirements:
     strategicEvolution: (parsed.strategicEvolution || []).filter((e: any) => e.point),
   };
 }
+
+// ── Technology Heat Map Synthesis ─────────────────────────────────────────────
+
+export async function synthesizeHeatMap(
+  input: {
+    industry: string;
+    selectedCompetitors: string[];
+    selectedTechs: string[];
+    industrySegments: string[];
+  },
+  competitorResearch: Record<string, string>,
+  industrySegmentResearch: Record<string, string>
+): Promise<{
+  competitionHeatMap: any[][];
+  industryHeatMap: any[][];
+  insights: any;
+}> {
+  const systemPrompt = `You are a technology adoption analyst specializing in competitive intelligence and industry trends.
+Rules:
+- Analyze adoption data objectively based on provided research
+- Assign adoption stages 1-5: 1=minimal (<10%), 2=early (10-30%), 3=growth (30-60%), 4=widespread (60-85%), 5=dominant (85%+)
+- Provide specific vendor names, implementations, and deployment examples
+- Output ONLY valid JSON with no markdown fences
+- ${RECENCY_DIRECTIVE}`;
+
+  const truncatedCompResearch = truncateResearch(competitorResearch, 20000);
+  const truncatedSegResearch = truncateResearch(industrySegmentResearch, 20000);
+
+  const userPrompt = `Generate technology adoption heat maps for "${input.industry}" industry.
+
+COMPETITORS: ${input.selectedCompetitors.join(', ')}
+TECHNOLOGIES: ${input.selectedTechs.join(', ')}
+INDUSTRY SEGMENTS: ${input.industrySegments.join(', ')}
+
+COMPETITOR ADOPTION RESEARCH:
+${Object.entries(truncatedCompResearch)
+  .map(([co, r]) => `### ${co}\n${r}`)
+  .join('\n---\n')}
+
+INDUSTRY SEGMENT ADOPTION RESEARCH:
+${Object.entries(truncatedSegResearch)
+  .map(([seg, r]) => `### ${seg}\n${r}`)
+  .join('\n---\n')}
+
+Return ONLY a valid JSON object with this exact structure:
+{
+  "competitionHeatMap": [
+    { "competitor": "Company Name", "technology": "Tech Name", "adoptionStage": 3, "adoptionPercentage": 45, "vendors": ["Vendor A", "Vendor B"], "details": "Brief context" },
+    ...
+  ],
+  "industryHeatMap": [
+    { "segment": "Segment Name", "technology": "Tech Name", "adoptionStage": 2, "adoptionPercentage": 25, "vendors": [], "details": "Brief context" },
+    ...
+  ],
+  "insights": {
+    "leaderCompetitors": ["Company A", "Company B"],
+    "emergingTechs": ["Tech X", "Tech Y"],
+    "competitiveGaps": ["Gap 1: Company Z lags in AI adoption"],
+    "industryTrends": ["Trend 1: Cloud adoption leading in e-commerce"],
+    "strategicRecommendations": ["Recommendation 1: ...", "Recommendation 2: ..."]
+  }
+}
+
+REQUIREMENTS:
+- competitionHeatMap: EXACTLY ${input.selectedCompetitors.length} × ${input.selectedTechs.length} cells
+- industryHeatMap: EXACTLY ${input.industrySegments.length} × ${input.selectedTechs.length} cells
+- adoptionStage: integer 1-5 only
+- adoptionPercentage: 0-100
+- Include 3-5 strategic recommendations based on adoption patterns`;
+
+  const message = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 5000,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+
+  try {
+    const match = content.text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON found in response');
+    const parsed = JSON.parse(match[0]);
+
+    return {
+      competitionHeatMap: parsed.competitionHeatMap || [],
+      industryHeatMap: parsed.industryHeatMap || [],
+      insights: parsed.insights || {},
+    };
+  } catch (err) {
+    console.error('[synthesizeHeatMap] Parse error:', err);
+    throw new Error('Failed to parse heat map data');
+  }
+}

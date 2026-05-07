@@ -776,3 +776,59 @@ export interface MarketingStrategyResult {
   completedAt?: string;
 }
 
+// ── Technology Heat Map ──────────────────────────────────────────────────────
+
+export interface CompetitorOption {
+  name: string;
+  headquarters?: string;
+  estimatedRevenue?: string;
+  relevanceScore?: number;
+}
+
+export interface TechOption {
+  name: string;
+  category?: string; // AI/ML, Cloud, Blockchain, IoT, Automation, etc.
+  maturityLevel?: 'emerging' | 'growth' | 'mainstream';
+}
+
+export interface HeatMapInput {
+  industry: string;
+  selectedCompetitors: string[]; // max 10
+  manualCompetitors: string[];
+  selectedTechs: string[]; // max 10
+  manualTechs: string[];
+  industrySegments: string[]; // max 10
+  manualSegments: string[];
+}
+
+export interface HeatMapCell {
+  competitor_or_segment: string;
+  technology: string;
+  adoptionStage: 1 | 2 | 3 | 4 | 5;
+  adoptionPercentage: number;
+  vendors?: string[];
+  details?: string;
+}
+
+export interface HeatMapInsights {
+  leaderCompetitors: string[];
+  emergingTechs: string[];
+  competitiveGaps: string[];
+  industryTrends: string[];
+  strategicRecommendations: string[];
+}
+
+export interface TechnologyHeatMapResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  industry?: string;
+  competitionHeatMap?: HeatMapCell[][];
+  industryHeatMap?: HeatMapCell[][];
+  insights?: HeatMapInsights;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
