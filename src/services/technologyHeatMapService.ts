@@ -85,21 +85,32 @@ export async function runTechnologyHeatMap(jobId: string, input: HeatMapInput): 
     });
     emit(jobId, 'progress', jobs.get(jobId));
 
-    // Step 2: Parallel research - get adoption data for competitors
-    const competitorResearch = await researchCompetitorAdoption(input.industry, allCompetitors, allTechs);
+    // Step 2: Research based on mode
+    const hasCompetitors = allCompetitors.length > 0;
+    const hasSegments = allSegments.length > 0;
+
+    let competitorResearch: Record<string, string> = {};
+    let industrySegmentResearch: Record<string, string> = {};
+
+    // Research competitors if provided
+    if (hasCompetitors) {
+      competitorResearch = await researchCompetitorAdoption(input.industry, allCompetitors, allTechs);
+    }
     updateJob(jobId, { progress: 35 });
     emit(jobId, 'progress', jobs.get(jobId));
 
-    // Step 3: Parallel research - get adoption data for industry segments
-    const industrySegmentResearch = await researchIndustrySegmentAdoption(
-      input.industry,
-      allSegments,
-      allTechs
-    );
+    // Research segments if provided
+    if (hasSegments) {
+      industrySegmentResearch = await researchIndustrySegmentAdoption(
+        input.industry,
+        allSegments,
+        allTechs
+      );
+    }
     updateJob(jobId, { progress: 50 });
     emit(jobId, 'progress', jobs.get(jobId));
 
-    // Step 4: Synthesis phase
+    // Step 3: Synthesis phase
     updateJob(jobId, {
       status: 'synthesizing',
       currentStep: 'Synthesizing heat map data and generating insights...',
@@ -107,7 +118,7 @@ export async function runTechnologyHeatMap(jobId: string, input: HeatMapInput): 
     });
     emit(jobId, 'progress', jobs.get(jobId));
 
-    const synthesisResult = await synthesizeHeatMap(input, competitorResearch, industrySegmentResearch);
+    const synthesisResult = await synthesizeHeatMap(input, competitorResearch, industrySegmentResearch, hasCompetitors, hasSegments);
     updateJob(jobId, { progress: 90 });
 
     // Step 5: Final update with complete results

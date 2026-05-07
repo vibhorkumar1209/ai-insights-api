@@ -2572,7 +2572,9 @@ export async function synthesizeHeatMap(
     industrySegments: string[];
   },
   competitorResearch: Record<string, string>,
-  industrySegmentResearch: Record<string, string>
+  industrySegmentResearch: Record<string, string>,
+  hasCompetitors: boolean = true,
+  hasSegments: boolean = true
 ): Promise<{
   competitionHeatMap: any[][];
   industryHeatMap: any[][];
@@ -2589,45 +2591,65 @@ Rules:
   const truncatedCompResearch = truncateResearch(competitorResearch, 20000);
   const truncatedSegResearch = truncateResearch(industrySegmentResearch, 20000);
 
-  const userPrompt = `Generate technology adoption heat maps for "${input.industry}" industry.
-
-COMPETITORS: ${input.selectedCompetitors.join(', ')}
-TECHNOLOGIES: ${input.selectedTechs.join(', ')}
-INDUSTRY SEGMENTS: ${input.industrySegments.join(', ')}
-
-COMPETITOR ADOPTION RESEARCH:
+  // Build prompt based on which mode(s) are active
+  let researchSection = '';
+  if (hasCompetitors) {
+    researchSection += `COMPETITOR ADOPTION RESEARCH:
 ${Object.entries(truncatedCompResearch)
   .map(([co, r]) => `### ${co}\n${r}`)
   .join('\n---\n')}
 
-INDUSTRY SEGMENT ADOPTION RESEARCH:
+`;
+  }
+  if (hasSegments) {
+    researchSection += `INDUSTRY SEGMENT ADOPTION RESEARCH:
 ${Object.entries(truncatedSegResearch)
   .map(([seg, r]) => `### ${seg}\n${r}`)
   .join('\n---\n')}
 
-Return ONLY a valid JSON object with this exact structure:
-{
-  "competitionHeatMap": [
-    { "competitor": "Company Name", "technology": "Tech Name", "adoptionStage": 3, "adoptionPercentage": 45, "vendors": ["Vendor A", "Vendor B"], "details": "Brief context" },
-    ...
-  ],
-  "industryHeatMap": [
-    { "segment": "Segment Name", "technology": "Tech Name", "adoptionStage": 2, "adoptionPercentage": 25, "vendors": [], "details": "Brief context" },
-    ...
-  ],
-  "insights": {
-    "leaderCompetitors": ["Company A", "Company B"],
-    "emergingTechs": ["Tech X", "Tech Y"],
-    "competitiveGaps": ["Gap 1: Company Z lags in AI adoption"],
-    "industryTrends": ["Trend 1: Cloud adoption leading in e-commerce"],
-    "strategicRecommendations": ["Recommendation 1: ...", "Recommendation 2: ..."]
+`;
   }
-}
+
+  // Build JSON structure based on modes
+  let jsonStructure = `Return ONLY a valid JSON object with this structure (omit empty arrays):
+{`;
+  let requirementsText = '';
+
+  if (hasCompetitors) {
+    jsonStructure += `
+  "competitionHeatMap": [
+    { "competitor": "Company Name", "technology": "Tech Name", "adoptionStage": 3, "adoptionPercentage": 45, "vendors": ["Vendor A"], "details": "Brief context" }
+  ],`;
+    requirementsText += `- competitionHeatMap: EXACTLY ${input.selectedCompetitors.length} × ${input.selectedTechs.length} cells\n`;
+  }
+
+  if (hasSegments) {
+    jsonStructure += `
+  "industryHeatMap": [
+    { "segment": "Segment Name", "technology": "Tech Name", "adoptionStage": 2, "adoptionPercentage": 25, "vendors": [], "details": "Brief context" }
+  ],`;
+    requirementsText += `- industryHeatMap: EXACTLY ${input.industrySegments.length} × ${input.selectedTechs.length} cells\n`;
+  }
+
+  jsonStructure += `
+  "insights": {
+    "leaderCompetitors": ${hasCompetitors ? '["Company A", "Company B"]' : '[]'},
+    "emergingTechs": ["Tech X", "Tech Y"],
+    "competitiveGaps": ${hasCompetitors ? '["Gap description"]' : '[]'},
+    "industryTrends": ${hasSegments ? '["Trend description"]' : '[]'},
+    "strategicRecommendations": ["Rec 1", "Rec 2"]
+  }
+}`;
+
+  const userPrompt = `Generate technology adoption heat maps for "${input.industry}" industry.
+
+${hasCompetitors ? `COMPETITORS: ${input.selectedCompetitors.join(', ')}\n` : ''}${hasSegments ? `INDUSTRY SEGMENTS: ${input.industrySegments.join(', ')}\n` : ''}TECHNOLOGIES: ${input.selectedTechs.join(', ')}
+
+${researchSection}
+${jsonStructure}
 
 REQUIREMENTS:
-- competitionHeatMap: EXACTLY ${input.selectedCompetitors.length} × ${input.selectedTechs.length} cells
-- industryHeatMap: EXACTLY ${input.industrySegments.length} × ${input.selectedTechs.length} cells
-- adoptionStage: integer 1-5 only
+${requirementsText}- adoptionStage: integer 1-5 only
 - adoptionPercentage: 0-100
 - Include 3-5 strategic recommendations based on adoption patterns`;
 
