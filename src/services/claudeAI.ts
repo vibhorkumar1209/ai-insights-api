@@ -279,7 +279,7 @@ export async function synthesizeBenchmarkingTable(
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst. You produce precise, evidence-based competitive analysis.
 - Where provided research data exists, cite it specifically (systems, vendors, percentages).
-- Where research data is missing or sparse for a company, draw on your training knowledge — label it "(est.)" or "(based on public sources)".
+- ONLY use research data provided below. If research data is missing or sparse, return incomplete/empty results rather than using general knowledge.
 - Never leave a cell empty — always provide a meaningful best-known answer.
 - FORMATTING: Each value field MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**SAP S/4HANA** deployed across 12 regions • **AI-powered** demand forecasting in pilot • Cloud migration **60% complete**"
 - Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.
@@ -288,11 +288,11 @@ export async function synthesizeBenchmarkingTable(
   const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
 
 Selling org: "${input.userOrganization}"${input.industryContext ? ` | Industry: ${input.industryContext}` : ' | Industry: (determine from target company and competitors)'}${input.focusAreas ? ` | Focus: ${input.focusAreas}` : ''}
-${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — use training knowledge.` : ''}
+${missingResearch.length > 0 ? `NOTE: No live research available for ${missingResearch.join(', ')} — return empty/incomplete data rather than estimates.` : ''}
 
 RESEARCH DATA:
 ${Object.entries(safeResearch)
-    .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[Use training knowledge for ${co}]` : r}`)
+    .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[No research data available for ${co}]` : r}`)
     .join('\n---\n')}
 
 Return a JSON array with EXACTLY this shape (one object per dimension):
@@ -357,14 +357,14 @@ Rules:
 
 Selling org: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}
 ${input.industryContext ? `Industry: ${input.industryContext}` : 'Industry: (determine from target company and benchmarking table)'}
-${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — rely on benchmarking table + training knowledge.` : ''}
+${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — rely ONLY on benchmarking table data and research provided.` : ''}
 
 BENCHMARKING TABLE (compact):
 ${JSON.stringify(benchmarkingTable)}
 
 SUPPLEMENTARY RESEARCH (summary per company, max 4000 chars each):
 ${Object.entries(safeResearch)
-    .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[Use training knowledge]` : r.slice(0, 4000)}`)
+    .map(([co, r]) => `### ${co}\n${isEmptyResearch(r) ? `[No research data available]` : r.slice(0, 4000)}`)
     .join('\n---\n')}
 
 Return a JSON array with EXACTLY this shape (one object per dimension):
@@ -427,7 +427,7 @@ export async function synthesizeThemes(
   const hasResearch = !isEmptyResearch(research);
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing executive-grade theme analyses.
-- Draw on the provided research first; supplement with your training knowledge where research is sparse.
+- ONLY draw on the provided research. If research is sparse or missing, return incomplete results rather than using general knowledge.
 - Each theme must be concrete and evidence-based, not generic.
 - Never produce empty fields — always provide a meaningful answer.
 - Write in natural business language without hyphens, dashes, or arrows in descriptions. Use "and" instead of "/" or "&".
@@ -438,7 +438,7 @@ export async function synthesizeThemes(
 
 ${config.hint}
 
-${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available — use your training knowledge about ${input.companyName}.]`}
+${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available for ${input.companyName} — return empty/incomplete results.]`}
 
 ${input.userOrganization ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}` : ''}
 
@@ -485,7 +485,7 @@ export async function synthesizeChallengesGrowth(
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing company-specific competitive analysis.
 Rules:
 - FOCUS ON THIS COMPANY: Analyze ${input.companyName}'s specific position, vulnerabilities, capabilities, and opportunities — NOT general industry trends.
-- Use the provided research first; supplement with training knowledge where research is sparse.
+- ONLY use the provided research. If research is sparse or missing, return incomplete results rather than using general knowledge.
 - Be specific: cite ${input.companyName}'s programmes, metrics, named initiatives, manufacturing and R&D locations, strategic partnerships, and specific business data.
 - For challenges: identify what pressures affect THIS company's performance, margins, growth, or competitive position.
 - For growth: identify where THIS company can expand, improve margins, enter new segments, or leverage its assets.
@@ -510,7 +510,7 @@ Cover EXACTLY these 8 dimensions (one array element each, in this order):
 
 ${hasResearch
   ? `RESEARCH:\n${research.slice(0, 20000)}`
-  : `[No live research available — use training knowledge about ${input.companyName}.]`}
+  : `[No live research available for ${input.companyName} — return empty/incomplete results.]`}
 
 ${input.userOrganization
   ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}`
@@ -878,11 +878,13 @@ export async function synthesizeFinancialInsights(
 
   const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary.
 Rules:
-- Be specific: cite figures, percentages, year-on-year changes, named programmes.
-- Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
-- Key highlights must be brief bullets suitable for an executive summary.
-- For segment/geo data: PRIORITIZE data from FMP (Financial Modeling Prep) if provided in the research section. If FMP data is not available, extract from other research or use your training knowledge to populate these arrays for well-known companies — never leave both empty if you know the answer.
-- When extracting financial statement rows, include 8-15 key line items per statement.
+- ONLY use data explicitly provided in the research section below. Do NOT use general knowledge or training data.
+- Be specific: cite figures, percentages, year-on-year changes, named programmes — but ONLY from provided data.
+- Insights must be 3-5 sentences each — analytical based on PROVIDED DATA ONLY, not descriptive or speculative.
+- Key highlights must be brief bullets suitable for an executive summary — based ONLY on provided research.
+- For segment/geo data: Extract ONLY from FMP (Financial Modeling Prep) if provided in the research section. If FMP data is not available, return [] (empty array). NEVER use general knowledge or estimates.
+- When extracting financial statement rows, include 8-15 key line items per statement from PROVIDED DATA ONLY.
+- If critical data is missing (e.g., segment breakdown, balance sheet), set those arrays to [] and note in insights.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.
 - ${RECENCY_DIRECTIVE}`;
 
@@ -921,14 +923,14 @@ Balance Sheet Highlights: ${bsStr || 'NOT AVAILABLE'}
 Cash Flow Highlights: ${cfStr || 'NOT AVAILABLE'}
 
 ## Extraction Status
-${needRevenueExtract ? '⚠ Revenue History MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Revenue History available above — set revenueHistoryExtracted: []'}
-${needMarginExtract  ? '⚠ Margin History MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Margin History available above — set marginHistoryExtracted: []'}
-${needPLExtract      ? '⚠ P&L Statement MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ P&L Statement available above — set plStatementExtracted: []'}
-${needBSExtract      ? '⚠ Balance Sheet MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Balance Sheet available above — set balanceSheetExtracted: []'}
-${needCFExtract      ? '⚠ Cash Flow MISSING from Finance API — EXTRACT from research or training knowledge' : '✓ Cash Flow available above — set cashFlowExtracted: []'}
+${needRevenueExtract ? '⚠ Revenue History MISSING from Finance API — EXTRACT from provided research data' : '✓ Revenue History available above — set revenueHistoryExtracted: []'}
+${needMarginExtract  ? '⚠ Margin History MISSING from Finance API — EXTRACT from provided research data' : '✓ Margin History available above — set marginHistoryExtracted: []'}
+${needPLExtract      ? '⚠ P&L Statement MISSING from Finance API — EXTRACT from provided research data' : '✓ P&L Statement available above — set plStatementExtracted: []'}
+${needBSExtract      ? '⚠ Balance Sheet MISSING from Finance API — EXTRACT from provided research data' : '✓ Balance Sheet available above — set balanceSheetExtracted: []'}
+${needCFExtract      ? '⚠ Cash Flow MISSING from Finance API — EXTRACT from provided research data' : '✓ Cash Flow available above — set cashFlowExtracted: []'}
 
 ## Additional Research (annual reports, investor presentations, financial news)
-${hasParallelResearch ? parallelResearch.slice(0, 20000) : '[Not available — use the Google Finance data above and your training knowledge]'}
+${hasParallelResearch ? parallelResearch.slice(0, 20000) : '[Not available — use ONLY the Google Finance/FMP data provided above. Return empty insights if data is insufficient.]'}
 
 Return a single JSON object with EXACTLY this structure:
 {
@@ -996,12 +998,10 @@ Extraction rules:
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
 - For segmentRevenue and geoRevenue:
   * PRIMARY SOURCE: If FMP data is provided in the "Additional Research" section labeled "FMP Segment Revenue Data" or "FMP Geographic Revenue Data", parse and convert it to the required format (segment/region, revenue, percentage, yoyGrowth).
-  * FALLBACK: For well-known public companies (especially Fortune 500), use your training knowledge to populate segmentRevenue and geoRevenue from your knowledge cutoff. Do NOT return empty arrays for major companies unless genuinely unavailable.
-  * Segment data MUST use the company's actual business segment names (not generic names). For automotive: "Vehicles", "Financial Services", "Software", etc. For tech: "Cloud", "Software", "Hardware", etc.
-  * Geographic data MUST use actual regions: "North America", "Europe", "Asia-Pacific", "China", "India", etc.
-  * Return [] only if the company is obscure or private.
+  * FALLBACK: If FMP data is not available, return [] (empty array). DO NOT use training knowledge or estimates.
+  * ONLY extract segment/geo data from explicitly provided API responses (FMP) or research provided above. Never use general knowledge about companies.
   * Ensure currency consistency: use the company's reporting currency (${yahooData.currency || 'USD'}) for all revenue values.
-- For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures.`;
+- For insights: draw ONLY on the Finance API data above and FMP data (if available) in the research section. Do NOT use training knowledge. Be specific and cite ONLY figures from provided data.`;
 
   // Retry logic with fallback: attempt up to 2 times, then return fallback data
   let message;
@@ -1407,7 +1407,7 @@ export async function synthesizeKeyBuyers(
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst who specialises in executive level stakeholder mapping.
 Rules:
-- Use the provided research first; supplement with training knowledge where research is sparse.
+- ONLY use the provided research. If research is sparse or missing, return incomplete results rather than using general knowledge.
 - Focus on C suite and SVP/VP level executives — the decision makers.
 - Every row must have substantive, specific content — no vague generalities, no empty fields.
 - Prefer direct quotes in the excerpt field when available — use quotation marks.
@@ -1508,7 +1508,7 @@ export async function synthesizeIndustryTrends(
 
   const systemPrompt = `You are a senior industry analyst producing executive-grade trend reports for B2B sales and strategy teams.
 Rules:
-- Use the provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
+- ONLY use the provided research. If research is sparse or missing, return incomplete results rather than using general knowledge. Never label estimates.
 - Be specific: cite data points, analyst firms, named companies, market figures, and regional examples.
 - Every cell must have substantive content — no vague generalities, no empty fields.
 - Description and Examples fields MUST use bullet points. Each bullet starts with "• ".
