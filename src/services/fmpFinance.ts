@@ -437,7 +437,7 @@ interface FMPSegmentRevenue {
 
 export async function fmpFetchSegmentRevenue(
   symbol: string, currency = 'USD'
-): Promise<{ data: unknown | null; currency: string } | null> {
+): Promise<{ data: any; parsed: { segment: string; revenue: string; percentage: number; yoyGrowth?: string }[] | null; currency: string } | null> {
   try {
     // Try primary endpoint: /revenue-breakdown (includes segment data)
     // This is the most common FMP endpoint for business segment breakdown
@@ -457,8 +457,18 @@ export async function fmpFetchSegmentRevenue(
       return null;
     }
 
+    // Parse segment data into structured format
+    const parsed = data
+      .filter((seg: any) => seg.segment && seg.revenue)
+      .map((seg: any) => ({
+        segment: seg.segment || 'Unknown',
+        revenue: formatCurrency(seg.revenue, currency),
+        percentage: typeof seg.percentage === 'number' ? seg.percentage : 0,
+        yoyGrowth: undefined, // FMP typically doesn't provide YoY for segments; Claude will add if needed
+      }));
+
     console.log('[FMP] Segment revenue data retrieved for', symbol, ':', data.length, 'records');
-    return { data, currency };
+    return { data, parsed: parsed.length > 0 ? parsed : null, currency };
   } catch (err) {
     console.warn('[FMP] Segment revenue fetch failed (expected for many companies):', symbol, '—', err instanceof Error ? err.message : err);
     return null;
@@ -480,7 +490,7 @@ interface FMPGeographicRevenue {
 
 export async function fmpFetchGeographicRevenue(
   symbol: string, currency = 'USD'
-): Promise<{ data: unknown | null; currency: string } | null> {
+): Promise<{ data: any; parsed: { region: string; revenue: string; percentage: number; yoyGrowth?: string }[] | null; currency: string } | null> {
   try {
     // Try primary endpoint: /revenue-by-geography (includes geographic breakdown)
     // This is the most common FMP endpoint for geographic revenue breakdown
@@ -500,8 +510,18 @@ export async function fmpFetchGeographicRevenue(
       return null;
     }
 
+    // Parse geographic data into structured format
+    const parsed = data
+      .filter((geo: any) => (geo.country || geo.continent || geo.region) && geo.revenue)
+      .map((geo: any) => ({
+        region: geo.country || geo.continent || geo.region || 'Unknown',
+        revenue: formatCurrency(geo.revenue, currency),
+        percentage: typeof geo.percentage === 'number' ? geo.percentage : 0,
+        yoyGrowth: undefined, // FMP typically doesn't provide YoY for geography; Claude will add if needed
+      }));
+
     console.log('[FMP] Geographic revenue data retrieved for', symbol, ':', data.length, 'records');
-    return { data, currency };
+    return { data, parsed: parsed.length > 0 ? parsed : null, currency };
   } catch (err) {
     console.warn('[FMP] Geographic revenue fetch failed (expected for many companies):', symbol, '—', err instanceof Error ? err.message : err);
     return null;

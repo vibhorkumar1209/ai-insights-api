@@ -210,6 +210,10 @@ async function runPublicPath(
       fmpContext += `\n### FMP Geographic Revenue Data\n${JSON.stringify(geoData.data)}\n`;
     }
 
+    // Extract parsed segment/geo data for direct use in frontend
+    const segmentRevenue = segmentData?.parsed && segmentData.parsed.length > 0 ? segmentData.parsed : undefined;
+    const geoRevenue = geoData?.parsed && geoData.parsed.length > 0 ? geoData.parsed : undefined;
+
     // FMP is considered successful if we got at least income statement data
     if (incomeData) {
       usedFMP = true;
@@ -223,6 +227,8 @@ async function runPublicPath(
         balanceSheet:    bsData || undefined,
         cashFlow:        cfData || undefined,
         quarterlyHistory: quarterlyData?.quarterly,
+        segmentRevenue:  segmentRevenue,
+        geoRevenue:      geoRevenue,
       };
     } else {
       console.warn('[financialAnalysis] FMP income statement empty — falling back to Yahoo Finance');
@@ -329,8 +335,12 @@ async function runPublicPath(
     keyHighlights:      insights.keyHighlights,
     chartInsights:      insights.chartInsights?.length ? insights.chartInsights : undefined,
     geoSegmentInsights: insights.geoSegmentInsights?.length ? insights.geoSegmentInsights : undefined,
-    segmentRevenue:  insights.segmentRevenue?.length ? insights.segmentRevenue : undefined,
-    geoRevenue:      insights.geoRevenue?.length     ? insights.geoRevenue     : undefined,
+    segmentRevenue:  (apiData.segmentRevenue?.length ?? 0) > 0
+      ? apiData.segmentRevenue
+      : insights.segmentRevenue?.length ? insights.segmentRevenue : undefined,
+    geoRevenue:      (apiData.geoRevenue?.length ?? 0) > 0
+      ? apiData.geoRevenue
+      : insights.geoRevenue?.length ? insights.geoRevenue : undefined,
   });
   emit(jobId, 'result', job);
 }
