@@ -2723,8 +2723,19 @@ ${requirementsText}- adoptionStage: integer 1-5 only
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
 
   try {
-    const match = content.text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON found in response');
+    let jsonStr = content.text.trim();
+
+    // Remove markdown code fences if present
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    // Extract JSON object
+    const match = jsonStr.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON object found in response');
+
     const parsed = JSON.parse(match[0]);
 
     return {
@@ -2733,8 +2744,8 @@ ${requirementsText}- adoptionStage: integer 1-5 only
       insights: parsed.insights || {},
     };
   } catch (err) {
-    console.error('[synthesizeHeatMap] Parse error:', err);
-    throw new Error('Failed to parse heat map data');
+    console.error('[synthesizeHeatMap] Parse error:', err, 'Raw response:', content.text.slice(0, 500));
+    throw new Error(`Failed to parse heat map data: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
