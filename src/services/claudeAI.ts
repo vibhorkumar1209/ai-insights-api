@@ -996,8 +996,10 @@ Extraction rules:
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
 - For segmentRevenue and geoRevenue:
   * PRIMARY SOURCE: If FMP data is provided in the "Additional Research" section labeled "FMP Segment Revenue Data" or "FMP Geographic Revenue Data", parse and convert it to the required format (segment/region, revenue, percentage, yoyGrowth).
-  * FALLBACK: If FMP data is not available, populate from other research or your training knowledge for this company.
-  * Return [] only if you genuinely don't know the segment/geo breakdown after checking all sources.
+  * FALLBACK: For well-known public companies (especially Fortune 500), use your training knowledge to populate segmentRevenue and geoRevenue from your knowledge cutoff. Do NOT return empty arrays for major companies unless genuinely unavailable.
+  * Segment data MUST use the company's actual business segment names (not generic names). For automotive: "Vehicles", "Financial Services", "Software", etc. For tech: "Cloud", "Software", "Hardware", etc.
+  * Geographic data MUST use actual regions: "North America", "Europe", "Asia-Pacific", "China", "India", etc.
+  * Return [] only if the company is obscure or private.
   * Ensure currency consistency: use the company's reporting currency (${yahooData.currency || 'USD'}) for all revenue values.
 - For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures.`;
 
@@ -1013,8 +1015,8 @@ Extraction rules:
       message = await Promise.race([
         client.messages.create({
           model: SYNTHESIS_MODEL,
-          max_tokens: 2000, // Significantly reduced to prevent token overflow
-          temperature: 0.0, // Zero temperature for deterministic output
+          max_tokens: 4000, // Increased to allow complete JSON response
+          temperature: 0.1, // Slightly increased from 0 to allow better JSON formatting
           messages: [{ role: 'user', content: userPrompt }],
           system: systemPrompt,
         }),
@@ -1044,8 +1046,23 @@ Extraction rules:
 }
 
 function parseFinancialInsights(raw: string): FinancialInsightsPayload {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Claude did not return valid JSON for financial insights');
+  // Try to extract JSON — be forgiving of markdown fences, trailing text, etc.
+  let jsonStr = raw.trim();
+
+  // Remove markdown code fences if present
+  if (jsonStr.startsWith('```json')) {
+    jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+  } else if (jsonStr.startsWith('```')) {
+    jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+  }
+
+  // Try to find JSON object if still wrapped in text
+  const match = jsonStr.match(/\{[\s\S]*\}/);
+  if (!match) {
+    console.warn('[parseFinancialInsights] Failed to find JSON object in response:', jsonStr.slice(0, 200));
+    throw new Error('Claude did not return valid JSON for financial insights');
+  }
+
   try {
     const parsed: unknown = JSON.parse(match[0]);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
