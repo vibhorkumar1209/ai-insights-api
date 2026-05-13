@@ -2732,19 +2732,38 @@ ${requirementsText}- adoptionStage: integer 1-5 only
       jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
     }
 
-    // Extract JSON object
-    const match = jsonStr.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON object found in response');
+    // Try to extract and parse JSON with bracket matching
+    let parsed: any = null;
+    let lastError: Error | null = null;
 
-    const parsed = JSON.parse(match[0]);
+    // Try to find valid JSON by searching for opening brace and matching closing brace
+    const startIdx = jsonStr.indexOf('{');
+    if (startIdx === -1) throw new Error('No JSON object found in response');
+
+    // Try progressively from end to find valid JSON
+    for (let endIdx = jsonStr.length; endIdx > startIdx; endIdx--) {
+      try {
+        const candidate = jsonStr.substring(startIdx, endIdx);
+        parsed = JSON.parse(candidate);
+        break;
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        continue;
+      }
+    }
+
+    if (!parsed) {
+      throw lastError || new Error('Could not parse JSON from response');
+    }
 
     return {
-      competitionHeatMap: parsed.competitionHeatMap || [],
-      industryHeatMap: parsed.industryHeatMap || [],
-      insights: parsed.insights || {},
+      competitionHeatMap: Array.isArray(parsed.competitionHeatMap) ? parsed.competitionHeatMap : [],
+      industryHeatMap: Array.isArray(parsed.industryHeatMap) ? parsed.industryHeatMap : [],
+      insights: typeof parsed.insights === 'object' ? parsed.insights : {},
     };
   } catch (err) {
-    console.error('[synthesizeHeatMap] Parse error:', err, 'Raw response:', content.text.slice(0, 500));
+    console.error('[synthesizeHeatMap] Parse error:', err instanceof Error ? err.message : String(err));
+    console.error('[synthesizeHeatMap] Response length:', content.text.length, 'First 500 chars:', content.text.slice(0, 500));
     throw new Error(`Failed to parse heat map data: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
