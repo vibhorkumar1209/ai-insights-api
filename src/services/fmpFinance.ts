@@ -353,3 +353,88 @@ export async function fmpFetchQuarterly(
     return null;
   }
 }
+
+// ── Revenue by Segment ──────────────────────────────────────────────────────────
+// Note: FMP may not have segment data for all companies; fallback to null
+
+interface FMPSegmentRevenue {
+  date?: string;
+  reportedCurrency?: string;
+  segment?: string;
+  revenue?: number;
+  percentage?: number;
+  [key: string]: unknown;
+}
+
+export async function fmpFetchSegmentRevenue(
+  symbol: string, currency = 'USD'
+): Promise<{ data: unknown | null; currency: string } | null> {
+  try {
+    // Try primary endpoint: /revenue-breakdown (includes segment data)
+    // This is the most common FMP endpoint for business segment breakdown
+    let endpoint = `/revenue-breakdown?symbol=${encodeURIComponent(symbol)}`;
+    let data: any = null;
+    try {
+      data = await fmpFetch<FMPSegmentRevenue[]>(endpoint);
+    } catch (e) {
+      console.log('[FMP] revenue-breakdown endpoint not available, trying alternate');
+      // Fallback to alternate endpoint
+      endpoint = `/income-statement-by-segment?symbol=${encodeURIComponent(symbol)}&period=annual&limit=1`;
+      data = await fmpFetch<FMPSegmentRevenue[]>(endpoint);
+    }
+
+    if (!data || data.length === 0) {
+      console.log('[FMP] No segment revenue data available for:', symbol, '— this is normal for many companies');
+      return null;
+    }
+
+    console.log('[FMP] Segment revenue data retrieved for', symbol, ':', data.length, 'records');
+    return { data, currency };
+  } catch (err) {
+    console.warn('[FMP] Segment revenue fetch failed (expected for many companies):', symbol, '—', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+// ── Revenue by Geography ────────────────────────────────────────────────────────
+// Note: FMP may not have geographic data for all companies; fallback to null
+
+interface FMPGeographicRevenue {
+  date?: string;
+  reportedCurrency?: string;
+  country?: string;
+  continent?: string;
+  revenue?: number;
+  percentage?: number;
+  [key: string]: unknown;
+}
+
+export async function fmpFetchGeographicRevenue(
+  symbol: string, currency = 'USD'
+): Promise<{ data: unknown | null; currency: string } | null> {
+  try {
+    // Try primary endpoint: /revenue-by-geography (includes geographic breakdown)
+    // This is the most common FMP endpoint for geographic revenue breakdown
+    let endpoint = `/revenue-by-geography?symbol=${encodeURIComponent(symbol)}`;
+    let data: any = null;
+    try {
+      data = await fmpFetch<FMPGeographicRevenue[]>(endpoint);
+    } catch (e) {
+      console.log('[FMP] revenue-by-geography endpoint not available, trying alternate');
+      // Fallback to alternate endpoint
+      endpoint = `/income-statement-by-country?symbol=${encodeURIComponent(symbol)}&period=annual&limit=1`;
+      data = await fmpFetch<FMPGeographicRevenue[]>(endpoint);
+    }
+
+    if (!data || data.length === 0) {
+      console.log('[FMP] No geographic revenue data available for:', symbol, '— this is normal for many companies');
+      return null;
+    }
+
+    console.log('[FMP] Geographic revenue data retrieved for', symbol, ':', data.length, 'records');
+    return { data, currency };
+  } catch (err) {
+    console.warn('[FMP] Geographic revenue fetch failed (expected for many companies):', symbol, '—', err instanceof Error ? err.message : err);
+    return null;
+  }
+}

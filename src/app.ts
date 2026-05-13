@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { Express } from 'express';
 import helmet from 'helmet';
 import { corsMiddleware } from './middleware/cors';

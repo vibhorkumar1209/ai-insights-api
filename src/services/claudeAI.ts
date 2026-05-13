@@ -23,13 +23,6 @@ function isEmptyResearch(text: string): boolean {
   return !text || text.startsWith('Research unavailable') || text.trim().length < 50;
 }
 
-const rawClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-// ── Retry wrapper — handles transient Anthropic overload / rate-limit errors ──
-// 529 overloaded_error, 529, 503, 500, and 429 are all retryable. We retry up
-// to 5 times with exponential backoff + jitter (≈1s, 2s, 4s, 8s, 16s). The
-// underlying SDK already retries network errors; this layer adds resilience to
-// Anthropic-side capacity events that previously failed jobs outright.
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 529]);
 
 function isRetryable(err: unknown): boolean {
@@ -43,33 +36,55 @@ function isRetryable(err: unknown): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const originalCreate = rawClient.messages.create.bind(rawClient.messages);
-type MessageCreateArgs = Parameters<typeof rawClient.messages.create>;
-type MessageCreateReturn = ReturnType<typeof rawClient.messages.create>;
+// Lazy-load client to ensure environment variables are loaded first
+let rawClient: Anthropic | null = null;
 
-rawClient.messages.create = (async (...args: MessageCreateArgs) => {
-  const maxAttempts = 5;
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await originalCreate(...args);
-    } catch (err) {
-      lastErr = err;
-      if (attempt === maxAttempts || !isRetryable(err)) throw err;
-      const base = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s, 8s
-      const jitter = Math.floor(Math.random() * 500);
-      const delay = base + jitter;
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[claudeAI] attempt ${attempt}/${maxAttempts} failed (${(err as { status?: number })?.status ?? '?'}), retrying in ${delay}ms`
-      );
-      await sleep(delay);
-    }
+function initializeClient(): Anthropic {
+  if (rawClient) return rawClient;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  console.log('[claudeAI] Initializing client, API key:', apiKey ? 'SET' : 'NOT SET');
+  console.log('[claudeAI] All env vars:', Object.keys(process.env).filter(k => k.includes('ANTHROPIC')));
+
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY environment variable is not set');
   }
-  throw lastErr;
-}) as unknown as typeof originalCreate;
 
-const client = rawClient;
+  rawClient = new Anthropic({ apiKey });
+  const originalCreate = rawClient.messages.create.bind(rawClient.messages);
+  type MessageCreateArgs = Parameters<typeof rawClient.messages.create>;
+
+  rawClient.messages.create = (async (...args: MessageCreateArgs) => {
+    const maxAttempts = 5;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await originalCreate(...args);
+      } catch (err) {
+        lastErr = err;
+        if (attempt === maxAttempts || !isRetryable(err)) throw err;
+        const base = 1000 * Math.pow(2, attempt - 1);
+        const jitter = Math.floor(Math.random() * 500);
+        const delay = base + jitter;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[claudeAI] attempt ${attempt}/${maxAttempts} failed (${(err as { status?: number })?.status ?? '?'}), retrying in ${delay}ms`
+        );
+        await sleep(delay);
+      }
+    }
+    throw lastErr;
+  }) as any;
+
+  return rawClient;
+}
+
+// Create a proxy that initializes on first access
+const client = new Proxy({} as Anthropic, {
+  get(target, prop) {
+    return (initializeClient() as any)[prop];
+  },
+});
 
 // Token budget optimization
 const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations come via other means
@@ -866,7 +881,7 @@ Rules:
 - Be specific: cite figures, percentages, year-on-year changes, named programmes.
 - Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
 - Key highlights must be brief bullets suitable for an executive summary.
-- For segment/geo data: extract from research if provided; otherwise use your training knowledge to populate these arrays for well-known companies — never leave both empty if you know the answer.
+- For segment/geo data: PRIORITIZE data from FMP (Financial Modeling Prep) if provided in the research section. If FMP data is not available, extract from other research or use your training knowledge to populate these arrays for well-known companies — never leave both empty if you know the answer.
 - When extracting financial statement rows, include 8-15 key line items per statement.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.
 - ${RECENCY_DIRECTIVE}`;
@@ -979,8 +994,12 @@ Extraction rules:
 - revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer in ${yahooData.currency || 'USD'} (e.g. 383285000000). Percentages as numbers not strings. All monetary values should use ${yahooData.currency || 'USD'} currency.
 - plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. MUST include BOTH current year ("value") AND previous year ("previousValue") for every data row. Include "yoy" percentage change where calculable. isSection=true for category headers (value=""). isBold=true for subtotals/totals. The "value" field is the most recent fiscal year; "previousValue" is the year before that.
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
-- For segmentRevenue and geoRevenue: populate from research if available, otherwise populate from your training knowledge for this company. Return [] only if you genuinely don't know the segment/geo breakdown.
-- For insights: draw on BOTH the Finance API data above and your training knowledge — be specific, cite figures.`;
+- For segmentRevenue and geoRevenue:
+  * PRIMARY SOURCE: If FMP data is provided in the "Additional Research" section labeled "FMP Segment Revenue Data" or "FMP Geographic Revenue Data", parse and convert it to the required format (segment/region, revenue, percentage, yoyGrowth).
+  * FALLBACK: If FMP data is not available, populate from other research or your training knowledge for this company.
+  * Return [] only if you genuinely don't know the segment/geo breakdown after checking all sources.
+  * Ensure currency consistency: use the company's reporting currency (${yahooData.currency || 'USD'}) for all revenue values.
+- For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures.`;
 
   // Retry logic with fallback: attempt up to 2 times, then return fallback data
   let message;
@@ -1408,12 +1427,32 @@ IMPORTANT:
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
 - The "source" field must include actual URLs where available (e.g., LinkedIn profile URL, news article link, earnings call recording). If specific URLs are not available, indicate the source type (e.g., 'LinkedIn', 'Earnings call transcript', 'Industry forum').`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
+  // Add 30-second timeout for key buyers synthesis
+  console.log('[claudeAI] Starting key buyers synthesis with 30s timeout');
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => {
+      console.error('[claudeAI] Key buyers synthesis timeout triggered after 30s');
+      reject(new Error('Key buyers synthesis timeout (30s)'));
+    }, 30000);
+    // Prevent the timer from keeping the process alive
+    timer.unref?.();
   });
+
+  const message = await Promise.race([
+    client.messages.create({
+      model: SYNTHESIS_MODEL,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      messages: [{ role: 'user', content: userPrompt }],
+      system: systemPrompt,
+    }).then(result => {
+      console.log('[claudeAI] Key buyers synthesis completed');
+      return result;
+    }).catch(err => {
+      console.error('[claudeAI] Key buyers synthesis failed:', err instanceof Error ? err.message : err);
+      throw err;
+    }),
+    timeoutPromise,
+  ]);
 
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');

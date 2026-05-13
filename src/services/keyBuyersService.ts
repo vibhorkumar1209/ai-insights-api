@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { KeyBuyersInput, KeyBuyersResult } from '@ai-insights/types';
+import { KeyBuyersInput, KeyBuyersResult, KeyBuyerRow } from '@ai-insights/types';
 import { researchKeyBuyers } from './parallelAI';
 import { synthesizeKeyBuyers } from './claudeAI';
 
@@ -65,11 +65,27 @@ export async function runKeyBuyers(
     updateJob(jobId, { companyName: input.companyName });
 
     step(`Researching ${input.companyName}'s key executives and their public statements…`, 10);
-    const research = await researchKeyBuyers(input.companyName, input.companyDomain);
+    let research = '';
+    try {
+      research = await researchKeyBuyers(input.companyName, input.companyDomain);
+      console.log(`[keyBuyers] Research complete for ${input.companyName}: ${research.length} chars`);
+    } catch (researchErr) {
+      const msg = researchErr instanceof Error ? researchErr.message : 'Unknown research error';
+      console.error(`[keyBuyers] Research failed for ${input.companyName}:`, msg);
+      // Continue with empty research rather than failing completely
+      research = '';
+    }
 
     step('Synthesising executive insights into structured analysis…', 65, 'synthesizing');
-
-    const rows = await synthesizeKeyBuyers(input, research);
+    let rows: KeyBuyerRow[] = [];
+    try {
+      rows = await synthesizeKeyBuyers(input, research);
+      console.log(`[keyBuyers] Synthesis complete for ${input.companyName}: ${rows.length} rows`);
+    } catch (synthesisErr) {
+      const msg = synthesisErr instanceof Error ? synthesisErr.message : 'Unknown synthesis error';
+      console.error(`[keyBuyers] Synthesis failed for ${input.companyName}:`, msg, synthesisErr);
+      throw new Error(`Synthesis failed: ${msg}`);
+    }
 
     const completed: Partial<KeyBuyersResult> = {
       status: 'complete',
@@ -83,7 +99,7 @@ export async function runKeyBuyers(
     emit(jobId, 'result', { ...jobs.get(jobId) });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`[keyBuyers] job ${jobId} failed:`, errorMsg);
+    console.error(`[keyBuyers] job ${jobId} failed:`, errorMsg, err);
     updateJob(jobId, { status: 'error', error: errorMsg, progress: 0 });
     emit(jobId, 'error', { error: errorMsg });
   }

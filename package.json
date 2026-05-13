@@ -7,23 +7,24 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/start.ts",
     "prebuild": "cd packages/types && tsc",
     "build": "tsc",
-    "start": "node --max-old-space-size=300 dist/app.js",
+    "start": "node --max-old-space-size=300 dist/start.js",
     "test": "jest --coverage --forceExit",
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@ai-insights/types": "file:./packages/types",
     "@anthropic-ai/sdk": "^0.28.0",
     "cors": "^2.8.5",
+    "dotenv": "~17.4.2",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "node-fetch": "^2.7.0",
     "uuid": "^9.0.1",
-    "yahoo-finance2": "^3.13.2",
-    "@ai-insights/types": "file:./packages/types"
+    "yahoo-finance2": "^3.13.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

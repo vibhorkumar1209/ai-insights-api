@@ -4,6 +4,7 @@ import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyF
 import {
   fmpSearchTicker, fmpFetchProfile, fmpFetchIncomeStatement,
   fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
+  fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
 } from './fmpFinance';
 import { researchPrivateCompany } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany } from './claudeAI';
@@ -169,16 +170,19 @@ async function runPublicPath(
 
   let apiData: Partial<FinancialAnalysisResult> = {};
   let usedFMP = false;
+  let fmpContext = ''; // For FMP segment/geo data passed to Claude
 
   if (ticker) {
     // ── Primary: FMP (Financial Modeling Prep) ──────────────────────────────────
     console.log('[financialAnalysis] Trying FMP as primary source for:', ticker);
-    const [fmpProfile, fmpIncome, fmpBS, fmpCF, fmpQuarterly] = await Promise.allSettled([
+    const [fmpProfile, fmpIncome, fmpBS, fmpCF, fmpQuarterly, fmpSegment, fmpGeographic] = await Promise.allSettled([
       fmpFetchProfile(ticker),
       fmpFetchIncomeStatement(ticker, 5),
       fmpFetchBalanceSheet(ticker),
       fmpFetchCashFlow(ticker),
       fmpFetchQuarterly(ticker),
+      fmpFetchSegmentRevenue(ticker),
+      fmpFetchGeographicRevenue(ticker),
     ]);
 
     const profileData   = fmpProfile.status === 'fulfilled' ? fmpProfile.value : null;
@@ -186,6 +190,16 @@ async function runPublicPath(
     const bsData        = fmpBS.status === 'fulfilled' ? fmpBS.value : null;
     const cfData        = fmpCF.status === 'fulfilled' ? fmpCF.value : null;
     const quarterlyData = fmpQuarterly.status === 'fulfilled' ? fmpQuarterly.value : null;
+    const segmentData   = fmpSegment.status === 'fulfilled' ? fmpSegment.value : null;
+    const geoData       = fmpGeographic.status === 'fulfilled' ? fmpGeographic.value : null;
+
+    // Build FMP segment/geo context for Claude synthesis
+    if (segmentData?.data) {
+      fmpContext += `\n### FMP Segment Revenue Data\n${JSON.stringify(segmentData.data)}\n`;
+    }
+    if (geoData?.data) {
+      fmpContext += `\n### FMP Geographic Revenue Data\n${JSON.stringify(geoData.data)}\n`;
+    }
 
     // FMP is considered successful if we got at least income statement data
     if (incomeData) {
@@ -244,7 +258,7 @@ async function runPublicPath(
 
   // ── Step 2: Claude synthesis ─────────────────────────────────────────────────
   // When FMP provided BS/CF, pass them through so Claude knows not to extract.
-  // Claude uses Finance API data + training knowledge for segments/geo.
+  // Claude uses FMP segment/geo data (if available) + training knowledge
   job = update(jobId, {
     status: 'synthesizing',
     progress: 60,
@@ -252,7 +266,7 @@ async function runPublicPath(
   });
   emit(jobId, 'progress', job);
 
-  const insights = await synthesizeFinancialInsights(input, apiData, '');
+  const insights = await synthesizeFinancialInsights(input, apiData, fmpContext);
 
   // Prefer API-sourced structured arrays; fall back to Claude-extracted arrays
   const finalRevenueHistory =
