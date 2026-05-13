@@ -72,10 +72,19 @@ export async function runTechnologyHeatMap(jobId: string, input: HeatMapInput): 
   if (!job) return;
 
   try {
-    // Combine selected and manual entries
-    const allCompetitors = [...new Set([...input.selectedCompetitors, ...input.manualCompetitors])];
-    const allTechs = [...new Set([...input.selectedTechs, ...input.manualTechs])];
-    const allSegments = [...new Set([...input.industrySegments, ...input.manualSegments])];
+    // Combine selected and manual entries, handle undefined values
+    const allCompetitors = [...new Set([
+      ...(input.selectedCompetitors || []),
+      ...(input.manualCompetitors || [])
+    ])];
+    const allTechs = [...new Set([
+      ...(input.selectedTechs || []),
+      ...(input.manualTechs || [])
+    ])];
+    const allSegments = [...new Set([
+      ...(input.industrySegments || []),
+      ...(input.manualSegments || [])
+    ])];
 
     // Step 1: Update job status to researching
     updateJob(jobId, {
