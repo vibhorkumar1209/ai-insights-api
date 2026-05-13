@@ -115,6 +115,34 @@ interface FMPSearchResult {
   exchange: string; exchangeFullName: string;
 }
 
+// ── Global Exchange Extensions Mapping ────────────────────────────────────────
+/**
+ * Map of stock exchanges with their ticker extensions
+ * Used to search FMP with multiple exchange variants when a ticker is identified
+ */
+const EXCHANGE_EXTENSIONS = [
+  // United States (no extension)
+  { country: 'United States', exchange: 'NASDAQ / NYSE / AMEX', extension: '', example: 'AAPL' },
+  // Canada
+  { country: 'Canada', exchange: 'TSX', extension: '.TO', example: 'T.TO' },
+  { country: 'Canada', exchange: 'TSXV', extension: '.V', example: 'CVE.V' },
+  // Europe
+  { country: 'United Kingdom', exchange: 'LSE', extension: '.L', example: 'BP.L' },
+  { country: 'Germany', exchange: 'XETRA', extension: '.DE', example: 'SAP.DE' },
+  { country: 'France', exchange: 'Euronext Paris', extension: '.PA', example: 'MC.PA' },
+  { country: 'Netherlands', exchange: 'Euronext Amsterdam', extension: '.AS', example: 'ASML.AS' },
+  { country: 'Switzerland', exchange: 'SIX Swiss Exchange', extension: '.SW', example: 'NESN.SW' },
+  // Asia Pacific
+  { country: 'Hong Kong', exchange: 'HKEX', extension: '.HK', example: '0700.HK' },
+  { country: 'Japan', exchange: 'TSE', extension: '.T', example: '7203.T' },
+  { country: 'Australia', exchange: 'ASX', extension: '.AX', example: 'BHP.AX' },
+  { country: 'India', exchange: 'NSE', extension: '.NS', example: 'RELIANCE.NS' },
+  { country: 'India', exchange: 'BSE', extension: '.BO', example: '500325.BO' },
+  // China
+  { country: 'China', exchange: 'Shanghai Stock Exchange', extension: '.SS', example: '600519.SS' },
+  { country: 'China', exchange: 'Shenzhen Stock Exchange', extension: '.SZ', example: '000001.SZ' },
+];
+
 // ── Ticker search via FMP ─────────────────────────────────────────────────────
 
 export async function fmpSearchTicker(companyName: string): Promise<string | null> {
@@ -136,11 +164,52 @@ export async function fmpSearchTicker(companyName: string): Promise<string | nul
 
     // Pick first USD exchange match, else first preferred, else first result
     const usdMatch = sorted.find((r) => r.currency === 'USD');
-    return (usdMatch || sorted[0]).symbol;
+    const baseTicker = (usdMatch || sorted[0]).symbol;
+
+    console.log('[FMP] Base ticker identified:', baseTicker, 'from', companyName);
+    return baseTicker;
   } catch (err) {
     console.warn('[FMP] Ticker search failed:', err);
     return null;
   }
+}
+
+// ── Multi-Exchange Ticker Search ───────────────────────────────────────────────
+/**
+ * Search FMP with ticker variants across all global exchanges
+ * Returns the first variant that returns data
+ */
+export async function fmpSearchTickerAcrossExchanges(baseTicker: string): Promise<string | null> {
+  if (!baseTicker) return null;
+
+  console.log('[FMP] Searching for ticker across global exchanges:', baseTicker);
+
+  // Create ticker variants with all extensions
+  const tickerVariants = EXCHANGE_EXTENSIONS.map(ex => ({
+    variant: ex.extension ? `${baseTicker}${ex.extension}` : baseTicker,
+    country: ex.country,
+    exchange: ex.exchange,
+    extension: ex.extension,
+  }));
+
+  // Try each variant, return first successful match
+  for (const variant of tickerVariants) {
+    try {
+      const profile = await fmpFetch<FMPProfile[]>(`/profile?symbol=${encodeURIComponent(variant.variant)}`);
+
+      if (profile && profile.length > 0 && profile[0].symbol) {
+        console.log('[FMP] ✓ Found ticker variant:', variant.variant,
+          `(${variant.country} - ${variant.exchange})`);
+        return variant.variant;
+      }
+    } catch (err) {
+      // Try next variant silently
+      console.log(`[FMP] ✗ Variant not found: ${variant.variant} - trying next...`);
+    }
+  }
+
+  console.warn('[FMP] No ticker variants found across any exchange for:', baseTicker);
+  return null;
 }
 
 // ── Company profile ───────────────────────────────────────────────────────────

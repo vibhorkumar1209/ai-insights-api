@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
 import {
-  fmpSearchTicker, fmpFetchProfile, fmpFetchIncomeStatement,
+  fmpSearchTicker, fmpSearchTickerAcrossExchanges, fmpFetchProfile, fmpFetchIncomeStatement,
   fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
   fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
 } from './fmpFinance';
@@ -118,6 +118,15 @@ export async function runFinancialAnalysis(
         ? { ticker: fmpTicker, exchange: '' }
         : await detectTicker(input.companyName, input.companyDomain).catch(() => null);
       console.log('[financialAnalysis] ticker detection result:', tickerResult);
+
+      // Search FMP across all exchange extensions to find the best ticker variant
+      if (tickerResult?.ticker) {
+        const exchangeTicker = await fmpSearchTickerAcrossExchanges(tickerResult.ticker).catch(() => null);
+        if (exchangeTicker) {
+          tickerResult.ticker = exchangeTicker;
+          console.log('[financialAnalysis] Using exchange-specific ticker variant:', exchangeTicker);
+        }
+      }
 
       if (input.isPublic === true) {
         // User forced public — accept even if ticker not found
