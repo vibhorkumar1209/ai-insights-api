@@ -8,9 +8,18 @@ export const corsMiddleware = cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, Postman, server-to-server)
     if (!origin) return callback(null, true);
+
+    // Allow localhost for development
+    if (origin.includes('localhost')) return callback(null, true);
+
+    // Allow all Vercel deployments
+    if (origin.includes('vercel.app')) return callback(null, true);
+
+    // Check configured origins
     if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       return callback(null, true);
     }
+
     callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
