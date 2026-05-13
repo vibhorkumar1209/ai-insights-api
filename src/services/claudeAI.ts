@@ -1005,9 +1005,9 @@ Extraction rules:
   let message;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      // Add 45-second timeout for synthesis call
+      // Add 90-second timeout for synthesis call (Claude can be slow)
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Financial synthesis timeout (45s)')), 45000)
+        setTimeout(() => reject(new Error('Financial synthesis timeout (90s)')), 90000)
       );
 
       message = await Promise.race([
@@ -1427,13 +1427,13 @@ IMPORTANT:
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
 - The "source" field must include actual URLs where available (e.g., LinkedIn profile URL, news article link, earnings call recording). If specific URLs are not available, indicate the source type (e.g., 'LinkedIn', 'Earnings call transcript', 'Industry forum').`;
 
-  // Add 30-second timeout for key buyers synthesis
-  console.log('[claudeAI] Starting key buyers synthesis with 30s timeout');
+  // Add 90-second timeout for key buyers synthesis (Claude can be slow)
+  console.log('[claudeAI] Starting key buyers synthesis with 90s timeout');
   const timeoutPromise = new Promise<never>((_, reject) => {
     const timer = setTimeout(() => {
-      console.error('[claudeAI] Key buyers synthesis timeout triggered after 30s');
-      reject(new Error('Key buyers synthesis timeout (30s)'));
-    }, 30000);
+      console.error('[claudeAI] Key buyers synthesis timeout triggered after 90s');
+      reject(new Error('Key buyers synthesis timeout (90s)'));
+    }, 90000);
     // Prevent the timer from keeping the process alive
     timer.unref?.();
   });
