@@ -878,12 +878,14 @@ export async function synthesizeFinancialInsights(
 
   const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary.
 Rules:
-- Be specific: cite figures, percentages, year-on-year changes, named programmes.
+- Be specific: cite figures, percentages, year-on-year changes, named programmes from provided data and your knowledge.
 - Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
 - Key highlights must be brief bullets suitable for an executive summary.
 - For segment/geo data: PRIORITIZE data from FMP (Financial Modeling Prep) if provided in the research section. If FMP data is not available, extract from other research or use your training knowledge to populate these arrays for well-known companies — never leave both empty if you know the answer.
+- CRITICAL: NEVER create synthetic/estimated numbers. If you cite a figure (revenue, margin, etc.), it must come from actual data sources or established public knowledge. Never invent metrics.
 - When extracting financial statement rows, include 8-15 key line items per statement.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.
+- NEVER mention that data comes from training knowledge — present all content neutrally without disclosing data sources.
 - ${RECENCY_DIRECTIVE}`;
 
   // Compact the Yahoo data for context (truncate to avoid token overflow on large datasets)
@@ -991,17 +993,18 @@ Return a single JSON object with EXACTLY this structure:
 }
 
 Extraction rules:
-- revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer in ${yahooData.currency || 'USD'} (e.g. 383285000000). Percentages as numbers not strings. All monetary values should use ${yahooData.currency || 'USD'} currency.
-- plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. MUST include BOTH current year ("value") AND previous year ("previousValue") for every data row. Include "yoy" percentage change where calculable. isSection=true for category headers (value=""). isBold=true for subtotals/totals. The "value" field is the most recent fiscal year; "previousValue" is the year before that.
+- revenueHistoryExtracted / marginHistoryExtracted: 3-5 years newest-first. revenue must be raw integer in ${yahooData.currency || 'USD'} (e.g. 383285000000). Percentages as numbers not strings. All monetary values should use ${yahooData.currency || 'USD'} currency. MUST be from actual data sources, never synthetic.
+- plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. MUST include BOTH current year ("value") AND previous year ("previousValue") for every data row. Include "yoy" percentage change where calculable. isSection=true for category headers (value=""). isBold=true for subtotals/totals. The "value" field is the most recent fiscal year; "previousValue" is the year before that. MUST be from actual data sources, never invented.
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
 - For segmentRevenue and geoRevenue:
   * PRIMARY SOURCE: If FMP data is provided in the "Additional Research" section labeled "FMP Segment Revenue Data" or "FMP Geographic Revenue Data", parse and convert it to the required format (segment/region, revenue, percentage, yoyGrowth).
   * FALLBACK: For well-known public companies (especially Fortune 500), use your training knowledge to populate segmentRevenue and geoRevenue from your knowledge cutoff. Do NOT return empty arrays for major companies unless genuinely unavailable.
+  * CRITICAL: Only use segment/geo data you are confident about from your knowledge. Never invent segment names or revenues. If unsure, return [].
   * Segment data MUST use the company's actual business segment names (not generic names). For automotive: "Vehicles", "Financial Services", "Software", etc. For tech: "Cloud", "Software", "Hardware", etc.
   * Geographic data MUST use actual regions: "North America", "Europe", "Asia-Pacific", "China", "India", etc.
   * Return [] only if the company is obscure or private.
   * Ensure currency consistency: use the company's reporting currency (${yahooData.currency || 'USD'}) for all revenue values.
-- For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures.`;
+- For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures from known sources. NEVER create synthetic analysis or made-up insights.`;
 
   // Retry logic with fallback: attempt up to 2 times, then return fallback data
   let message;
