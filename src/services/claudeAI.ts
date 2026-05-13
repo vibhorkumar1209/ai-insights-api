@@ -2725,26 +2725,37 @@ ${requirementsText}- adoptionStage: integer 1-5 only
   try {
     let jsonStr = content.text.trim();
 
-    // Remove markdown code fences if present
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    // Remove markdown code fences if present (multiple patterns)
+    jsonStr = jsonStr
+      .replace(/^```(?:json)?\s*\n?/, '') // Remove opening fence
+      .replace(/\n?```\s*$/, ''); // Remove closing fence
+
+    // Try direct parse first (happy path)
+    try {
+      const parsed = JSON.parse(jsonStr);
+      return {
+        competitionHeatMap: Array.isArray(parsed.competitionHeatMap) ? parsed.competitionHeatMap : [],
+        industryHeatMap: Array.isArray(parsed.industryHeatMap) ? parsed.industryHeatMap : [],
+        insights: typeof parsed.insights === 'object' ? parsed.insights : {},
+      };
+    } catch (e) {
+      // Direct parse failed, try extraction
     }
 
-    // Try to extract and parse JSON with bracket matching
+    // If direct parse failed, extract JSON substring
     let parsed: any = null;
     let lastError: Error | null = null;
 
-    // Try to find valid JSON by searching for opening brace and matching closing brace
+    // Find opening brace
     const startIdx = jsonStr.indexOf('{');
     if (startIdx === -1) throw new Error('No JSON object found in response');
 
-    // Try progressively from end to find valid JSON
-    for (let endIdx = jsonStr.length; endIdx > startIdx; endIdx--) {
+    // Try progressively shorter substrings from the end to find valid JSON
+    for (let endIdx = jsonStr.length; endIdx > startIdx + 1; endIdx--) {
       try {
         const candidate = jsonStr.substring(startIdx, endIdx);
         parsed = JSON.parse(candidate);
+        console.log('[synthesizeHeatMap] Successfully parsed JSON at position', startIdx, 'to', endIdx);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
@@ -2762,9 +2773,12 @@ ${requirementsText}- adoptionStage: integer 1-5 only
       insights: typeof parsed.insights === 'object' ? parsed.insights : {},
     };
   } catch (err) {
-    console.error('[synthesizeHeatMap] Parse error:', err instanceof Error ? err.message : String(err));
-    console.error('[synthesizeHeatMap] Response length:', content.text.length, 'First 500 chars:', content.text.slice(0, 500));
-    throw new Error(`Failed to parse heat map data: ${err instanceof Error ? err.message : String(err)}`);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('[synthesizeHeatMap] Parse error:', errorMsg);
+    console.error('[synthesizeHeatMap] Response length:', content.text.length);
+    console.error('[synthesizeHeatMap] First 300 chars:', JSON.stringify(content.text.slice(0, 300)));
+    console.error('[synthesizeHeatMap] Last 300 chars:', JSON.stringify(content.text.slice(-300)));
+    throw new Error(`Failed to parse heat map data: ${errorMsg}`);
   }
 }
 
