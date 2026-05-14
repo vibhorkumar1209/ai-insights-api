@@ -1285,88 +1285,34 @@ Otherwise, identify ${input.yourCompany}'s most relevant solutions for ${input.t
     ? `- priorityTable: EXACTLY ${input.strategicPriorities!.length} rows (one per priority above)\n- priorityMapping: EXACTLY ${input.strategicPriorities!.length} rows (matching priorityTable priorities)`
     : `- priorityTable: 4–5 rows (one per discovered/derived priority)\n- priorityMapping: same number of rows as priorityTable`;
 
-  const systemPrompt = `You are a senior B2B sales strategist and competitive intelligence analyst.
-Rules:
-- Write in a confident, consultative tone — not salesy.
-- Use data and evidence wherever possible; avoid vague, generic claims.
-- Back every competitive differentiator with proof (case study outcome, analyst finding, review data).
-- Use [Client A, Fortune 500 ${input.targetIndustry} Company] as placeholder when real client names are unavailable.
-- Base competitor weaknesses ONLY on publicly known analyst reports, G2/Gartner reviews, or documented product gaps — never fabricate.
-- When strategic priorities or solution areas were not user-supplied, derive them from research and use them consistently throughout.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON.
+  const systemPrompt = `You are a senior B2B sales strategist. Output ONLY valid JSON — no markdown fences, no text outside JSON.
+- Confident, consultative tone. Back claims with evidence (G2/Gartner, case study metrics, analyst data).
+- Use [Client A, Fortune 500 ${input.targetIndustry} Company] when real names unavailable.
+- Derive priorities/solutions from research if not user-supplied; use them consistently.
 - ${RECENCY_DIRECTIVE}`;
 
-  const userPrompt = `Generate a comprehensive Sales Play document for the following engagement:
-
-SELLING COMPANY: "${input.yourCompany}"
-COMPETITOR TO DISPLACE: "${input.competitorName}"
-TARGET ACCOUNT: "${input.targetAccount}" (Industry: ${input.targetIndustry})
+  const userPrompt = `Sales Play: "${input.yourCompany}" displacing "${input.competitorName}" at "${input.targetAccount}" (${input.targetIndustry}).
 
 ${priorityBlock}
-
 ${solutionBlock}
-${input.competitorWeaknesses ? `\nKNOWN COMPETITOR WEAKNESSES (user-supplied): ${input.competitorWeaknesses}` : ''}
+${input.competitorWeaknesses ? `KNOWN COMPETITOR WEAKNESSES: ${input.competitorWeaknesses}` : ''}
+${hasResearch ? `RESEARCH:\n${research.slice(0, 15000)}` : '[No live research — use training knowledge]'}
 
-${hasResearch ? `COMPETITIVE INTELLIGENCE RESEARCH:\n${research.slice(0, 30000)}` : '[No live research — use training knowledge. Label estimates as "(est.)"]'}
-
-Return a single JSON object with EXACTLY this structure:
+Return JSON:
 {
-  "priorityTable": [
-    {
-      "priority": "Priority name (from user-supplied list, or discovered/derived — be consistent)",
-      "companySolution": "2-3 bullet points (each starting with '• ' separated by newlines): how ${input.yourCompany}'s solution directly addresses this priority with specifics",
-      "proofPoints": "2-3 bullet points (each starting with '• ' separated by newlines): cite metrics, case study outcomes, or industry recognitions",
-      "whyNotCompetitor": "2-3 bullet points (each starting with '• ' separated by newlines): evidence-backed reasons ${input.competitorName} falls short on this specific priority"
-    }
-  ],
-  "industrySolutions": [
-    {
-      "name": "Solution name",
-      "problemSolved": "Specific problem this solves for ${input.targetIndustry} companies",
-      "description": "1-2 sentence description of the solution and its key differentiator"
-    }
-  ],
-  "techSummary": "3-5 bullet points (each starting with '• ' separated by newlines): ${input.yourCompany}'s technology stack, proprietary AI/ML capabilities, cloud architecture, and what fundamentally differentiates it from ${input.competitorName}",
-  "technologyPartners": [
-    { "name": "Technology partner name", "capability": "What this partnership enables for ${input.targetIndustry} clients specifically" }
-  ],
-  "siPartners": [
-    { "name": "SI or advisory partner name", "capability": "Their relevance to ${input.targetAccount}'s industry and transformation goals" }
-  ],
-  "caseStudies": [
-    {
-      "client": "Real client name, or [Client A, Fortune 500 ${input.targetIndustry} Company] if unavailable",
-      "challenge": "Specific business challenge they faced",
-      "solution": "Which ${input.yourCompany} solution was deployed and how",
-      "outcome": "Measurable result e.g. '30% reduction in inventory costs, 18-month payback period'",
-      "testimonial": "Direct executive quote if publicly available, or null"
-    }
-  ],
-  "priorityMapping": [
-    {
-      "priority": "Priority name (same list as priorityTable — must match exactly)",
-      "solution": "Specific ${input.yourCompany} solution or product name",
-      "expectedOutcome": "Concrete business outcome — quantify where possible",
-      "timeToValue": "Realistic estimate e.g. '3-6 months', '6-9 months', '12-18 months'"
-    }
-  ],
-  "competitiveStatement": "3-4 sentence paragraph a sales rep can use verbally: why ${input.yourCompany} — and not ${input.competitorName} — is the right partner for ${input.targetAccount} right now. Be specific to their stated priorities and current market context.",
-  "objectionRebuttals": [
-    {
-      "objection": "A realistic, specific objection ${input.targetAccount} might raise (e.g. 'We already use ${input.competitorName}'s ecosystem')",
-      "rebuttal": "A sharp, evidence-backed response addressing the concern directly — include a proof point or reference"
-    }
-  ],
-  "callToAction": "Specific recommended next step in the sales cycle (name the format, attendees, and desired outcome e.g. 'Schedule a 90-minute executive briefing with ${input.targetAccount}'s CIO and Head of Digital to present a tailored proof-of-concept roadmap')"
+  "priorityTable": [{ "priority": "str", "companySolution": "1-2 bullets with '• '", "proofPoints": "1-2 bullets with '• '", "whyNotCompetitor": "1-2 bullets with '• '" }],
+  "industrySolutions": [{ "name": "str", "problemSolved": "str", "description": "1 sentence" }],
+  "techSummary": "2-3 bullets with '• '",
+  "technologyPartners": [{ "name": "str", "capability": "str" }],
+  "siPartners": [{ "name": "str", "capability": "str" }],
+  "caseStudies": [{ "client": "str", "challenge": "str", "solution": "str", "outcome": "str", "testimonial": null }],
+  "priorityMapping": [{ "priority": "str", "solution": "str", "expectedOutcome": "str", "timeToValue": "str" }],
+  "competitiveStatement": "2-3 sentences why ${input.yourCompany} not ${input.competitorName}",
+  "objectionRebuttals": [{ "objection": "str", "rebuttal": "str" }],
+  "callToAction": "str"
 }
 
-Required counts:
-${priorityCountNote}
-- industrySolutions: 3-5 solutions specific to ${input.targetIndustry}
-- technologyPartners: 2-4 partners
-- siPartners: 2-3 partners
-- caseStudies: EXACTLY 3 case studies
-- objectionRebuttals: EXACTLY 3 objections`;
+Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siPartners 2-3; caseStudies EXACTLY 3; objectionRebuttals EXACTLY 3.`;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     const t = setTimeout(() => reject(new Error('Sales Play synthesis timeout (90s)')), 90000);
@@ -1375,8 +1321,8 @@ ${priorityCountNote}
 
   const message = await Promise.race([
     client.messages.create({
-      model: FAST_MODEL,
-      max_tokens: 8000,
+      model: SYNTHESIS_MODEL,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: userPrompt }],
       system: systemPrompt,
     }),
