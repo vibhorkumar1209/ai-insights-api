@@ -2710,11 +2710,13 @@ ${jsonStructure}
 REQUIREMENTS:
 ${requirementsText}- adoptionStage: integer 1-5 only
 - adoptionPercentage: 0-100
-- Include 3-5 strategic recommendations based on adoption patterns`;
+- Include 3-5 strategic recommendations based on adoption patterns
+
+CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Start with { and end with }`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 5000,
+    max_tokens: 8000,
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
