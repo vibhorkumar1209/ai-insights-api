@@ -643,47 +643,20 @@ export async function researchSalesPlayContext(
     : `- Selling Company's Key Solution Areas: NOT PROVIDED — you MUST identify and list ${yourCompany}'s key solution portfolio for ${targetIndustry} in SECTION C item 1.`;
 
   const query = `
-Research competitive intelligence for a B2B sales engagement with the following context:
-- Selling Company: "${yourCompany}"
-- Competitor: "${competitorName}"
-- Target Account: "${targetAccount}" (${targetIndustry} industry)
+B2B sales intelligence brief — be concise, bullet points only, max 800 words total.
+
+Context: ${yourCompany} selling to ${targetAccount} (${targetIndustry}), displacing ${competitorName}.
 ${prioritySection}
 ${solutionSection}
 
-SECTION A — TARGET ACCOUNT: "${targetAccount}"
-1. Technology investments and IT vendor ecosystem: What ERP, CRM, cloud, and AI platforms does ${targetAccount} currently use or has publicly announced plans to adopt?
-2. Strategic digital initiatives: What digital transformation, cloud migration, AI adoption, or operational programmes has ${targetAccount} publicly announced (press releases, annual reports, earnings calls)?
-3. Known pain points and challenges: What operational, technology, or competitive challenges is ${targetAccount} known to face in the ${targetIndustry} industry?
-4. Key technology decision-makers: Who are the CIO, CTO, CDO, or SVP of Digital/IT at ${targetAccount} if publicly documented?
-5. Recent technology news: Any significant IT vendor changes, RFPs, or transformation programme announcements in the last 2 years?
-${!hasPriorities ? `6. STRATEGIC PRIORITIES DISCOVERY (REQUIRED): Based on ${targetAccount}'s public statements, annual reports, investor presentations, and ${targetIndustry} industry context — identify and list their top 4–5 strategic IT and digital transformation priorities. Format as:
-DISCOVERED STRATEGIC PRIORITIES:
-1. [Priority name]: [1-sentence explanation]
-2. [Priority name]: [1-sentence explanation]
-...` : ''}
+A) ${targetAccount}: Current tech stack, top 3 digital initiatives, key IT decision-makers, known pain points.
+${!hasPriorities ? `Also list DISCOVERED STRATEGIC PRIORITIES (4-5 items, labeled exactly that way).` : ''}
 
-SECTION B — COMPETITOR: "${competitorName}" in ${targetIndustry}
-1. Product gaps and limitations: What specific product features, capabilities, or industry-specific functionality does ${competitorName} lack compared to market expectations in ${targetIndustry}?
-2. Customer reviews and complaints: What recurring weaknesses appear in G2, Gartner Peer Insights, TrustRadius, or Forrester Wave reviews of ${competitorName} in ${targetIndustry}?
-3. Pricing and commercial issues: What are the known pricing model concerns, licence costs, implementation overruns, or total-cost-of-ownership issues with ${competitorName}?
-4. Analyst findings: What have Gartner, Forrester, IDC, or Everest Group flagged as weaknesses or cautions for ${competitorName}?
-5. Failed deployments or contract losses: Are there any public cases of ${competitorName} losing contracts, failed implementations, or customer churn in ${targetIndustry}?
-6. Support and services quality: What do customers say about ${competitorName}'s post-sale support, implementation quality, or customer success?
+B) ${competitorName} weaknesses in ${targetIndustry}: Product gaps, G2/Gartner complaints, pricing issues, failed deals.
 
-SECTION C — "${yourCompany}" STRENGTHS in ${targetIndustry}
-1. ${!hasSolutions ? `SOLUTION AREAS DISCOVERY (REQUIRED): Identify and list ${yourCompany}'s key solutions, products, and service areas relevant to ${targetIndustry}. Format as:
-DISCOVERED SOLUTION AREAS:
-- [Solution/Product Name]: [1-sentence description]
-- [Solution/Product Name]: [1-sentence description]
-...
-Then continue with:` : ''} Industry-specific solutions: What solutions does ${yourCompany} offer specifically for the ${targetIndustry} sector?
-2. Published case studies and win stories: What documented client successes does ${yourCompany} have in ${targetIndustry}? Include client names, business challenges, solutions deployed, and measurable outcomes.
-3. Technology differentiation: What proprietary technology, AI/ML capabilities, cloud platforms, or patents does ${yourCompany} hold that are relevant to ${targetAccount}'s priorities?
-4. Partner ecosystem: What technology partnerships (e.g., Microsoft, AWS, SAP, Salesforce) and SI/advisory partnerships does ${yourCompany} have that are relevant to ${targetIndustry}?
-5. Industry recognition: What Gartner Magic Quadrant positions, Forrester Wave rankings, or industry awards has ${yourCompany} received relevant to ${targetIndustry}?
-6. Competitive wins: Are there any known instances of ${yourCompany} displacing ${competitorName} or winning against them in ${targetIndustry}?
+C) ${yourCompany} strengths: ${!hasSolutions ? `DISCOVERED SOLUTION AREAS (labeled exactly that way), then:` : ''} 2-3 case studies in ${targetIndustry} with outcomes, key tech differentiators vs ${competitorName}, relevant partnerships.
 
-Provide specific, evidence-based data wherever available. Quote analyst reports and reviews directly where possible. Clearly state when information is not publicly available rather than speculating.
+Be specific and evidence-based. Skip anything not publicly documented.
 `.trim();
 
   try {

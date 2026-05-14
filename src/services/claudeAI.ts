@@ -91,8 +91,7 @@ const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations
 
 // Model selection
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
-// Note: Haiku model (claude-3-5-haiku-20241022) not available in current API access
-// Keeping Sonnet for all tasks, but optimized with lower token budgets and temperatures
+const FAST_MODEL = 'claude-haiku-4-5-20251001'; // 5× faster, used for structured JSON synthesis
 
 // ── Truncate research to stay within token budget ───────────────────────────
 
@@ -1370,14 +1369,14 @@ ${priorityCountNote}
 - objectionRebuttals: EXACTLY 3 objections`;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const t = setTimeout(() => reject(new Error('Sales Play synthesis timeout (120s)')), 120000);
+    const t = setTimeout(() => reject(new Error('Sales Play synthesis timeout (90s)')), 90000);
     t.unref?.();
   });
 
   const message = await Promise.race([
     client.messages.create({
-      model: SYNTHESIS_MODEL,
-      max_tokens: 10000,
+      model: FAST_MODEL,
+      max_tokens: 8000,
       messages: [{ role: 'user', content: userPrompt }],
       system: systemPrompt,
     }),
