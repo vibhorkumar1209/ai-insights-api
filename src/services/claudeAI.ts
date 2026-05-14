@@ -1321,7 +1321,7 @@ Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siP
 
   const message = await Promise.race([
     client.messages.create({
-      model: SYNTHESIS_MODEL,
+      model: FAST_MODEL,
       max_tokens: 8192,
       messages: [{ role: 'user', content: userPrompt }],
       system: systemPrompt,

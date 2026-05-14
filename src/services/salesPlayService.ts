@@ -83,7 +83,7 @@ export async function runSalesPlay(
     let research = '';
     try {
       const researchTimeout = new Promise<string>((_, reject) => {
-        const t = setTimeout(() => reject(new Error('Research timeout')), 60000);
+        const t = setTimeout(() => reject(new Error('Research timeout')), 45000);
         t.unref?.();
       });
       research = await Promise.race([
