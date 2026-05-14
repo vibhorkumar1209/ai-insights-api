@@ -1322,7 +1322,7 @@ Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siP
   const message = await Promise.race([
     client.messages.create({
       model: SYNTHESIS_MODEL,
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: userPrompt }],
       system: systemPrompt,
     }),
@@ -1332,7 +1332,13 @@ Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siP
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
 
-  return parseSalesPlay(content.text);
+  const raw = content.text;
+  console.log(`[salesPlay] raw response length=${raw.length} stop_reason=${message.stop_reason}`);
+  if (message.stop_reason === 'max_tokens') {
+    console.warn('[salesPlay] Output was truncated — increase max_tokens or reduce prompt');
+  }
+
+  return parseSalesPlay(raw);
 }
 
 function parseSalesPlay(raw: string): SalesPlayPayload {
