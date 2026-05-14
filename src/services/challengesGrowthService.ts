@@ -65,8 +65,7 @@ export async function runChallengesGrowth(
     updateJob(jobId, { companyName: input.companyName });
 
     step(`Researching ${input.companyName}...`, 10);
-    const companyLabel = `${input.companyName}${input.companyDomain ? ` (website: ${input.companyDomain})` : ''}`;
-    const research = await researchCompanyChallengesGrowth(companyLabel);
+    const research = await researchCompanyChallengesGrowth(input.companyName, input.companyDomain);
 
     step('Synthesizing challenges & growth analysis...', 65);
     updateJob(jobId, { status: 'synthesizing' });

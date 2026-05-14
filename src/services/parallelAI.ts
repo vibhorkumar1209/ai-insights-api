@@ -528,10 +528,12 @@ State "Not publicly disclosed" for anything unavailable. Cite every factual clai
 // ── Challenges & Growth Research ─────────────────────────────────────────────
 
 export async function researchCompanyChallengesGrowth(
-  companyName: string
+  companyName: string,
+  domain?: string
 ): Promise<string> {
+  const domainNote = domain ? ` (website: ${domain})` : '';
   const query = `
-Research the major challenges and key growth opportunities facing "${companyName}" in 2024-2025.
+Research the major challenges and key growth opportunities facing "${companyName}"${domainNote} in 2024-2025.
 
 For EACH of the following dimensions, provide specific evidence-based findings — cite earnings calls, analyst reports, news articles, regulatory filings, or industry data:
 
