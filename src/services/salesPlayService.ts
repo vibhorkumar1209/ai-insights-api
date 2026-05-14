@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SalesPlayResult, SalesPlayInput } from '@ai-insights/types';
-import { researchSalesPlayContext } from './parallelAI';
 import { synthesizeSalesPlay } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
@@ -72,44 +71,15 @@ export async function runSalesPlay(
   input: SalesPlayInput
 ): Promise<void> {
   try {
-    // ── Step 1: Research ─────────────────────────────────────────────────────
+    // ── Step 1: Synthesise (using Claude training knowledge — no external research)
     let job = update(jobId, {
-      status: 'researching',
-      progress: 5,
-      currentStep: `Researching ${input.targetAccount}'s landscape and competitive intelligence…`,
-    });
-    emit(jobId, 'progress', job);
-
-    let research = '';
-    try {
-      const researchTimeout = new Promise<string>((_, reject) => {
-        const t = setTimeout(() => reject(new Error('Research timeout')), 45000);
-        t.unref?.();
-      });
-      research = await Promise.race([
-        researchSalesPlayContext(
-          input.yourCompany,
-          input.competitorName,
-          input.targetAccount,
-          input.targetIndustry,
-          input.strategicPriorities,
-          input.solutionAreas
-        ),
-        researchTimeout,
-      ]);
-    } catch (err) {
-      console.warn('[salesPlay] Research skipped (timeout/error), using training knowledge:', err instanceof Error ? err.message : err);
-    }
-
-    // ── Step 2: Synthesise ───────────────────────────────────────────────────
-    job = update(jobId, {
       status: 'synthesizing',
-      progress: 55,
-      currentStep: 'Synthesising Sales Play document…',
+      progress: 10,
+      currentStep: `Building Sales Play for ${input.targetAccount}…`,
     });
     emit(jobId, 'progress', job);
 
-    const result = await synthesizeSalesPlay(input, research);
+    const result = await synthesizeSalesPlay(input, '');
 
     const completedAt = new Date().toISOString();
     job = update(jobId, {

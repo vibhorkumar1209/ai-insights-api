@@ -1390,25 +1390,40 @@ ${priorityCountNote}
 }
 
 function parseSalesPlay(raw: string): SalesPlayPayload {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Claude did not return valid JSON for sales play');
-  try {
-    const p = JSON.parse(match[0]) as SalesPlayPayload;
-    return {
-      priorityTable:         Array.isArray(p.priorityTable)         ? p.priorityTable         : [],
-      industrySolutions:     Array.isArray(p.industrySolutions)     ? p.industrySolutions     : [],
-      techSummary:           p.techSummary           || '',
-      technologyPartners:    Array.isArray(p.technologyPartners)    ? p.technologyPartners    : [],
-      siPartners:            Array.isArray(p.siPartners)            ? p.siPartners            : [],
-      caseStudies:           Array.isArray(p.caseStudies)           ? p.caseStudies           : [],
-      priorityMapping:       Array.isArray(p.priorityMapping)       ? p.priorityMapping       : [],
-      competitiveStatement:  p.competitiveStatement  || '',
-      objectionRebuttals:    Array.isArray(p.objectionRebuttals)    ? p.objectionRebuttals    : [],
-      callToAction:          p.callToAction          || '',
-    };
-  } catch {
-    throw new Error('Failed to parse sales play JSON');
+  // Strip markdown fences if present
+  const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  // Try direct parse first
+  let p: SalesPlayPayload | null = null;
+  try { p = JSON.parse(stripped) as SalesPlayPayload; } catch { /* try brace matching */ }
+
+  // Brace-matching fallback for truncated output
+  if (!p) {
+    const start = stripped.indexOf('{');
+    if (start === -1) throw new Error('Claude did not return valid JSON for sales play');
+    let depth = 0, end = -1;
+    for (let i = start; i < stripped.length; i++) {
+      if (stripped[i] === '{') depth++;
+      else if (stripped[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    const candidate = end !== -1 ? stripped.slice(start, end + 1) : stripped.slice(start);
+    try { p = JSON.parse(candidate) as SalesPlayPayload; } catch {
+      throw new Error('Failed to parse sales play JSON');
+    }
   }
+
+  return {
+    priorityTable:         Array.isArray(p.priorityTable)         ? p.priorityTable         : [],
+    industrySolutions:     Array.isArray(p.industrySolutions)     ? p.industrySolutions     : [],
+    techSummary:           p.techSummary           || '',
+    technologyPartners:    Array.isArray(p.technologyPartners)    ? p.technologyPartners    : [],
+    siPartners:            Array.isArray(p.siPartners)            ? p.siPartners            : [],
+    caseStudies:           Array.isArray(p.caseStudies)           ? p.caseStudies           : [],
+    priorityMapping:       Array.isArray(p.priorityMapping)       ? p.priorityMapping       : [],
+    competitiveStatement:  p.competitiveStatement  || '',
+    objectionRebuttals:    Array.isArray(p.objectionRebuttals)    ? p.objectionRebuttals    : [],
+    callToAction:          p.callToAction          || '',
+  };
 }
 
 // ── Key Prospective Buyers — Synthesis ───────────────────────────────────────
