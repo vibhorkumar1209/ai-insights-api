@@ -2677,7 +2677,7 @@ ${Object.entries(truncatedSegResearch)
   if (hasCompetitors) {
     jsonStructure += `
   "competitionHeatMap": [
-    { "competitor": "Company Name", "technology": "Tech Name", "adoptionStage": 3, "adoptionPercentage": 45, "vendors": ["Vendor A"], "details": "Brief context" }
+    { "competitor": "Company Name", "technology": "Tech Name", "adoptionStage": 3, "adoptionPercentage": 45, "vendors": ["Vendor A"], "details": "1-2 sentence context" }
   ],`;
     requirementsText += `- competitionHeatMap: EXACTLY ${input.selectedCompetitors.length} × ${input.selectedTechs.length} cells\n`;
   }
@@ -2716,7 +2716,7 @@ CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Sta
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: 8000,
+    max_tokens: 12000,
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });

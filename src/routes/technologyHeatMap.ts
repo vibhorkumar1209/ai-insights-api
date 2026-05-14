@@ -51,6 +51,20 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
+  // Validate total cell count (competitors/segments × technologies)
+  const totalCells = hasCompetitors
+    ? (input.selectedCompetitors.length * input.selectedTechs.length)
+    : hasSegments
+    ? (input.industrySegments.length * input.selectedTechs.length)
+    : 0;
+
+  if (totalCells > 40) {
+    res.status(400).json({
+      error: `Selection creates ${totalCells} cells. Maximum 40 allowed. Try selecting fewer competitors, segments, or technologies.`
+    });
+    return;
+  }
+
   const jobId = createTechnologyHeatMapJob();
 
   runTechnologyHeatMap(jobId, input).catch((err) =>
