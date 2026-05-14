@@ -862,3 +862,37 @@ export interface TechnologyHeatMapResult {
   completedAt?: string;
 }
 
+// ── Content Generation (Industry Blog & Thought Leadership) ──────────────────
+
+export interface ContentGenerationInput {
+  moduleType: 'industry-blog' | 'industry-thought-leadership';
+  industryTrendsData?: {
+    industry: string;
+    geography?: string;
+    businessTrends?: Array<{ trend: string; description: string; impact?: string }>;
+    techTrends?: Array<{ trend: string; description: string; impact?: string }>;
+  };
+  industryReportData?: {
+    query: string;
+    executiveSummary?: string;
+    sections?: Array<{ id: string; title: string; bodyParagraphs?: string[] }>;
+  };
+  voice: 'first_person' | 'third_person';
+  tone: 'professional' | 'smart_casual';
+  perspective: 'practitioner' | 'analyst';
+  wordCount: number;
+}
+
+export interface ContentGenerationResult {
+  jobId: string;
+  status: 'pending' | 'generating' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  createdAt: string;
+  completedAt?: string;
+  error?: string;
+  content?: string;
+  hashtags?: string[];
+  title?: string;
+}
+
