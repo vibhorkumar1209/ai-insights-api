@@ -522,14 +522,14 @@ Return a JSON array with EXACTLY this shape (8 objects):
     "dimension": "Macroeconomics",
     "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the specific macroeconomic challenges affecting ${input.companyName}'s operations or profitability.",
     "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): specific growth opportunities ${input.companyName} can pursue in response to macroeconomic conditions.",
-    "source": "Source of information as clickable links where available (e.g. 'https://sec.gov/cgi-bin/... | https://earnings-call.com/...', or 'Industry reports, News articles' if specific URLs unknown)"
+    "source": "Source of information: ONLY include verified, legitimate sources (e.g., 'SEC EDGAR filings', 'Company investor relations website', 'Earnings call transcripts'). Do NOT invent or guess URLs. If you cannot verify a specific source, leave this empty or write 'Based on business intelligence and market analysis'."
   }
 ]
 
 For EACH dimension:
 - "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges for ${input.companyName} in this dimension — cite data, name the threat, quantify where possible, reference ${input.companyName}'s specific assets/operations.
 - "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.
-- "source": Source of the information as clickable URLs where possible (e.g., SEC filings, company reports, earnings calls, news articles). Include actual hyperlinks if known; otherwise describe the source type.`;
+- "source": Source of the information. ONLY include verified, legitimate sources (e.g., "SEC EDGAR filings", "Company investor relations", "Earnings call transcripts", "Press releases from company website"). Do NOT invent or guess URLs. If the source is general market knowledge, write "Market intelligence and business analysis".`;
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -1433,7 +1433,7 @@ Return a JSON array with 10-15 rows, EXACTLY this shape:
     "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
     "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting 2024', 'Investor Day Keynote, Nov 2024', 'World Economic Forum Panel, Jan 2025', 'Q3 FY2025 Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
     "excerpt": "2-3 bullet points (each starting with '• ' separated by newlines): key statements or quotes from the executive about this theme — cite specific data points, programme names, or initiatives mentioned.",
-    "source": "Source as clickable URL where available (e.g. 'https://linkedin.com/in/...' or 'https://earnings-call.com/...' or 'News article: https://...'), otherwise source type (e.g. 'LinkedIn', 'Earnings call transcript', 'Investor presentation')"
+    "source": "Source: ONLY include verified, legitimate sources (e.g., 'Company investor relations website', 'Earnings call transcript', 'Industry conference keynote', 'LinkedIn profile' — no invented URLs). If the source is unverifiable, write 'Based on business intelligence'."
   }
 ]
 
@@ -1445,7 +1445,7 @@ IMPORTANT:
 - Each row should represent a unique, actionable insight for sales pitching.
 - The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting 2024", "NASSCOM Technology Leadership Forum", "Q2 FY2025 Earnings Call", "Banking Technology Summit, Feb 2025". NOT: "LinkedIn post", "Company website", "Press release".
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
-- The "source" field must include actual URLs where available (e.g., LinkedIn profile URL, news article link, earnings call recording). If specific URLs are not available, indicate the source type (e.g., 'LinkedIn', 'Earnings call transcript', 'Industry forum').`;
+- The "source" field must ONLY include verified, legitimate sources. Do NOT invent URLs. Examples: "Company investor relations website", "Q2 FY2025 Earnings call transcript", "LinkedIn", "Industry conference keynote". If the source cannot be verified, write "Business intelligence and market analysis".`;
 
   // Add 90-second timeout for key buyers synthesis (Claude can be slow)
   console.log('[claudeAI] Starting key buyers synthesis with 90s timeout');
