@@ -1308,7 +1308,7 @@ ${priorityBlock}
 ${solutionBlock}
 ${input.competitorWeaknesses ? `\nKNOWN COMPETITOR WEAKNESSES (user-supplied): ${input.competitorWeaknesses}` : ''}
 
-${hasResearch ? `COMPETITIVE INTELLIGENCE RESEARCH:\n${research.slice(0, 55000)}` : '[No live research — use training knowledge. Label estimates as "(est.)"]'}
+${hasResearch ? `COMPETITIVE INTELLIGENCE RESEARCH:\n${research.slice(0, 30000)}` : '[No live research — use training knowledge. Label estimates as "(est.)"]'}
 
 Return a single JSON object with EXACTLY this structure:
 {
@@ -1369,12 +1369,20 @@ ${priorityCountNote}
 - caseStudies: EXACTLY 3 case studies
 - objectionRebuttals: EXACTLY 3 objections`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 6000,  // Sales Play requires more tokens due to complex multi-section JSON output
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const t = setTimeout(() => reject(new Error('Sales Play synthesis timeout (120s)')), 120000);
+    t.unref?.();
   });
+
+  const message = await Promise.race([
+    client.messages.create({
+      model: SYNTHESIS_MODEL,
+      max_tokens: 10000,
+      messages: [{ role: 'user', content: userPrompt }],
+      system: systemPrompt,
+    }),
+    timeoutPromise,
+  ]);
 
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
