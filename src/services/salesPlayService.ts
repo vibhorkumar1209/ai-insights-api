@@ -109,7 +109,22 @@ export async function runSalesPlay(
     });
     emit(jobId, 'progress', job);
 
-    const result = await synthesizeSalesPlay(input, research);
+    // Tick progress 55→95 during synthesis so the UI shows movement
+    let synthProgress = 55;
+    const ticker = setInterval(() => {
+      synthProgress = Math.min(95, synthProgress + 5);
+      try {
+        const tick = update(jobId, { progress: synthProgress });
+        emit(jobId, 'progress', tick);
+      } catch { /* job may have been cleaned up */ }
+    }, 8000);
+
+    let result;
+    try {
+      result = await synthesizeSalesPlay(input, research);
+    } finally {
+      clearInterval(ticker);
+    }
 
     const completedAt = new Date().toISOString();
     job = update(jobId, {
