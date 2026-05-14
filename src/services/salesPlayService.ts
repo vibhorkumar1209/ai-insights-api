@@ -109,22 +109,14 @@ export async function runSalesPlay(
     });
     emit(jobId, 'progress', job);
 
-    // Tick progress 55→95 during synthesis so the UI shows movement
-    let synthProgress = 55;
-    const ticker = setInterval(() => {
-      synthProgress = Math.min(95, synthProgress + 5);
+    // Stream synthesis — onChunk fires as tokens arrive, keeping SSE alive
+    const result = await synthesizeSalesPlay(input, research, (accumulated) => {
+      const synthProgress = Math.min(95, 55 + Math.floor((accumulated.length / 3500) * 40));
       try {
         const tick = update(jobId, { progress: synthProgress });
         emit(jobId, 'progress', tick);
       } catch { /* job may have been cleaned up */ }
-    }, 8000);
-
-    let result;
-    try {
-      result = await synthesizeSalesPlay(input, research);
-    } finally {
-      clearInterval(ticker);
-    }
+    });
 
     const completedAt = new Date().toISOString();
     job = update(jobId, {

@@ -1262,7 +1262,8 @@ interface SalesPlayPayload {
 
 export async function synthesizeSalesPlay(
   input: SalesPlayInput,
-  research: string
+  research: string,
+  onChunk?: (accumulated: string) => void
 ): Promise<SalesPlayPayload> {
   const hasResearch    = !isEmptyResearch(research);
   const hasPriorities  = input.strategicPriorities && input.strategicPriorities.length > 0;
@@ -1314,31 +1315,28 @@ Return JSON:
 
 Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siPartners 2-3; caseStudies EXACTLY 3; objectionRebuttals EXACTLY 3.`;
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    const t = setTimeout(() => reject(new Error('Sales Play synthesis timeout (90s)')), 90000);
-    t.unref?.();
+  let fullText = '';
+  const stream = client.messages.stream({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 4096,
+    messages: [{ role: 'user', content: userPrompt }],
+    system: systemPrompt,
   });
 
-  const message = await Promise.race([
-    client.messages.create({
-      model: FAST_MODEL,
-      max_tokens: 8192,
-      messages: [{ role: 'user', content: userPrompt }],
-      system: systemPrompt,
-    }),
-    timeoutPromise,
-  ]);
+  const timeoutHandle = setTimeout(() => stream.abort(), 90000);
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+  stream.on('text', (chunk) => {
+    fullText += chunk;
+    onChunk?.(fullText);
+  });
 
-  const raw = content.text;
-  console.log(`[salesPlay] raw response length=${raw.length} stop_reason=${message.stop_reason}`);
-  if (message.stop_reason === 'max_tokens') {
-    console.warn('[salesPlay] Output was truncated — increase max_tokens or reduce prompt');
+  const finalMsg = await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  console.log(`[salesPlay] streaming done length=${fullText.length} stop_reason=${finalMsg.stop_reason}`);
+  if (finalMsg.stop_reason === 'max_tokens') {
+    console.warn('[salesPlay] Output truncated — consider reducing prompt');
   }
 
-  return parseSalesPlay(raw);
+  return parseSalesPlay(fullText);
 }
 
 function parseSalesPlay(raw: string): SalesPlayPayload {
