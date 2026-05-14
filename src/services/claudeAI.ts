@@ -1318,7 +1318,7 @@ Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siP
   let fullText = '';
   const stream = client.messages.stream({
     model: SYNTHESIS_MODEL,
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
@@ -1350,14 +1350,19 @@ function parseSalesPlay(raw: string): SalesPlayPayload {
   // Brace-matching fallback for truncated output
   if (!p) {
     const start = stripped.indexOf('{');
-    if (start === -1) throw new Error('Claude did not return valid JSON for sales play');
+    if (start === -1) {
+      console.error('[salesPlay] No JSON object found. First 500 chars:', raw.slice(0, 500));
+      throw new Error('Claude did not return valid JSON for sales play');
+    }
     let depth = 0, end = -1;
     for (let i = start; i < stripped.length; i++) {
       if (stripped[i] === '{') depth++;
       else if (stripped[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
     }
     const candidate = end !== -1 ? stripped.slice(start, end + 1) : stripped.slice(start);
-    try { p = JSON.parse(candidate) as SalesPlayPayload; } catch {
+    try { p = JSON.parse(candidate) as SalesPlayPayload; } catch (e) {
+      console.error('[salesPlay] Parse failed. Length:', raw.length, 'Last 300 chars:', raw.slice(-300));
+      console.error('[salesPlay] Parse error:', e);
       throw new Error('Failed to parse sales play JSON');
     }
   }
