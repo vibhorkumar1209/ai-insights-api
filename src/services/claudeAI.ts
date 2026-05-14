@@ -2723,48 +2723,105 @@ ${requirementsText}- adoptionStage: integer 1-5 only
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
 
   try {
-    let jsonStr = content.text.trim();
+    let rawText = content.text.trim();
 
     // Remove markdown code fences if present (multiple patterns)
-    jsonStr = jsonStr
+    rawText = rawText
       .replace(/^```(?:json)?\s*\n?/, '') // Remove opening fence
       .replace(/\n?```\s*$/, ''); // Remove closing fence
 
+    // Additional cleanup for common issues
+    rawText = rawText.trim();
+
     // Try direct parse first (happy path)
     try {
-      const parsed = JSON.parse(jsonStr);
+      const parsed = JSON.parse(rawText);
       return {
         competitionHeatMap: Array.isArray(parsed.competitionHeatMap) ? parsed.competitionHeatMap : [],
         industryHeatMap: Array.isArray(parsed.industryHeatMap) ? parsed.industryHeatMap : [],
         insights: typeof parsed.insights === 'object' ? parsed.insights : {},
       };
-    } catch (e) {
+    } catch (directErr) {
       // Direct parse failed, try extraction
+      console.log('[synthesizeHeatMap] Direct parse failed, attempting extraction:', directErr instanceof Error ? directErr.message : String(directErr));
     }
 
-    // If direct parse failed, extract JSON substring
+    // If direct parse failed, extract JSON using brace matching
     let parsed: any = null;
-    let lastError: Error | null = null;
-
-    // Find opening brace
-    const startIdx = jsonStr.indexOf('{');
+    const startIdx = rawText.indexOf('{');
     if (startIdx === -1) throw new Error('No JSON object found in response');
 
-    // Try progressively shorter substrings from the end to find valid JSON
-    for (let endIdx = jsonStr.length; endIdx > startIdx + 1; endIdx--) {
-      try {
-        const candidate = jsonStr.substring(startIdx, endIdx);
-        parsed = JSON.parse(candidate);
-        console.log('[synthesizeHeatMap] Successfully parsed JSON at position', startIdx, 'to', endIdx);
-        break;
-      } catch (e) {
-        lastError = e instanceof Error ? e : new Error(String(e));
+    // Find matching closing brace using a simple counter
+    let braceCount = 0;
+    let endIdx = -1;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = startIdx; i < rawText.length; i++) {
+      const char = rawText[i];
+
+      if (escapeNext) {
+        escapeNext = false;
         continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        else if (char === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            endIdx = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (endIdx === -1) {
+      // Couldn't find matching brace, try substring fallback
+      console.log('[synthesizeHeatMap] Could not find matching closing brace, using substring extraction');
+      for (let idx = rawText.length; idx > startIdx + 1; idx--) {
+        try {
+          const candidate = rawText.substring(startIdx, idx);
+          parsed = JSON.parse(candidate);
+          console.log('[synthesizeHeatMap] Successfully parsed with substring extraction');
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+    } else {
+      // Try parsing the matched braces
+      try {
+        const candidate = rawText.substring(startIdx, endIdx);
+        parsed = JSON.parse(candidate);
+        console.log('[synthesizeHeatMap] Successfully parsed with brace matching');
+      } catch (e) {
+        console.log('[synthesizeHeatMap] Brace matching failed, falling back to substring');
+        for (let idx = rawText.length; idx > startIdx + 1; idx--) {
+          try {
+            const candidate = rawText.substring(startIdx, idx);
+            parsed = JSON.parse(candidate);
+            break;
+          } catch (err) {
+            continue;
+          }
+        }
       }
     }
 
     if (!parsed) {
-      throw lastError || new Error('Could not parse JSON from response');
+      throw new Error('Could not extract valid JSON from response');
     }
 
     return {
@@ -2776,8 +2833,8 @@ ${requirementsText}- adoptionStage: integer 1-5 only
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[synthesizeHeatMap] Parse error:', errorMsg);
     console.error('[synthesizeHeatMap] Response length:', content.text.length);
-    console.error('[synthesizeHeatMap] First 300 chars:', JSON.stringify(content.text.slice(0, 300)));
-    console.error('[synthesizeHeatMap] Last 300 chars:', JSON.stringify(content.text.slice(-300)));
+    console.error('[synthesizeHeatMap] First 200 chars:', JSON.stringify(content.text.slice(0, 200)));
+    console.error('[synthesizeHeatMap] Last 200 chars:', JSON.stringify(content.text.slice(-200)));
     throw new Error(`Failed to parse heat map data: ${errorMsg}`);
   }
 }
