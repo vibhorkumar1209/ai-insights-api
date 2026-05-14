@@ -531,9 +531,13 @@ export async function researchCompanyChallengesGrowth(
   companyName: string,
   domain?: string
 ): Promise<string> {
-  const domainNote = domain ? ` (website: ${domain})` : '';
+  const domainLine = domain
+    ? `IMPORTANT: The company is identified by its website domain "${domain}". Research ONLY this specific company — do NOT confuse it with other companies that share a similar name. Start your research from ${domain}.`
+    : '';
   const query = `
-Research the major challenges and key growth opportunities facing "${companyName}"${domainNote} in 2024-2025.
+Research the major challenges and key growth opportunities facing "${companyName}"${domain ? ` (website: ${domain})` : ''} in 2024-2025.
+
+${domainLine}
 
 For EACH of the following dimensions, provide specific evidence-based findings — cite earnings calls, analyst reports, news articles, regulatory filings, or industry data:
 
@@ -699,14 +703,18 @@ export async function researchKeyBuyers(
   companyName: string,
   domain?: string
 ): Promise<string> {
-  const domainNote = domain ? ` (website: ${domain})` : '';
+  const domainLine = domain
+    ? `IMPORTANT: The company is identified by its website domain "${domain}". Research ONLY this specific company — do NOT confuse it with other companies that share a similar name. Start your research from ${domain}.`
+    : '';
   const query = `
-Research the key senior executives of "${companyName}"${domainNote} and their publicly expressed business priorities, strategic focus areas, and thought leadership.
+Research the key senior executives of "${companyName}"${domain ? ` (website: ${domain})` : ''} and their publicly expressed business priorities, strategic focus areas, and thought leadership.
+
+${domainLine}
 
 Your goal is to identify 10-15 insights that a B2B sales team can use to tailor their pitch to specific executives based on their stated priorities.
 
 SOURCES TO RESEARCH (check ALL of these):
-1. Company website — leadership page, blog posts, press releases, investor presentations
+1. Company website (${domain || 'company website'}) — leadership page, blog posts, press releases, investor presentations
 2. LinkedIn — executive profiles, posts, articles, and activity (CEO, CFO, CTO, CIO, CDO, CMO, COO, SVPs, VPs)
 3. Annual reports and quarterly earnings call transcripts — executive commentary
 4. Press releases and media interviews — quotes from executives on strategy

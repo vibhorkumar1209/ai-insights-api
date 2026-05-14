@@ -482,9 +482,13 @@ export async function synthesizeChallengesGrowth(
 ): Promise<ChallengesGrowthRow[]> {
   const hasResearch = !isEmptyResearch(research);
 
+  const domainContext = input.companyDomain
+    ? `\n- COMPANY IDENTITY: "${input.companyName}" is identified by domain ${input.companyDomain}. If multiple companies share this name, focus ONLY on the one at ${input.companyDomain}. Do NOT use data from any other company with a similar name.`
+    : '';
+
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing company-specific competitive analysis.
 Rules:
-- FOCUS ON THIS COMPANY: Analyze ${input.companyName}'s specific position, vulnerabilities, capabilities, and opportunities — NOT general industry trends.
+- FOCUS ON THIS COMPANY: Analyze ${input.companyName}'s specific position, vulnerabilities, capabilities, and opportunities — NOT general industry trends.${domainContext}
 - Use the provided research first; supplement with training knowledge where research is sparse.
 - Be specific: cite ${input.companyName}'s programmes, metrics, named initiatives, manufacturing and R&D locations, strategic partnerships, and specific business data.
 - For challenges: identify what pressures affect THIS company's performance, margins, growth, or competitive position.
@@ -494,9 +498,9 @@ Rules:
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${RECENCY_DIRECTIVE}`;
 
-  const userPrompt = `Analyse the following research on "${input.companyName}" and produce a company-focused Challenges & Growth analysis.
+  const userPrompt = `Analyse the following research on "${input.companyName}"${input.companyDomain ? ` (website: ${input.companyDomain})` : ''} and produce a company-focused Challenges & Growth analysis.
 
-CRITICAL: This analysis must be specific to ${input.companyName}'s situation, not general industry insights. Identify challenges that affect THIS company's performance and growth opportunities that THIS company can pursue.
+CRITICAL: This analysis must be specific to ${input.companyName}${input.companyDomain ? ` at ${input.companyDomain}` : ''}'s situation, not general industry insights. Identify challenges that affect THIS company's performance and growth opportunities that THIS company can pursue.
 
 Cover EXACTLY these 8 dimensions (one array element each, in this order):
 1. Macroeconomics — How are macroeconomic conditions, interest rates, currency, inflation affecting ${input.companyName}'s costs, revenues, and margins?
@@ -1408,17 +1412,21 @@ export async function synthesizeKeyBuyers(
 ): Promise<KeyBuyerRow[]> {
   const hasResearch = !isEmptyResearch(research);
 
+  const domainContextKB = input.companyDomain
+    ? `\n- COMPANY IDENTITY: "${input.companyName}" is identified by domain ${input.companyDomain}. If multiple companies share this name, focus ONLY on the one at ${input.companyDomain}. Do NOT use executive data from any other company with a similar name.`
+    : '';
+
   const systemPrompt = `You are a senior B2B sales intelligence analyst who specialises in executive level stakeholder mapping.
 Rules:
 - Use the provided research first; supplement with training knowledge where research is sparse.
-- Focus on C suite and SVP/VP level executives — the decision makers.
+- Focus on C suite and SVP/VP level executives — the decision makers.${domainContextKB}
 - Every row must have substantive, specific content — no vague generalities, no empty fields.
 - Prefer direct quotes in the excerpt field when available — use quotation marks.
 - Write in natural business language without hyphens, dashes, or arrows. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${RECENCY_DIRECTIVE}`;
 
-  const userPrompt = `Analyse the following research on "${input.companyName}" and produce a Key Prospective Buyers table.
+  const userPrompt = `Analyse the following research on "${input.companyName}"${input.companyDomain ? ` (website: ${input.companyDomain})` : ''} and produce a Key Prospective Buyers table.
 
 The table should map senior executives to their publicly stated business focus areas, making it easy for a sales team to tailor their pitch.
 
