@@ -82,16 +82,23 @@ export async function runSalesPlay(
 
     let research = '';
     try {
-      research = await researchSalesPlayContext(
-        input.yourCompany,
-        input.competitorName,
-        input.targetAccount,
-        input.targetIndustry,
-        input.strategicPriorities,
-        input.solutionAreas
-      );
+      const researchTimeout = new Promise<string>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('Research timeout')), 45000);
+        t.unref?.();
+      });
+      research = await Promise.race([
+        researchSalesPlayContext(
+          input.yourCompany,
+          input.competitorName,
+          input.targetAccount,
+          input.targetIndustry,
+          input.strategicPriorities,
+          input.solutionAreas
+        ),
+        researchTimeout,
+      ]);
     } catch (err) {
-      console.error('[salesPlay] Research failed, continuing with training knowledge:', err);
+      console.warn('[salesPlay] Research skipped (timeout/error), using training knowledge:', err instanceof Error ? err.message : err);
     }
 
     // ── Step 2: Synthesise ───────────────────────────────────────────────────
