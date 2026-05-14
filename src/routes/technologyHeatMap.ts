@@ -7,61 +7,32 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/technologyHeatMapService';
-import { discoverTopPlayersByIndustryQuick, discoverEmergingTechsQuick, discoverIndustrySegmentsQuick } from '../services/claudeAI';
-import { HeatMapInput } from '@ai-insights/types';
+import { discoverEmergingTechsQuick } from '../services/claudeAI';
+import { TechHeatMapInput } from '@ai-insights/types';
 
 const router = Router();
 
-/** POST /api/technology-heat-map — start analysis */
+/** POST /api/technology-heat-map — start job */
 router.post('/', aiLimiter, (req: Request, res: Response): void => {
-  const input: HeatMapInput = req.body;
+  const input: TechHeatMapInput = req.body;
 
   if (!input.industry || typeof input.industry !== 'string' || !input.industry.trim()) {
     res.status(400).json({ error: 'industry is required' });
     return;
   }
 
-  // Validate technologies (always required)
-  if (!Array.isArray(input.selectedTechs) || input.selectedTechs.length === 0) {
-    res.status(400).json({ error: 'selectedTechs array is required and must not be empty' });
+  if (!input.geography || typeof input.geography !== 'string' || !input.geography.trim()) {
+    res.status(400).json({ error: 'geography is required' });
     return;
   }
 
-  if (input.selectedTechs.length > 10) {
-    res.status(400).json({ error: 'Maximum 10 technologies allowed' });
+  if (!Array.isArray(input.technologies) || input.technologies.length === 0) {
+    res.status(400).json({ error: 'technologies array must have at least 1 item' });
     return;
   }
 
-  // Validate competitors OR segments (at least one required, not both)
-  const hasCompetitors = Array.isArray(input.selectedCompetitors) && input.selectedCompetitors.length > 0;
-  const hasSegments = Array.isArray(input.industrySegments) && input.industrySegments.length > 0;
-
-  if (!hasCompetitors && !hasSegments) {
-    res.status(400).json({ error: 'Either selectedCompetitors or industrySegments (or both) is required and must not be empty' });
-    return;
-  }
-
-  if (hasCompetitors && input.selectedCompetitors.length > 10) {
-    res.status(400).json({ error: 'Maximum 10 competitors allowed' });
-    return;
-  }
-
-  if (hasSegments && input.industrySegments.length > 10) {
-    res.status(400).json({ error: 'Maximum 10 industry segments allowed' });
-    return;
-  }
-
-  // Validate total cell count (competitors/segments × technologies)
-  const totalCells = hasCompetitors
-    ? (input.selectedCompetitors.length * input.selectedTechs.length)
-    : hasSegments
-    ? (input.industrySegments.length * input.selectedTechs.length)
-    : 0;
-
-  if (totalCells > 40) {
-    res.status(400).json({
-      error: `Selection creates ${totalCells} cells. Maximum 40 allowed. Try selecting fewer competitors, segments, or technologies.`
-    });
+  if (input.technologies.length > 12) {
+    res.status(400).json({ error: 'Maximum 12 technologies allowed' });
     return;
   }
 
@@ -133,28 +104,7 @@ router.get('/:jobId/stream', (req: Request, res: Response): void => {
   req.on('error', cleanup);
 });
 
-/** POST /api/technology-heat-map/discover-competitors */
-router.post('/discover-competitors', aiLimiter, async (req: Request, res: Response): Promise<void> => {
-  const { industry } = req.body;
-  if (!industry) {
-    res.status(400).json({ error: 'industry is required' });
-    return;
-  }
-
-  try {
-    console.log('[discover-competitors] Discovering top players for industry:', industry);
-    const competitors = await discoverTopPlayersByIndustryQuick(industry);
-    console.log('[discover-competitors] Found', competitors.length, 'competitors');
-    res.json({ competitors });
-  } catch (error) {
-    console.error('[discover-competitors] Error:', error);
-    // Fallback to static data if discovery fails
-    const fallback = getCompetitorsForIndustry(industry);
-    res.json({ competitors: fallback });
-  }
-});
-
-/** POST /api/technology-heat-map/discover-technologies */
+/** POST /api/technology-heat-map/discover-technologies — auto-populate techs for an industry */
 router.post('/discover-technologies', aiLimiter, async (req: Request, res: Response): Promise<void> => {
   const { industry } = req.body;
   if (!industry) {
@@ -163,196 +113,29 @@ router.post('/discover-technologies', aiLimiter, async (req: Request, res: Respo
   }
 
   try {
-    console.log('[discover-technologies] Discovering emerging technologies for industry:', industry);
+    console.log('[discover-technologies] Discovering technologies for industry:', industry);
     const technologies = await discoverEmergingTechsQuick(industry);
     console.log('[discover-technologies] Found', technologies.length, 'technologies');
     res.json({ technologies });
   } catch (error) {
     console.error('[discover-technologies] Error:', error);
-    // Fallback to default if discovery fails
-    const fallback = getTechnologiesForIndustry(industry);
-    res.json({ technologies: fallback });
+    res.json({ technologies: getDefaultTechnologies() });
   }
 });
 
-/** POST /api/technology-heat-map/discover-segments */
-router.post('/discover-segments', aiLimiter, async (req: Request, res: Response): Promise<void> => {
-  const { industry } = req.body;
-  if (!industry) {
-    res.status(400).json({ error: 'industry is required' });
-    return;
-  }
-
-  try {
-    console.log('[discover-segments] Discovering industry segments for:', industry);
-    const segments = await discoverIndustrySegmentsQuick(industry);
-    console.log('[discover-segments] Found', segments.length, 'segments');
-    res.json({ segments });
-  } catch (error) {
-    console.error('[discover-segments] Error:', error);
-    // Fallback to static data if discovery fails
-    const fallback = getSegmentsForIndustry(industry);
-    res.json({ segments: fallback });
-  }
-});
-
-// ── Helper functions ──────────────────────────────────────────────────────────
-
-function getCompetitorsForIndustry(industry: string): any[] {
-  // Default/fallback competitors for any industry
-  const defaultCompetitors = [
-    { name: 'Apple', headquarters: 'Cupertino, USA', estimatedRevenue: '$408.2B', relevanceScore: 9 },
-    { name: 'Microsoft', headquarters: 'Redmond, USA', estimatedRevenue: '$221.9B', relevanceScore: 9 },
-    { name: 'Google', headquarters: 'Mountain View, USA', estimatedRevenue: '$307.4B', relevanceScore: 9 },
-    { name: 'Amazon', headquarters: 'Seattle, USA', estimatedRevenue: '$575.5B', relevanceScore: 8 },
-    { name: 'Meta', headquarters: 'Menlo Park, USA', estimatedRevenue: '$134.9B', relevanceScore: 8 },
-    { name: 'Tesla', headquarters: 'Austin, USA', estimatedRevenue: '$81.5B', relevanceScore: 8 },
-    { name: 'Nvidia', headquarters: 'Santa Clara, USA', estimatedRevenue: '$60.9B', relevanceScore: 8 },
-    { name: 'JPMorgan Chase', headquarters: 'New York, USA', estimatedRevenue: '$177.3B', relevanceScore: 7 },
-    { name: 'Berkshire Hathaway', headquarters: 'Omaha, USA', estimatedRevenue: '$302.1B', relevanceScore: 7 },
-    { name: 'Saudi Aramco', headquarters: 'Dhahran, Saudi Arabia', estimatedRevenue: '$160.2B', relevanceScore: 7 },
-  ];
-
-  const competitorMap: Record<string, any[]> = {
-    banking: [
-      { name: 'JPMorgan Chase', headquarters: 'New York, USA', estimatedRevenue: '$177.3B', relevanceScore: 10 },
-      { name: 'Bank of America', headquarters: 'Charlotte, USA', estimatedRevenue: '$117.2B', relevanceScore: 10 },
-      { name: 'Goldman Sachs', headquarters: 'New York, USA', estimatedRevenue: '$70.1B', relevanceScore: 9 },
-      { name: 'Citigroup', headquarters: 'New York, USA', estimatedRevenue: '$79.9B', relevanceScore: 9 },
-      { name: 'Wells Fargo', headquarters: 'San Francisco, USA', estimatedRevenue: '$89.0B', relevanceScore: 8 },
-      { name: 'HSBC', headquarters: 'London, UK', estimatedRevenue: '$66.5B', relevanceScore: 8 },
-      { name: 'ING Group', headquarters: 'Amsterdam, Netherlands', estimatedRevenue: '$70.9B', relevanceScore: 7 },
-      { name: 'Barclays', headquarters: 'London, UK', estimatedRevenue: '$44.4B', relevanceScore: 7 },
-      { name: 'Credit Suisse', headquarters: 'Zurich, Switzerland', estimatedRevenue: '$22.5B', relevanceScore: 6 },
-      { name: 'Morgan Stanley', headquarters: 'New York, USA', estimatedRevenue: '$53.7B', relevanceScore: 8 },
-    ],
-    technology: [
-      { name: 'Apple', headquarters: 'Cupertino, USA', estimatedRevenue: '$408.2B', relevanceScore: 10 },
-      { name: 'Microsoft', headquarters: 'Redmond, USA', estimatedRevenue: '$221.9B', relevanceScore: 10 },
-      { name: 'Google (Alphabet)', headquarters: 'Mountain View, USA', estimatedRevenue: '$307.4B', relevanceScore: 10 },
-      { name: 'Meta', headquarters: 'Menlo Park, USA', estimatedRevenue: '$134.9B', relevanceScore: 9 },
-      { name: 'Amazon', headquarters: 'Seattle, USA', estimatedRevenue: '$575.5B', relevanceScore: 9 },
-      { name: 'Tesla', headquarters: 'Austin, USA', estimatedRevenue: '$81.5B', relevanceScore: 8 },
-      { name: 'NVIDIA', headquarters: 'Santa Clara, USA', estimatedRevenue: '$60.9B', relevanceScore: 9 },
-      { name: 'Broadcom', headquarters: 'San Jose, USA', estimatedRevenue: '$63.1B', relevanceScore: 7 },
-      { name: 'Qualcomm', headquarters: 'San Diego, USA', estimatedRevenue: '$44.2B', relevanceScore: 8 },
-      { name: 'Intel', headquarters: 'Santa Clara, USA', estimatedRevenue: '$63.1B', relevanceScore: 7 },
-    ],
-    automotive: [
-      { name: 'Tesla', headquarters: 'Austin, USA', estimatedRevenue: '$81.5B', relevanceScore: 10 },
-      { name: 'Toyota', headquarters: 'Toyota City, Japan', estimatedRevenue: '$279.5B', relevanceScore: 10 },
-      { name: 'Volkswagen', headquarters: 'Wolfsburg, Germany', estimatedRevenue: '$296.0B', relevanceScore: 10 },
-      { name: 'General Motors', headquarters: 'Detroit, USA', estimatedRevenue: '$127.0B', relevanceScore: 9 },
-      { name: 'Ford', headquarters: 'Dearborn, USA', estimatedRevenue: '$136.3B', relevanceScore: 9 },
-      { name: 'BMW', headquarters: 'Munich, Germany', estimatedRevenue: '$142.5B', relevanceScore: 8 },
-      { name: 'Mercedes-Benz', headquarters: 'Stuttgart, Germany', estimatedRevenue: '$176.0B', relevanceScore: 8 },
-      { name: 'Honda', headquarters: 'Tokyo, Japan', estimatedRevenue: '$150.4B', relevanceScore: 9 },
-      { name: 'Hyundai', headquarters: 'Seoul, South Korea', estimatedRevenue: '$98.4B', relevanceScore: 8 },
-      { name: 'BYD', headquarters: 'Shenzhen, China', estimatedRevenue: '$63.9B', relevanceScore: 9 },
-    ],
-    retail: [
-      { name: 'Amazon', headquarters: 'Seattle, USA', estimatedRevenue: '$575.5B', relevanceScore: 10 },
-      { name: 'Walmart', headquarters: 'Bentonville, USA', estimatedRevenue: '$648.1B', relevanceScore: 10 },
-      { name: 'Alibaba', headquarters: 'Hangzhou, China', estimatedRevenue: '$126.2B', relevanceScore: 9 },
-      { name: 'JD.com', headquarters: 'Beijing, China', estimatedRevenue: '$128.6B', relevanceScore: 8 },
-      { name: 'Target', headquarters: 'Minneapolis, USA', estimatedRevenue: '$107.6B', relevanceScore: 7 },
-      { name: 'Best Buy', headquarters: 'Richfield, USA', estimatedRevenue: '$52.0B', relevanceScore: 6 },
-      { name: 'Costco', headquarters: 'Issaquah, USA', estimatedRevenue: '$248.1B', relevanceScore: 8 },
-      { name: 'Home Depot', headquarters: 'Atlanta, USA', estimatedRevenue: '$158.0B', relevanceScore: 7 },
-      { name: 'Lowe\'s', headquarters: 'Mooresville, USA', estimatedRevenue: '$96.3B', relevanceScore: 7 },
-      { name: 'Walgreens', headquarters: 'Chicago, USA', estimatedRevenue: '$132.7B', relevanceScore: 7 },
-    ],
-  };
-
-  const normalizedIndustry = industry.toLowerCase().trim();
-  return competitorMap[normalizedIndustry] || defaultCompetitors;
-}
-
-function getTechnologiesForIndustry(industry: string): any[] {
-  const defaultTechs = [
+function getDefaultTechnologies(): Array<{ name: string; category: string; maturityLevel: string }> {
+  return [
     { name: 'AI/ML', category: 'Artificial Intelligence', maturityLevel: 'growth' },
     { name: 'Cloud Computing', category: 'Infrastructure', maturityLevel: 'mainstream' },
-    { name: 'Blockchain', category: 'Distributed Ledger', maturityLevel: 'emerging' },
-    { name: 'IoT', category: 'Internet of Things', maturityLevel: 'growth' },
-    { name: 'RPA', category: 'Automation', maturityLevel: 'mainstream' },
     { name: 'Cybersecurity', category: 'Security', maturityLevel: 'mainstream' },
+    { name: 'RPA', category: 'Automation', maturityLevel: 'mainstream' },
+    { name: 'IoT', category: 'Internet of Things', maturityLevel: 'growth' },
     { name: 'Big Data Analytics', category: 'Data', maturityLevel: 'mainstream' },
+    { name: 'Blockchain', category: 'Distributed Ledger', maturityLevel: 'emerging' },
     { name: 'Edge Computing', category: 'Infrastructure', maturityLevel: 'growth' },
     { name: 'Quantum Computing', category: 'Computing', maturityLevel: 'emerging' },
     { name: '5G', category: 'Connectivity', maturityLevel: 'growth' },
   ];
-
-  // Could be enhanced with industry-specific techs
-  return defaultTechs;
-}
-
-function getSegmentsForIndustry(industry: string): string[] {
-  // Default segments for any industry
-  const defaultSegments = [
-    'Market Segment A',
-    'Market Segment B',
-    'Market Segment C',
-    'Geographic North',
-    'Geographic South',
-    'Geographic Europe',
-    'Geographic Asia',
-    'Customer Type 1',
-    'Customer Type 2',
-    'Emerging Opportunities',
-  ];
-
-  const segmentMap: Record<string, string[]> = {
-    banking: [
-      'Retail Banking',
-      'Corporate Banking',
-      'Investment Banking',
-      'Wealth Management',
-      'Payment Processing',
-      'Digital Banking',
-      'Insurance',
-      'Risk Management',
-      'Regulatory Compliance',
-      'Customer Service',
-    ],
-    technology: [
-      'Cloud Services',
-      'Software Development',
-      'Hardware Manufacturing',
-      'Semiconductors',
-      'Cybersecurity',
-      'Artificial Intelligence',
-      'E-commerce',
-      'Data Analytics',
-      'IoT Solutions',
-      'Mobile Apps',
-    ],
-    automotive: [
-      'Electric Vehicles',
-      'Autonomous Driving',
-      'Manufacturing',
-      'Supply Chain',
-      'Aftersales Service',
-      'Connected Vehicles',
-      'Battery Technology',
-      'Software & Platforms',
-      'Customer Experience',
-      'Sustainability',
-    ],
-    retail: [
-      'E-commerce',
-      'Physical Stores',
-      'Omnichannel',
-      'Supply Chain',
-      'Customer Analytics',
-      'Inventory Management',
-      'Mobile Commerce',
-      'Payment Solutions',
-      'Logistics',
-      'Customer Service',
-    ],
-  };
-
-  return segmentMap[industry.toLowerCase().trim()] || defaultSegments;
 }
 
 export default router;

@@ -1,9 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { HeatMapInput, TechnologyHeatMapResult } from '@ai-insights/types';
-import { synthesizeHeatMap } from './claudeAI';
+import { TechHeatMapInput, TechHeatMapResult } from '@ai-insights/types';
+import { synthesizeTechHeatMap } from './claudeAI';
 
-// In-memory job store (in production, use Redis or database)
-const jobs = new Map<string, TechnologyHeatMapResult>();
+// In-memory job store
+const jobs = new Map<string, TechHeatMapResult>();
 
 // Subscription management for SSE
 const subscribers = new Map<string, Set<(event: string, data: unknown) => void>>();
@@ -21,7 +21,7 @@ export function createTechnologyHeatMapJob(): string {
   return jobId;
 }
 
-export function getTechnologyHeatMapJob(jobId: string): TechnologyHeatMapResult | undefined {
+export function getTechnologyHeatMapJob(jobId: string): TechHeatMapResult | undefined {
   return jobs.get(jobId);
 }
 
@@ -58,86 +58,39 @@ function emit(jobId: string, event: string, data: unknown): void {
   }
 }
 
-function updateJob(jobId: string, updates: Partial<TechnologyHeatMapResult>): void {
+function updateJob(jobId: string, updates: Partial<TechHeatMapResult>): void {
   const job = jobs.get(jobId);
   if (job) {
     jobs.set(jobId, { ...job, ...updates });
   }
 }
 
-// ── Main Analysis Flow ────────────────────────────────────────────────────────
+// ── Main Flow ─────────────────────────────────────────────────────────────────
 
-export async function runTechnologyHeatMap(jobId: string, input: HeatMapInput): Promise<void> {
+export async function runTechnologyHeatMap(jobId: string, input: TechHeatMapInput): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) return;
 
   try {
-    // Combine selected and manual entries, handle undefined values
-    const allCompetitors = [...new Set([
-      ...(input.selectedCompetitors || []),
-      ...(input.manualCompetitors || [])
-    ])];
-    const allTechs = [...new Set([
-      ...(input.selectedTechs || []),
-      ...(input.manualTechs || [])
-    ])];
-    const allSegments = [...new Set([
-      ...(input.industrySegments || []),
-      ...(input.manualSegments || [])
-    ])];
-
-    // Step 1: Update job status to researching
+    // Step 1: researching
     updateJob(jobId, {
       status: 'researching',
-      progress: 5,
-      currentStep: 'Researching technology adoption across competitors and industry segments...',
+      progress: 10,
+      currentStep: 'Analysing investment landscape...',
     });
     emit(jobId, 'progress', jobs.get(jobId));
 
-    // Step 2: Research based on mode
-    const hasCompetitors = allCompetitors.length > 0;
-    const hasSegments = allSegments.length > 0;
+    // Step 2: synthesize
+    const result = await synthesizeTechHeatMap(input);
 
-    let competitorResearch: Record<string, string> = {};
-    let industrySegmentResearch: Record<string, string> = {};
-
-    // Research competitors if provided
-    if (hasCompetitors) {
-      competitorResearch = await researchCompetitorAdoption(input.industry, allCompetitors, allTechs);
-    }
-    updateJob(jobId, { progress: 35 });
-    emit(jobId, 'progress', jobs.get(jobId));
-
-    // Research segments if provided
-    if (hasSegments) {
-      industrySegmentResearch = await researchIndustrySegmentAdoption(
-        input.industry,
-        allSegments,
-        allTechs
-      );
-    }
-    updateJob(jobId, { progress: 50 });
-    emit(jobId, 'progress', jobs.get(jobId));
-
-    // Step 3: Synthesis phase
-    updateJob(jobId, {
-      status: 'synthesizing',
-      currentStep: 'Synthesizing heat map data and generating insights...',
-      progress: 60,
-    });
-    emit(jobId, 'progress', jobs.get(jobId));
-
-    const synthesisResult = await synthesizeHeatMap(input, competitorResearch, industrySegmentResearch, hasCompetitors, hasSegments);
-    updateJob(jobId, { progress: 90 });
-
-    // Step 5: Final update with complete results
+    // Step 3: complete
     updateJob(jobId, {
       status: 'complete',
       progress: 100,
       industry: input.industry,
-      competitionHeatMap: synthesisResult.competitionHeatMap,
-      industryHeatMap: synthesisResult.industryHeatMap,
-      insights: synthesisResult.insights,
+      geography: input.geography,
+      headline: result.headline,
+      rows: result.rows,
       completedAt: new Date().toISOString(),
     });
 
@@ -153,50 +106,8 @@ export async function runTechnologyHeatMap(jobId: string, input: HeatMapInput): 
   }
 }
 
-// ── Research Functions ────────────────────────────────────────────────────────
-
-async function researchCompetitorAdoption(
-  industry: string,
-  competitors: string[],
-  technologies: string[]
-): Promise<Record<string, string>> {
-  const research: Record<string, string> = {};
-
-  // Placeholder: In production, integrate with Parallel.AI or other research APIs
-  // For now, return structured research data that synthesis can work with
-  for (const competitor of competitors) {
-    research[competitor] = `Technology adoption research for ${competitor} in ${industry} industry:
-    - Primary focus areas: ${technologies.slice(0, 3).join(', ')}
-    - Recent initiatives and vendor partnerships
-    - Implementation maturity levels across technology stack
-    - Strategic direction and future investments`;
-  }
-
-  return research;
-}
-
-async function researchIndustrySegmentAdoption(
-  industry: string,
-  segments: string[],
-  technologies: string[]
-): Promise<Record<string, string>> {
-  const research: Record<string, string> = {};
-
-  // Placeholder: In production, integrate with Parallel.AI or other research APIs
-  for (const segment of segments) {
-    research[segment] = `Technology adoption trends for ${segment} segment in ${industry} industry:
-    - Current market adoption levels: ${technologies.slice(0, 3).join(', ')}
-    - Key adopters and implementation examples
-    - Growth trajectories and emerging patterns
-    - Barriers to adoption and success factors`;
-  }
-
-  return research;
-}
-
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 
-// Clean up old jobs every hour (keep only last 100 jobs)
 setInterval(() => {
   if (jobs.size > 100) {
     const sortedJobs = Array.from(jobs.entries()).sort(
@@ -207,4 +118,4 @@ setInterval(() => {
       subscribers.delete(id);
     });
   }
-}, 60 * 60 * 1000); // 1 hour
+}, 60 * 60 * 1000);

@@ -16,6 +16,7 @@ import {
   ScopeWizardResult, MarketSegmentOption, KeyPlayerOption,
   MacroTEIData, BCGMatrixItem, CompetitorProfile,
   BusinessSegment, TimelineBlock, StrategicEvolutionBullet,
+  TechHeatMapInput, TechHeatMapRow,
 } from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
@@ -2606,7 +2607,88 @@ Requirements:
   };
 }
 
-// ── Technology Heat Map Synthesis ─────────────────────────────────────────────
+// ── Technology Investment Heat Map Synthesis (new) ───────────────────────────
+
+export async function synthesizeTechHeatMap(
+  input: TechHeatMapInput,
+  onChunk?: (accumulated: string) => void
+): Promise<{ headline: string; rows: TechHeatMapRow[] }> {
+  const systemPrompt = `You are a technology investment analyst. Output ONLY valid JSON. No markdown fences.`;
+
+  const userPrompt = `Assess technology investment levels for companies in the "${input.industry}" industry operating in "${input.geography}" over the next 6 months.
+
+Technologies to assess:
+${input.technologies.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+For each technology:
+1. Assign an investmentLevel: "very_high", "high", or "medium" — based on the likelihood and scale of investment by companies in this industry and geography.
+2. Write a description (2-3 sentences) that MUST include REAL recent examples of companies in this industry investing in this technology. Use your training knowledge. Cite specific company names, announced plans, or known deployments (e.g. "Deloitte, PwC, and Accenture have announced plans to deploy..."). Only include examples you are confident are accurate from your training data. Do not fabricate company names, investments, or announcements.
+3. Also generate a one-sentence headline summarising the overall investment theme across all these technologies for this industry and geography.
+
+Sort rows: very_high first, then high, then medium.
+
+Output format (strict JSON, no markdown):
+{
+  "headline": "one sentence summarising the overall investment theme",
+  "rows": [
+    { "technology": "str", "investmentLevel": "very_high|high|medium", "description": "str with real company examples" }
+  ]
+}`;
+
+  let fullText = '';
+  const stream = client.messages.stream({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const timeoutHandle = setTimeout(() => stream.abort(), 60000);
+
+  stream.on('text', (chunk) => {
+    fullText += chunk;
+    onChunk?.(fullText);
+  });
+
+  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  console.log(`[synthesizeTechHeatMap] done length=${fullText.length}`);
+
+  // Parse
+  try {
+    const cleaned = fullText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(cleaned);
+    return {
+      headline: parsed.headline || '',
+      rows: (parsed.rows || []).map((r: any) => ({
+        technology: r.technology || '',
+        investmentLevel: r.investmentLevel || 'medium',
+        description: r.description || '',
+      })),
+    };
+  } catch (err) {
+    console.error('[synthesizeTechHeatMap] Parse error:', err);
+    // Try extracting JSON object
+    const match = fullText.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        return {
+          headline: parsed.headline || '',
+          rows: (parsed.rows || []).map((r: any) => ({
+            technology: r.technology || '',
+            investmentLevel: r.investmentLevel || 'medium',
+            description: r.description || '',
+          })),
+        };
+      } catch {
+        // fall through
+      }
+    }
+    throw new Error('Failed to parse synthesizeTechHeatMap response');
+  }
+}
+
+// ── Technology Heat Map Synthesis (legacy) ────────────────────────────────────
 
 export async function synthesizeHeatMap(
   input: {

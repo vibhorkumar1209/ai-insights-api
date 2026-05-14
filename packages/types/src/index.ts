@@ -777,7 +777,36 @@ export interface MarketingStrategyResult {
   completedAt?: string;
 }
 
-// ── Technology Heat Map ──────────────────────────────────────────────────────
+// ── Technology Heat Map (new investment-focused version) ─────────────────────
+
+export interface TechHeatMapRow {
+  technology: string;
+  investmentLevel: 'very_high' | 'high' | 'medium';
+  description: string; // includes real company examples
+}
+
+export interface TechHeatMapInput {
+  industry: string;
+  geography: string;
+  technologies: string[];
+}
+
+export interface TechHeatMapResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  createdAt: string;
+  completedAt?: string;
+  error?: string;
+  // result fields
+  industry?: string;
+  geography?: string;
+  headline?: string; // the italic orange summary sentence
+  rows?: TechHeatMapRow[];
+}
+
+// ── Technology Heat Map (legacy — kept for backward compat) ───────────────────
 
 export interface CompetitorOption {
   name: string;
