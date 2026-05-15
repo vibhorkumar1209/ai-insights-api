@@ -100,23 +100,39 @@ export async function runFinancialAnalysis(
       // User explicitly forced private — skip ticker lookup
       isPublic = false;
     } else {
-      // Try FMP ticker search first, then Yahoo Finance as fallback
-      let fmpTicker: string | null = null;
-      try {
-        fmpTicker = await fmpSearchTicker(input.companyName);
-        // Validate ticker: must be 1-5 alphanumeric characters, no special chars like "X1USD"
-        if (fmpTicker && !/^[A-Z0-9]{1,5}$/.test(fmpTicker)) {
-          console.warn('[financialAnalysis] FMP returned invalid ticker:', fmpTicker, '— discarding');
-          fmpTicker = null;
+      // Run FMP and Yahoo ticker searches in parallel for cross-validation
+      const [fmpResult, yahooResult] = await Promise.allSettled([
+        fmpSearchTicker(input.companyName).catch(() => null),
+        detectTicker(input.companyName, input.companyDomain).catch(() => null),
+      ]);
+
+      const fmpRaw = fmpResult.status === 'fulfilled' ? fmpResult.value : null;
+      const yahooTicker = yahooResult.status === 'fulfilled' ? yahooResult.value : null;
+
+      // Validate FMP ticker: must be 1-5 alphanumeric chars
+      const fmpTicker = (fmpRaw && /^[A-Z0-9.]{1,8}$/.test(fmpRaw)) ? fmpRaw : null;
+
+      // Cross-validation: if both found a ticker, prefer Yahoo when they disagree
+      // Yahoo is better at brand names (Google → GOOGL, not GOOP)
+      // FMP is used for data fetching so we prefer a ticker that FMP can actually serve
+      let resolvedTicker: string | undefined;
+      let resolvedExchange: string | undefined;
+
+      if (yahooTicker?.ticker) {
+        // Yahoo found something — use it (it's better at brand name resolution)
+        resolvedTicker = yahooTicker.ticker;
+        resolvedExchange = yahooTicker.exchange;
+        if (fmpTicker && fmpTicker !== yahooTicker.ticker) {
+          console.log('[financialAnalysis] FMP suggested', fmpTicker, 'but Yahoo resolved', yahooTicker.ticker, '— using Yahoo');
         }
-        if (fmpTicker) console.log('[financialAnalysis] FMP ticker found:', fmpTicker);
-      } catch (err) {
-        console.warn('[financialAnalysis] FMP ticker search failed, trying Yahoo:', err);
+      } else if (fmpTicker) {
+        // Yahoo failed but FMP found something
+        resolvedTicker = fmpTicker;
+        resolvedExchange = '';
+        console.log('[financialAnalysis] Using FMP-only ticker:', fmpTicker);
       }
 
-      const tickerResult = fmpTicker
-        ? { ticker: fmpTicker, exchange: '' }
-        : await detectTicker(input.companyName, input.companyDomain).catch(() => null);
+      const tickerResult = resolvedTicker ? { ticker: resolvedTicker, exchange: resolvedExchange || '' } : null;
       console.log('[financialAnalysis] ticker detection result:', tickerResult);
 
 
