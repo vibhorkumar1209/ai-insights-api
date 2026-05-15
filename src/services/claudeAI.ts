@@ -3038,8 +3038,10 @@ export async function synthesizeContent(
 
   let userPrompt: string;
 
+  const voiceLabel = input.voice === 'first_person' ? 'first-person (use "I", "we", "our perspective")' : 'third-person analytical';
+
   if (input.moduleType === 'industry-blog') {
-    userPrompt = `Write a ${input.wordCount}-word industry blog post about "${industryName}" in third-person voice.
+    userPrompt = `Write a ${input.wordCount}-word industry blog post about "${industryName}" in ${voiceLabel} voice.
 Tone: ${toneLabel}. Perspective: ${perspectiveLabel}.
 Draw on the industry report data below. Include specific statistics, trends and insights from the data. End with 5-8 relevant hashtags.
 

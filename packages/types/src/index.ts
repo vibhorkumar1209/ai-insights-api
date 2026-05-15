@@ -879,7 +879,7 @@ export interface ContentGenerationInput {
     executiveSummary?: string;
     sections?: Array<{ id: string; title: string; bodyParagraphs?: string[]; keyTable?: Array<{ label: string; value: string; previousValue?: string }> }>;
   };
-  voice: 'third_person';
+  voice: 'first_person' | 'third_person';
   tone: 'professional' | 'smart_casual';
   perspective: 'practitioner' | 'analyst';
   wordCount: number;
