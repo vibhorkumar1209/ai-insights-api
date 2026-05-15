@@ -899,3 +899,52 @@ export interface ContentGenerationResult {
   charts?: ContentChart[];
 }
 
+// ── Sales Play II ─────────────────────────────────────────────────────────────
+
+export interface SalesPlay2WinTheme {
+  theme: string;
+  trigger: string;
+}
+
+export interface SalesPlay2Opportunity {
+  opportunityArea: string;
+  specificUseCases: string;
+  problemSolutionMapping: string;
+  valueProposition: string;
+  estimatedDealSize: string;
+}
+
+export interface SalesPlay2Competitor {
+  name: string;
+  strengths: string;
+  weaknesses: string;
+  differentiationStrategy: string;
+}
+
+export interface SalesPlay2Input {
+  yourCompany: string;
+  competitorName: string;
+  targetAccount: string;
+  targetIndustry: string;
+  strategicPriorities?: string[];
+  solutionAreas?: string;
+  competitorWeaknesses?: string;
+}
+
+export interface SalesPlay2Result {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  createdAt: string;
+  completedAt?: string;
+  error?: string;
+  yourCompany?: string;
+  competitorName?: string;
+  targetAccount?: string;
+  targetIndustry?: string;
+  winThemes?: SalesPlay2WinTheme[];
+  opportunities?: SalesPlay2Opportunity[];
+  competitors?: SalesPlay2Competitor[];
+}
+

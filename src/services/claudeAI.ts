@@ -18,6 +18,7 @@ import {
   BusinessSegment, TimelineBlock, StrategicEvolutionBullet,
   TechHeatMapInput, TechHeatMapRow,
   ContentGenerationInput,
+  SalesPlay2Input, SalesPlay2WinTheme, SalesPlay2Opportunity, SalesPlay2Competitor,
 } from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
@@ -3109,4 +3110,72 @@ Output ONLY valid JSON (no markdown fences):
     console.error('[synthesizeContent] JSON parse failed, using raw text as content');
     return { title: '', content: accumulated };
   }
+}
+
+// ── Sales Play II synthesis ───────────────────────────────────────────────────
+
+export async function synthesizeSalesPlay2(
+  input: SalesPlay2Input,
+  research: string,
+  onChunk?: (accumulated: string) => void
+): Promise<{ winThemes: SalesPlay2WinTheme[]; opportunities: SalesPlay2Opportunity[]; competitors: SalesPlay2Competitor[] }> {
+  const hasResearch = !isEmptyResearch(research);
+
+  const systemPrompt = `You are an elite B2B sales strategist. Output ONLY valid JSON. No markdown fences.`;
+
+  const userPrompt = `Generate a Sales Play II for ${input.yourCompany} targeting ${input.targetAccount} in the ${input.targetIndustry} industry. Primary competitor to displace: ${input.competitorName}.
+${input.strategicPriorities?.length ? `\nTarget Account Strategic Priorities:\n${input.strategicPriorities.join('\n')}` : ''}
+${input.solutionAreas ? `\nOur Solution Areas: ${input.solutionAreas}` : ''}
+${input.competitorWeaknesses ? `\nKnown Competitor Weaknesses: ${input.competitorWeaknesses}` : ''}
+${hasResearch ? `\nRESEARCH:\n${research.slice(0, 15000)}` : '\n[No live research — use training knowledge]'}
+
+Generate:
+1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency
+2. Opportunity Mapping — 4-5 opportunity areas showing how ${input.yourCompany} solves real problems with realistic deal sizes
+3. Competitive Positioning — Analysis of ${input.competitorName} (and up to 2 other major competitors if relevant) with specific strengths, weaknesses, and how ${input.yourCompany} differentiates
+
+Output JSON:
+{
+  "winThemes": [
+    { "theme": "...", "trigger": "..." }
+  ],
+  "opportunities": [
+    {
+      "opportunityArea": "...",
+      "specificUseCases": "...",
+      "problemSolutionMapping": "... → ...",
+      "valueProposition": "...",
+      "estimatedDealSize": "$XM – $YM"
+    }
+  ],
+  "competitors": [
+    {
+      "name": "...",
+      "strengths": "...",
+      "weaknesses": "...",
+      "differentiationStrategy": "..."
+    }
+  ]
+}`;
+
+  let fullText = '';
+  const stream = client.messages.stream({
+    model: SYNTHESIS_MODEL,
+    max_tokens: 4000,
+    temperature: 0.1,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  const timeoutHandle = setTimeout(() => stream.abort(), 120000);
+  stream.on('text', (chunk) => { fullText += chunk; onChunk?.(fullText); });
+  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+
+  const match = fullText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim().match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('SalesPlay2: no JSON in response');
+  const parsed = JSON.parse(match[0]);
+  return {
+    winThemes: parsed.winThemes || [],
+    opportunities: parsed.opportunities || [],
+    competitors: parsed.competitors || [],
+  };
 }
