@@ -78,7 +78,11 @@ export async function runIndustryTrends(
     });
     emit(jobId, 'progress', { progress: 65, currentStep: 'Synthesising industry trends with AI…' });
 
-    const { businessTrends, techTrends } = await synthesizeIndustryTrends(input, research);
+    const { businessTrends, techTrends } = await synthesizeIndustryTrends(input, research, (accumulated) => {
+      const synthProgress = Math.min(95, 65 + Math.floor((accumulated.length / 4000) * 30));
+      updateJob(jobId, { progress: synthProgress });
+      emit(jobId, 'progress', { progress: synthProgress, currentStep: 'Synthesising industry trends with AI…' });
+    });
 
     const completed: Partial<IndustryTrendsResult> = {
       status: 'complete',

@@ -1486,7 +1486,8 @@ interface IndustryTrendsSynthesisResult {
 
 export async function synthesizeIndustryTrends(
   input: IndustryTrendsInput,
-  research: string
+  research: string,
+  onChunk?: (accumulated: string) => void
 ): Promise<IndustryTrendsSynthesisResult> {
   const hasResearch = !isEmptyResearch(research);
   const geography = input.geography || 'Global';
@@ -1568,17 +1569,24 @@ ${exampleInstruction}
 - Each example must name specific companies, countries, or initiatives
 - "impact" is a single sentence — concise and specific to ${input.industrySegment}${isGlobal ? '' : ` in ${geography}`}`;
 
-  const message = await client.messages.create({
+  let fullText = '';
+  const stream = client.messages.stream({
     model: SYNTHESIS_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+  const timeoutHandle = setTimeout(() => stream.abort(), 120000);
+  stream.on('text', (chunk) => {
+    fullText += chunk;
+    onChunk?.(fullText);
+  });
 
-  return parseIndustryTrends(content.text);
+  const finalMsg = await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  console.log(`[industryTrends] streaming done length=${fullText.length} stop_reason=${finalMsg.stop_reason}`);
+
+  return parseIndustryTrends(fullText);
 }
 
 function parseIndustryTrends(raw: string): IndustryTrendsSynthesisResult {
