@@ -156,29 +156,48 @@ const EXCHANGE_EXTENSIONS = [
 
 // ── Ticker search via FMP ─────────────────────────────────────────────────────
 
+// Score how well a search result name matches the query (0–1)
+function nameMatchScore(query: string, resultName: string): number {
+  const q = query.toLowerCase().trim();
+  const n = resultName.toLowerCase().trim();
+  if (n === q) return 1.0;
+  if (n.startsWith(q) || n.includes(q)) return 0.8;
+  // Check if all words of the query appear in the result name
+  const qWords = q.split(/\s+/).filter((w) => w.length > 2);
+  const matchedWords = qWords.filter((w) => n.includes(w));
+  return qWords.length > 0 ? matchedWords.length / qWords.length : 0;
+}
+
 export async function fmpSearchTicker(companyName: string): Promise<string | null> {
   try {
     const results = await fmpFetch<FMPSearchResult[]>(
-      `/search-name?query=${encodeURIComponent(companyName)}&limit=10`
+      `/search-name?query=${encodeURIComponent(companyName)}&limit=20`
     );
     if (!results || results.length === 0) return null;
 
     // Prefer US exchanges, then major global ones
     const preferred = ['NASDAQ', 'NYSE', 'AMEX', 'XETRA', 'LSE', 'TSX'];
-    const sorted = [...results].sort((a, b) => {
-      const aIdx = preferred.findIndex((e) => a.exchange.includes(e) || a.exchangeFullName.includes(e));
-      const bIdx = preferred.findIndex((e) => b.exchange.includes(e) || b.exchangeFullName.includes(e));
-      const aPri = aIdx >= 0 ? aIdx : 99;
-      const bPri = bIdx >= 0 ? bIdx : 99;
-      return aPri - bPri;
+
+    // Score each result: name similarity (primary) + exchange preference (secondary)
+    const scored = results.map((r) => {
+      const nameSc = nameMatchScore(companyName, r.name);
+      const exchIdx = preferred.findIndex((e) => r.exchange.includes(e) || r.exchangeFullName.includes(e));
+      const exchSc = exchIdx >= 0 ? (preferred.length - exchIdx) / preferred.length : 0;
+      const usdBonus = r.currency === 'USD' ? 0.1 : 0;
+      return { r, score: nameSc * 10 + exchSc + usdBonus };
     });
 
-    // Pick first USD exchange match, else first preferred, else first result
-    const usdMatch = sorted.find((r) => r.currency === 'USD');
-    const baseTicker = (usdMatch || sorted[0]).symbol;
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0];
 
-    console.log('[FMP] Base ticker identified:', baseTicker, 'from', companyName);
-    return baseTicker;
+    // Reject if name similarity is too low (< 0.4) — likely a wrong company
+    if (nameMatchScore(companyName, best.r.name) < 0.4) {
+      console.warn('[FMP] Best match has low name similarity:', best.r.name, 'for query:', companyName);
+      return null;
+    }
+
+    console.log('[FMP] Ticker identified:', best.r.symbol, `(${best.r.name})`, 'score:', best.score.toFixed(2), 'for:', companyName);
+    return best.r.symbol;
   } catch (err) {
     console.warn('[FMP] Ticker search failed:', err);
     return null;
