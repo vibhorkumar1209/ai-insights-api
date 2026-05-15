@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
 import {
-  fmpSearchTicker, fmpSearchTickerAcrossExchanges, fmpFetchProfile, fmpFetchIncomeStatement,
+  fmpSearchTicker, fmpFetchProfile, fmpFetchIncomeStatement,
   fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
   fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
 } from './fmpFinance';
@@ -119,14 +119,6 @@ export async function runFinancialAnalysis(
         : await detectTicker(input.companyName, input.companyDomain).catch(() => null);
       console.log('[financialAnalysis] ticker detection result:', tickerResult);
 
-      // Search FMP across all exchange extensions to find the best ticker variant
-      if (tickerResult?.ticker) {
-        const exchangeTicker = await fmpSearchTickerAcrossExchanges(tickerResult.ticker).catch(() => null);
-        if (exchangeTicker) {
-          tickerResult.ticker = exchangeTicker;
-          console.log('[financialAnalysis] Using exchange-specific ticker variant:', exchangeTicker);
-        }
-      }
 
       if (input.isPublic === true) {
         // User forced public — accept even if ticker not found
@@ -281,7 +273,11 @@ async function runPublicPath(
   });
   emit(jobId, 'progress', job);
 
-  const insights = await synthesizeFinancialInsights(input, apiData, fmpContext);
+  const insights = await synthesizeFinancialInsights(input, apiData, fmpContext, (accumulated) => {
+    const synthProgress = Math.min(95, 60 + Math.floor((accumulated.length / 5000) * 35));
+    const j = update(jobId, { progress: synthProgress });
+    emit(jobId, 'progress', j);
+  });
 
   // Prefer API-sourced structured arrays; fall back to Claude-extracted arrays
   const finalRevenueHistory =
@@ -375,7 +371,11 @@ async function runPrivatePath(
   });
   emit(jobId, 'progress', job);
 
-  const privateData = await synthesizePrivateCompany(input, research);
+  const privateData = await synthesizePrivateCompany(input, research, (accumulated) => {
+    const synthProgress = Math.min(95, 70 + Math.floor((accumulated.length / 4000) * 25));
+    const j = update(jobId, { progress: synthProgress });
+    emit(jobId, 'progress', j);
+  });
 
   const completedAt = new Date().toISOString();
   job = update(jobId, {

@@ -19,21 +19,32 @@ const TIMEOUT_MS = 30_000;
 
 // ── Helper: fetch with timeout ────────────────────────────────────────────────
 
-async function fmpFetch<T>(path: string): Promise<T> {
+async function fmpFetch<T>(path: string, retries = 2): Promise<T> {
   const url = `${FMP_BASE}${path}${path.includes('?') ? '&' : '?'}apikey=${FMP_API_KEY}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: controller.signal as never });
-    if (!res.ok) throw new Error(`FMP API ${res.status}: ${res.statusText}`);
-    const data = await res.json();
-    if (data && typeof data === 'object' && 'Error Message' in (data as Record<string, unknown>)) {
-      throw new Error(`FMP API error: ${(data as Record<string, string>)['Error Message']}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: controller.signal as never });
+      if (res.status === 429) {
+        clearTimeout(timer);
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`FMP API 429: rate limit exceeded`);
+      }
+      if (!res.ok) throw new Error(`FMP API ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      if (data && typeof data === 'object' && 'Error Message' in (data as Record<string, unknown>)) {
+        throw new Error(`FMP API error: ${(data as Record<string, string>)['Error Message']}`);
+      }
+      return data as T;
+    } finally {
+      clearTimeout(timer);
     }
-    return data as T;
-  } finally {
-    clearTimeout(timer);
   }
+  throw new Error('FMP API: max retries exceeded');
 }
 
 // ── Format helpers ────────────────────────────────────────────────────────────

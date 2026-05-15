@@ -862,7 +862,8 @@ function createFallbackInsights(company: string, yahooData: Partial<FinancialAna
 export async function synthesizeFinancialInsights(
   input: FinancialAnalysisInput,
   yahooData: Partial<FinancialAnalysisResult>,
-  parallelResearch: string
+  parallelResearch: string,
+  onChunk?: (accumulated: string) => void
 ): Promise<FinancialInsightsPayload> {
   const hasParallelResearch = !isEmptyResearch(parallelResearch);
 
@@ -1011,40 +1012,28 @@ Extraction rules:
   * Ensure currency consistency: use the company's reporting currency (${yahooData.currency || 'USD'}) for all revenue values.
 - For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures from known sources. NEVER create synthetic analysis or made-up insights.`;
 
-  // Retry logic with fallback: attempt up to 2 times, then return fallback data
-  let message;
+  // Stream with retry — keeps SSE alive, avoids 90s blocking timeout
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      // Add 90-second timeout for synthesis call (Claude can be slow)
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Financial synthesis timeout (90s)')), 90000)
-      );
+      let fullText = '';
+      const stream = client.messages.stream({
+        model: SYNTHESIS_MODEL,
+        max_tokens: 4000,
+        temperature: 0.1,
+        messages: [{ role: 'user', content: userPrompt }],
+        system: systemPrompt,
+      });
+      const timeoutHandle = setTimeout(() => stream.abort(), 120000);
+      stream.on('text', (chunk) => { fullText += chunk; onChunk?.(fullText); });
+      await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
 
-      message = await Promise.race([
-        client.messages.create({
-          model: SYNTHESIS_MODEL,
-          max_tokens: 4000, // Increased to allow complete JSON response
-          temperature: 0.1, // Slightly increased from 0 to allow better JSON formatting
-          messages: [{ role: 'user', content: userPrompt }],
-          system: systemPrompt,
-        }),
-        timeoutPromise,
-      ]);
-
-      const content = message.content[0];
-      if (content.type !== 'text') throw new Error('Unexpected response type');
-
-      const result = parseFinancialInsights(content.text);
+      const result = parseFinancialInsights(fullText);
       console.log('[synthesizeFinancialInsights] Successfully synthesized insights');
       return result;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.warn(`[synthesizeFinancialInsights] Attempt ${attempt}/2 failed:`, errMsg);
-
-      if (attempt < 2) {
-        // 2-second backoff before retry
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
@@ -1150,7 +1139,8 @@ interface PrivateCompanyPayload {
 
 export async function synthesizePrivateCompany(
   input: FinancialAnalysisInput,
-  research: string
+  research: string,
+  onChunk?: (accumulated: string) => void
 ): Promise<PrivateCompanyPayload> {
   const hasResearch = !isEmptyResearch(research);
 
@@ -1193,17 +1183,18 @@ Return a JSON object with EXACTLY this structure:
   }
 }`;
 
-  const message = await client.messages.create({
+  let fullText = '';
+  const stream = client.messages.stream({
     model: SYNTHESIS_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
+  const timeoutHandle = setTimeout(() => stream.abort(), 120000);
+  stream.on('text', (chunk) => { fullText += chunk; onChunk?.(fullText); });
+  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  return parsePrivateCompany(content.text);
+  return parsePrivateCompany(fullText);
 }
 
 function parsePrivateCompany(raw: string): PrivateCompanyPayload {
