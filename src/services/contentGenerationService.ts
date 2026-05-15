@@ -82,7 +82,12 @@ export async function runContentGeneration(
     });
     emit(jobId, 'progress', jobs.get(jobId));
 
-    const result = await synthesizeContent(input);
+    const estimatedLen = input.wordCount * 6; // ~6 chars per word in JSON
+    const result = await synthesizeContent(input, (accumulated) => {
+      const p = Math.min(95, 10 + Math.floor((accumulated.length / estimatedLen) * 85));
+      updateJob(jobId, { progress: p, currentStep: 'Writing content…' });
+      emit(jobId, 'progress', jobs.get(jobId));
+    });
 
     updateJob(jobId, {
       status: 'complete',
@@ -90,6 +95,7 @@ export async function runContentGeneration(
       title: result.title,
       content: result.content,
       hashtags: result.hashtags,
+      charts: result.charts,
       completedAt: new Date().toISOString(),
     });
 

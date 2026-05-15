@@ -3013,71 +3013,95 @@ Example: ["Segment A","Segment B","Segment C",...]`,
 export async function synthesizeContent(
   input: ContentGenerationInput,
   onChunk?: (accumulated: string) => void
-): Promise<{ title: string; content: string; hashtags?: string[] }> {
+): Promise<{ title: string; content: string; hashtags?: string[]; charts?: Array<{ title: string; type: 'bar' | 'line'; data: Array<{ label: string; value: number }>; unit?: string }> }> {
   const client = initializeClient();
 
-  const voiceLabel = input.voice === 'first_person' ? 'first person' : 'third person';
   const toneLabel = input.tone === 'professional' ? 'professional' : 'smart casual';
   const perspectiveLabel = input.perspective === 'practitioner' ? 'practitioner' : 'analyst';
 
-  let industryName = '';
-  let dataContext = '';
+  if (!input.industryReportData) throw new Error('industryReportData is required');
+  const d = input.industryReportData;
+  const industryName = d.query;
 
-  if (input.moduleType === 'industry-blog' && input.industryTrendsData) {
-    const d = input.industryTrendsData;
-    industryName = d.industry;
-    const geo = d.geography ? ` (${d.geography})` : '';
-    const bLines = (d.businessTrends || [])
-      .map((t: { trend: string; description: string; impact?: string }) => `- ${t.trend}: ${t.description}${t.impact ? ` [Impact: ${t.impact}]` : ''}`)
-      .join('\n');
-    const tLines = (d.techTrends || [])
-      .map((t: { trend: string; description: string; impact?: string }) => `- ${t.trend}: ${t.description}${t.impact ? ` [Impact: ${t.impact}]` : ''}`)
-      .join('\n');
-    dataContext = `Industry: ${industryName}${geo}\n\nBusiness Trends:\n${bLines || 'None'}\n\nTechnology Trends:\n${tLines || 'None'}`;
-  } else if (input.moduleType === 'industry-thought-leadership' && input.industryReportData) {
-    const d = input.industryReportData;
-    industryName = d.query;
-    const execSummary = d.executiveSummary ? `Executive Summary:\n${d.executiveSummary}\n\n` : '';
-    const sectionLines = (d.sections || [])
-      .map((s: { id: string; title: string; bodyParagraphs?: string[] }) => `## ${s.title}\n${(s.bodyParagraphs || []).map((p: string) => `- ${p}`).join('\n')}`)
-      .join('\n\n');
-    dataContext = `Industry/Topic: ${industryName}\n\n${execSummary}Report Sections:\n${sectionLines || 'None'}`;
+  // Build rich data context from report sections (include tables if present)
+  const execSummary = d.executiveSummary ? `Executive Summary:\n${d.executiveSummary}\n\n` : '';
+  const sectionLines = (d.sections || [])
+    .map((s) => {
+      const body = (s.bodyParagraphs || []).map((p) => `- ${p}`).join('\n');
+      const table = s.keyTable && s.keyTable.length > 0
+        ? '\nKey Data:\n' + s.keyTable.map((r) => `  ${r.label}: ${r.value}${r.previousValue ? ` (prev: ${r.previousValue})` : ''}`).join('\n')
+        : '';
+      return `## ${s.title}\n${body}${table}`;
+    })
+    .join('\n\n');
+  const dataContext = `Industry/Topic: ${industryName}\n\n${execSummary}Report Sections:\n${sectionLines || 'None'}`;
+
+  let userPrompt: string;
+
+  if (input.moduleType === 'industry-blog') {
+    userPrompt = `Write a ${input.wordCount}-word industry blog post about "${industryName}" in third-person voice.
+Tone: ${toneLabel}. Perspective: ${perspectiveLabel}.
+Draw on the industry report data below. Include specific statistics, trends and insights from the data. End with 5-8 relevant hashtags.
+
+Source data:
+${dataContext}
+
+Output ONLY valid JSON (no markdown fences):
+{ "title": "...", "content": "...", "hashtags": ["#tag1", ...] }`;
+  } else {
+    userPrompt = `Write a ${input.wordCount}-word thought leadership article about "${industryName}" in third-person analytical voice.
+Tone: ${toneLabel}. Perspective: ${perspectiveLabel}.
+Requirements:
+- Write for senior business leaders and C-suite executives
+- Use a structured format with clear section headings (use markdown ## for headings)
+- Include AT LEAST 2 markdown tables showing key data comparisons, metrics or trends from the report
+- Be specific: cite figures, percentages, market sizes from the source data
+- Forward-looking with strategic implications
+
+Source data:
+${dataContext}
+
+Also generate 2-3 charts from the data. Each chart has a title, type (bar or line), array of {label, value} data points, and optional unit.
+
+Output ONLY valid JSON (no markdown fences):
+{
+  "title": "...",
+  "content": "... (markdown with ## headings and | tables) ...",
+  "charts": [
+    { "title": "...", "type": "bar", "data": [{"label": "...", "value": 0}], "unit": "%" }
+  ]
+}`;
   }
-
-  const userPrompt =
-    input.moduleType === 'industry-blog'
-      ? `Write a ${input.wordCount}-word industry blog post about ${industryName} based on the following trends data.\nVoice: ${voiceLabel}. Tone: ${toneLabel}. Perspective: ${perspectiveLabel}.\nInclude the actual trends as insights. End with 5-8 relevant hashtags.\n\nSource data:\n${dataContext}\n\nOutput JSON: { "title": "...", "content": "...", "hashtags": ["#tag1", ...] }`
-      : `Write a ${input.wordCount}-word thought leadership article about ${industryName} based on the following industry report data.\nVoice: ${voiceLabel}. Tone: ${toneLabel}. Perspective: ${perspectiveLabel}.\nMake it compelling and insightful for senior business leaders.\n\nSource data:\n${dataContext}\n\nOutput JSON: { "title": "...", "content": "..." }`;
 
   let accumulated = '';
 
   const stream = client.messages.stream({
     model: SYNTHESIS_MODEL,
-    max_tokens: 2048,
-    system:
-      'You are a professional content writer specialising in industry analysis. Output ONLY valid JSON. No markdown fences.',
+    max_tokens: input.wordCount > 1000 ? 6000 : 4000,
+    system: 'You are a senior industry analyst and content strategist. Output ONLY valid JSON. No markdown fences, no text outside the JSON object.',
     messages: [{ role: 'user', content: userPrompt }],
   });
 
   for await (const chunk of stream) {
-    if (
-      chunk.type === 'content_block_delta' &&
-      chunk.delta.type === 'text_delta'
-    ) {
+    if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
       accumulated += chunk.delta.text;
       onChunk?.(accumulated);
     }
   }
 
-  // Strip markdown fences if present
   const cleaned = accumulated.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
+  // Brace-match fallback for partial JSON
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  const jsonStr = match ? match[0] : cleaned;
+
   try {
-    const parsed = JSON.parse(cleaned) as { title?: string; content?: string; hashtags?: string[] };
+    const parsed = JSON.parse(jsonStr) as { title?: string; content?: string; hashtags?: string[]; charts?: Array<{ title: string; type: 'bar' | 'line'; data: Array<{ label: string; value: number }>; unit?: string }> };
     return {
       title: parsed.title || '',
       content: parsed.content || '',
       hashtags: parsed.hashtags,
+      charts: parsed.charts,
     };
   } catch {
     console.error('[synthesizeContent] JSON parse failed, using raw text as content');

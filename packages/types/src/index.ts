@@ -864,20 +864,22 @@ export interface TechnologyHeatMapResult {
 
 // ── Content Generation (Industry Blog & Thought Leadership) ──────────────────
 
+export interface ContentChartDataPoint { label: string; value: number }
+export interface ContentChart {
+  title: string;
+  type: 'bar' | 'line';
+  data: ContentChartDataPoint[];
+  unit?: string;
+}
+
 export interface ContentGenerationInput {
   moduleType: 'industry-blog' | 'industry-thought-leadership';
-  industryTrendsData?: {
-    industry: string;
-    geography?: string;
-    businessTrends?: Array<{ trend: string; description: string; impact?: string }>;
-    techTrends?: Array<{ trend: string; description: string; impact?: string }>;
-  };
   industryReportData?: {
     query: string;
     executiveSummary?: string;
-    sections?: Array<{ id: string; title: string; bodyParagraphs?: string[] }>;
+    sections?: Array<{ id: string; title: string; bodyParagraphs?: string[]; keyTable?: Array<{ label: string; value: string; previousValue?: string }> }>;
   };
-  voice: 'first_person' | 'third_person';
+  voice: 'third_person';
   tone: 'professional' | 'smart_casual';
   perspective: 'practitioner' | 'analyst';
   wordCount: number;
@@ -894,5 +896,6 @@ export interface ContentGenerationResult {
   content?: string;
   hashtags?: string[];
   title?: string;
+  charts?: ContentChart[];
 }
 
