@@ -965,10 +965,10 @@ Return a single JSON object with EXACTLY this structure:
     "Bullet 4: any notable one-off events affecting recent revenue or margins"
   ],
   "segmentRevenue": [
-    { "segment": "Segment Name", "revenue": "$X.XB", "percentage": 42.5, "yoyGrowth": "+8.2%" }
+    { "segment": "Segment Name", "revenue": "CURRENCY_X.XB", "percentage": 42.5, "yoyGrowth": "+8.2%" }
   ],
   "geoRevenue": [
-    { "region": "Americas", "revenue": "$X.XB", "percentage": 55.0, "yoyGrowth": "+8.2%" }
+    { "region": "Americas", "revenue": "CURRENCY_X.XB", "percentage": 55.0, "yoyGrowth": "+8.2%" }
   ],
   "segmentInsight": "3-5 sentences on segment mix — which segments are growing, which are declining, and what the mix shift means strategically. Set to null if no segment data available.",
   "geoInsight": "3-5 sentences on geographic mix — regional growth rates, concentration risk, and international expansion signals. Set to null if no geo data available.",
@@ -1004,13 +1004,12 @@ Extraction rules:
 - plStatementExtracted / balanceSheetExtracted / cashFlowExtracted: 8-15 key rows. MUST include BOTH current year ("value") AND previous year ("previousValue") for every data row. Include "yoy" percentage change where calculable. isSection=true for category headers (value=""). isBold=true for subtotals/totals. The "value" field is the most recent fiscal year; "previousValue" is the year before that. MUST be from actual data sources, never invented.
 - Per the Extraction Status above, set an extracted array to [] when the Finance API data is already available.
 - For segmentRevenue and geoRevenue:
-  * PRIMARY SOURCE: If FMP data is provided in the "Additional Research" section labeled "FMP Segment Revenue Data" or "FMP Geographic Revenue Data", parse and convert it to the required format (segment/region, revenue, percentage, yoyGrowth).
-  * FALLBACK: For well-known public companies (especially Fortune 500), use your training knowledge to populate segmentRevenue and geoRevenue from your knowledge cutoff. Do NOT return empty arrays for major companies unless genuinely unavailable.
-  * CRITICAL: Only use segment/geo data you are confident about from your knowledge. Never invent segment names or revenues. If unsure, return [].
-  * Segment data MUST use the company's actual business segment names (not generic names). For automotive: "Vehicles", "Financial Services", "Software", etc. For tech: "Cloud", "Software", "Hardware", etc.
-  * Geographic data MUST use actual regions: "North America", "Europe", "Asia-Pacific", "China", "India", etc.
-  * Return [] only if the company is obscure or private.
-  * Ensure currency consistency: use the company's reporting currency (${yahooData.currency || 'USD'}) for all revenue values.
+  * PRIMARY SOURCE: If research is provided in "Additional Research" labeled "FMP Segment Revenue Data", "FMP Geographic Revenue Data", or "Segment & Geographic Revenue Research", parse it into the required format (segment/region, revenue formatted in reporting currency, percentage, yoyGrowth).
+  * FALLBACK: For any major globally listed company (not just US Fortune 500 — this includes Indian IT firms like TCS/Infosys/Wipro, Asian conglomerates, European multinationals, etc.), use your training knowledge to populate segmentRevenue and geoRevenue. Do NOT return empty arrays for well-known companies.
+  * Return [] ONLY if the company is genuinely obscure, micro-cap, or private.
+  * Segment names MUST be the company's official segment names from their annual reports.
+  * Geographic regions MUST be the company's official geographic breakdown (e.g. TCS uses: Americas, Europe, India, Asia-Pacific, MEA, Latin America).
+  * CRITICAL currency rule: ALL revenue values in segmentRevenue and geoRevenue MUST use ${yahooData.currency || 'USD'} — never default to "$" if the reporting currency is not USD. E.g. for INR use "₹2.45T", for EUR use "€12.3B", for JPY use "¥850B".
 - For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures from known sources. NEVER create synthetic analysis or made-up insights.`;
 
   // Stream with retry — keeps SSE alive, avoids 90s blocking timeout

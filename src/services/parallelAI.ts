@@ -569,6 +569,40 @@ Cite specific data points, names, and sources throughout. State "Not publicly di
 }
 
 
+// ── Public Company Segment & Geographic Revenue Research ────────────────────
+// Called when FMP has no segment/geo data (common for non-US listed companies)
+
+export async function researchCompanySegments(
+  companyName: string,
+  ticker: string,
+  currency: string
+): Promise<string> {
+  const query = `
+Research the latest annual revenue breakdown for "${companyName}" (ticker: ${ticker}, reporting currency: ${currency}).
+
+Find and report:
+1. REVENUE BY BUSINESS SEGMENT — list each segment with:
+   - Segment name (official name from annual report)
+   - Revenue amount in ${currency}
+   - % of total revenue
+   - YoY growth %
+   Source: most recent annual report or investor presentation
+
+2. REVENUE BY GEOGRAPHY — list each region/country with:
+   - Region name
+   - Revenue amount in ${currency}
+   - % of total revenue
+   - YoY growth %
+   Source: most recent annual report or investor presentation
+
+Use the company's official annual report, earnings release, or investor day presentation as the primary source.
+State the fiscal year this data is from.
+Do NOT invent or estimate figures — only report what is officially disclosed.
+`.trim();
+
+  return runResearch(query, 'base');
+}
+
 // ── Private Company Research ──────────────────────────────────────────────────
 
 export async function researchPrivateCompany(

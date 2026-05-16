@@ -6,7 +6,7 @@ import {
   fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
   fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
 } from './fmpFinance';
-import { researchPrivateCompany } from './parallelAI';
+import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
@@ -230,6 +230,21 @@ async function runPublicPath(
     // Extract parsed segment/geo data for direct use in frontend
     const segmentRevenue = segmentData?.parsed && segmentData.parsed.length > 0 ? segmentData.parsed : undefined;
     const geoRevenue = geoData?.parsed && geoData.parsed.length > 0 ? geoData.parsed : undefined;
+
+    // When FMP has no segment/geo data (common for non-US companies), run a targeted
+    // Parallel.AI search so Claude has real source material rather than guessing
+    if (!segmentRevenue && !geoRevenue && ticker) {
+      const currency = incomeData?.currency || 'USD';
+      try {
+        const segResearch = await researchCompanySegments(input.companyName, ticker, currency);
+        if (segResearch && segResearch.trim().length > 50) {
+          fmpContext += `\n### Segment & Geographic Revenue Research\n${segResearch}\n`;
+          console.log('[financialAnalysis] Segment/geo research retrieved via Parallel.AI for:', ticker);
+        }
+      } catch (err) {
+        console.warn('[financialAnalysis] Segment research failed (non-blocking):', err instanceof Error ? err.message : err);
+      }
+    }
 
     // FMP is considered successful if we got at least income statement data
     if (incomeData) {
