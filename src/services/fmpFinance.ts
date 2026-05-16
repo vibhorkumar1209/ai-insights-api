@@ -188,12 +188,32 @@ const EXCHANGE_EXTENSIONS = [
 
 // ── Ticker search via FMP ─────────────────────────────────────────────────────
 
+// Returns true if query looks like an acronym (2-6 uppercase letters, no spaces)
+function isAcronym(q: string): boolean {
+  return /^[A-Z]{2,6}$/.test(q.trim());
+}
+
+// Check if query is an acronym formed from the initials of the result name
+// e.g. "TCS" matches "Tata Consultancy Services" (T+C+S)
+function acronymMatchesName(query: string, name: string): boolean {
+  const q = query.toUpperCase().trim();
+  const words = name.trim().split(/\s+/).filter((w) => /[A-Za-z]/.test(w[0]));
+  const initials = words.map((w) => w[0].toUpperCase()).join('');
+  // full initials match
+  if (initials === q) return true;
+  // prefix match (e.g. "HCL" from "HCL Technologies Ltd")
+  if (initials.startsWith(q) && q.length >= 2) return true;
+  return false;
+}
+
 // Score how well a search result name matches the query (0–1)
 function nameMatchScore(query: string, resultName: string): number {
   const q = query.toLowerCase().trim();
   const n = resultName.toLowerCase().trim();
   if (n === q) return 1.0;
   if (n.startsWith(q) || n.includes(q)) return 0.8;
+  // Acronym detection: "TCS" → "Tata Consultancy Services"
+  if (isAcronym(query) && acronymMatchesName(query, resultName)) return 0.85;
   // Check if all words of the query appear in the result name
   const qWords = q.split(/\s+/).filter((w) => w.length > 2);
   const matchedWords = qWords.filter((w) => n.includes(w));
@@ -207,23 +227,22 @@ export async function fmpSearchTicker(companyName: string): Promise<string | nul
     );
     if (!results || results.length === 0) return null;
 
-    // Prefer US exchanges, then major global ones
-    const preferred = ['NASDAQ', 'NYSE', 'AMEX', 'XETRA', 'LSE', 'TSX'];
-
-    // Score each result: name similarity (primary) + exchange preference (secondary)
+    // Score each result: name similarity is primary signal.
+    // Exchange preference is a tiebreaker only — strong name match wins regardless of exchange.
+    const MAJOR_EXCHANGES = ['NASDAQ', 'NYSE', 'AMEX', 'LSE', 'NSE', 'BSE', 'TSX', 'XETRA', 'TSE', 'HKEX', 'ASX'];
     const scored = results.map((r) => {
       const nameSc = nameMatchScore(companyName, r.name);
-      const exchIdx = preferred.findIndex((e) => r.exchange.includes(e) || r.exchangeFullName.includes(e));
-      const exchSc = exchIdx >= 0 ? (preferred.length - exchIdx) / preferred.length : 0;
-      const usdBonus = r.currency === 'USD' ? 0.1 : 0;
-      return { r, score: nameSc * 10 + exchSc + usdBonus };
+      const exchIdx = MAJOR_EXCHANGES.findIndex((e) => r.exchange.includes(e) || r.exchangeFullName?.includes(e));
+      // Exchange is a small tiebreaker (max 0.5), name match dominates (max 8.5)
+      const exchSc = exchIdx >= 0 ? (MAJOR_EXCHANGES.length - exchIdx) / (MAJOR_EXCHANGES.length * 2) : 0;
+      return { r, nameSc, score: nameSc * 8.5 + exchSc };
     });
 
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
 
-    // Reject if name similarity is too low (< 0.4) — likely a wrong company
-    if (nameMatchScore(companyName, best.r.name) < 0.4) {
+    // Reject if name similarity is too low (< 0.35) — likely a wrong company
+    if (best.nameSc < 0.35) {
       console.warn('[FMP] Best match has low name similarity:', best.r.name, 'for query:', companyName);
       return null;
     }
@@ -232,6 +251,21 @@ export async function fmpSearchTicker(companyName: string): Promise<string | nul
     return best.r.symbol;
   } catch (err) {
     console.warn('[FMP] Ticker search failed:', err);
+    return null;
+  }
+}
+
+// Domain-based ticker lookup — most precise when user provides company website
+export async function fmpSearchByDomain(domain: string): Promise<string | null> {
+  try {
+    // Normalise: strip protocol, www, trailing slashes
+    const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+    const results = await fmpFetch<FMPProfile[]>(`/v4/company/profile?url=${encodeURIComponent(cleanDomain)}`);
+    if (!results || results.length === 0) return null;
+    const hit = results[0];
+    console.log('[FMP] Domain lookup found:', hit.symbol, `(${hit.companyName}) via ${cleanDomain}`);
+    return hit.symbol || null;
+  } catch {
     return null;
   }
 }

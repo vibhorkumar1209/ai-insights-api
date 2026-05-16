@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
 import {
-  fmpSearchTicker, fmpFetchProfile, fmpFetchIncomeStatement,
+  fmpSearchTicker, fmpSearchByDomain, fmpFetchProfile, fmpFetchIncomeStatement,
   fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
   fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
 } from './fmpFinance';
@@ -100,7 +100,18 @@ export async function runFinancialAnalysis(
       // User explicitly forced private — skip ticker lookup
       isPublic = false;
     } else {
-      // Run FMP and Yahoo ticker searches in parallel for cross-validation
+      // ── Domain-first lookup (most precise) ──────────────────────────────────
+      // When the user provides a company website, use FMP's domain lookup as the
+      // primary signal — it directly maps tcs.com → TCS.NS, removing all ambiguity.
+      let domainTicker: string | null = null;
+      if (input.companyDomain) {
+        domainTicker = await fmpSearchByDomain(input.companyDomain).catch(() => null);
+        if (domainTicker) {
+          console.log('[financialAnalysis] Domain lookup resolved ticker:', domainTicker, 'from', input.companyDomain);
+        }
+      }
+
+      // Run FMP name search and Yahoo in parallel for cross-validation
       const [fmpResult, yahooResult] = await Promise.allSettled([
         fmpSearchTicker(input.companyName).catch(() => null),
         detectTicker(input.companyName, input.companyDomain).catch(() => null),
@@ -108,25 +119,23 @@ export async function runFinancialAnalysis(
 
       const fmpRaw = fmpResult.status === 'fulfilled' ? fmpResult.value : null;
       const yahooTicker = yahooResult.status === 'fulfilled' ? yahooResult.value : null;
-
-      // Validate FMP ticker: must be 1-5 alphanumeric chars
       const fmpTicker = (fmpRaw && /^[A-Z0-9.]{1,8}$/.test(fmpRaw)) ? fmpRaw : null;
 
-      // Cross-validation: if both found a ticker, prefer Yahoo when they disagree
-      // Yahoo is better at brand names (Google → GOOGL, not GOOP)
-      // FMP is used for data fetching so we prefer a ticker that FMP can actually serve
+      // Priority: domain lookup > Yahoo (good at brand names) > FMP name search
       let resolvedTicker: string | undefined;
       let resolvedExchange: string | undefined;
 
-      if (yahooTicker?.ticker) {
-        // Yahoo found something — use it (it's better at brand name resolution)
+      if (domainTicker) {
+        resolvedTicker = domainTicker;
+        resolvedExchange = yahooTicker?.exchange || '';
+        console.log('[financialAnalysis] Using domain-resolved ticker:', domainTicker);
+      } else if (yahooTicker?.ticker) {
         resolvedTicker = yahooTicker.ticker;
         resolvedExchange = yahooTicker.exchange;
         if (fmpTicker && fmpTicker !== yahooTicker.ticker) {
           console.log('[financialAnalysis] FMP suggested', fmpTicker, 'but Yahoo resolved', yahooTicker.ticker, '— using Yahoo');
         }
       } else if (fmpTicker) {
-        // Yahoo failed but FMP found something
         resolvedTicker = fmpTicker;
         resolvedExchange = '';
         console.log('[financialAnalysis] Using FMP-only ticker:', fmpTicker);

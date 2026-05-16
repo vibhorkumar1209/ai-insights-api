@@ -421,22 +421,42 @@ async function runSearch(query: string): Promise<any[]> {
   }
 }
 
+// Check if query is an acronym formed from the initials of the company name
+function acronymMatchesName(query: string, name: string): boolean {
+  const q = query.toUpperCase().trim();
+  if (!/^[A-Z]{2,6}$/.test(q)) return false;
+  const words = name.trim().split(/\s+/).filter((w) => /[A-Za-z]/.test(w[0]));
+  const initials = words.map((w) => w[0].toUpperCase()).join('');
+  return initials === q || (initials.startsWith(q) && q.length >= 2);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function scoreQuote(q: any, companyName: string, domainHint: string): number {
-  const qName   = ((q.shortname || q.longname || '') as string).toLowerCase();
-  const qSym    = ((q.symbol || '') as string).toLowerCase();
-  const nameLow = companyName.toLowerCase();
+  const fullName = ((q.shortname || q.longname || '') as string);
+  const qName    = fullName.toLowerCase();
+  const qSym     = ((q.symbol || '') as string).toLowerCase();
+  // Base symbol without exchange suffix (e.g. "tcs.ns" → "tcs")
+  const qSymBase = qSym.split('.')[0];
+  const nameLow  = companyName.toLowerCase();
   let s = 0;
 
-  if (isUSExchangeQuote(q)) s += 15;
+  // US exchange is a small tiebreaker, not a dominant signal
+  if (isUSExchangeQuote(q)) s += 8;
 
-  if (qName === nameLow) s += 30;
-  else if (qName.startsWith(nameLow.split(' ')[0])) s += 10;
-  else if (qName.includes(nameLow.split(' ')[0])) s += 5;
+  // Exact / prefix / substring name match
+  if (qName === nameLow) s += 40;
+  else if (qName.startsWith(nameLow.split(' ')[0])) s += 15;
+  else if (qName.includes(nameLow.split(' ')[0])) s += 8;
 
+  // Acronym match: "TCS" → "Tata Consultancy Services" gets a strong bonus
+  if (acronymMatchesName(companyName, fullName)) s += 30;
+
+  // Domain hint: match against base symbol AND company name
+  // Use base symbol (without exchange suffix) to avoid false positive where
+  // "tcs" hint matches Tecsys symbol "tcs" but misses TCS.NS base "tcs"
   if (domainHint) {
-    if (qSym === domainHint) s += 20;
-    if (qName.includes(domainHint)) s += 10;
+    if (qSymBase === domainHint) s += 12; // reduced — symbol match alone is weak
+    if (qName.includes(domainHint)) s += 15; // name match is stronger signal
   }
 
   return s;
