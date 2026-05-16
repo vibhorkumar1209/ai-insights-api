@@ -50,13 +50,31 @@ async function fmpFetch<T>(path: string, retries = 2): Promise<T> {
 // ── Format helpers ────────────────────────────────────────────────────────────
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', CAD: 'C$', AUD: 'A$', NZD: 'NZ$', SGD: 'S$', HKD: 'HK$', TWD: 'NT$',
-  GBP: '£', EUR: '€', CHF: 'CHF ', SEK: 'kr ', NOK: 'kr ', DKK: 'kr ',
-  INR: '₹', JPY: '¥', CNY: '¥', KRW: '₩', THB: '฿', IDR: 'Rp ',
-  BRL: 'R$', MXN: 'MX$', ARS: 'AR$', CLP: 'CL$', COP: 'CO$',
-  ZAR: 'R ', AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ', KWD: 'KWD ',
-  TRY: '₺', PLN: 'zł ', CZK: 'Kč ', HUF: 'Ft ', RUB: '₽',
-  ILS: '₪', EGP: 'E£ ', NGN: '₦', KES: 'KSh ',
+  // North America
+  USD: '$', CAD: 'C$', MXN: 'MX$',
+  // South America
+  BRL: 'R$', ARS: 'AR$', CLP: 'CL$', COP: 'CO$', PEN: 'S/ ', UYU: '$U ', VES: 'Bs. ', BOB: 'Bs. ', PYG: '₲ ', GYD: 'GY$',
+  // Europe
+  EUR: '€', GBP: '£', CHF: 'CHF ', SEK: 'kr ', NOK: 'kr ', DKK: 'kr ',
+  PLN: 'zł ', CZK: 'Kč ', HUF: 'Ft ', RON: 'lei ', BGN: 'лв ', HRK: 'kn ',
+  RSD: 'din ', UAH: '₴', RUB: '₽', TRY: '₺', ISK: 'kr ', BAM: 'KM ',
+  ALL: 'L ', MKD: 'den ', GEL: '₾', AMD: '֏ ', AZN: '₼', MDL: 'L ',
+  // Asia-Pacific
+  JPY: '¥', CNY: '¥', HKD: 'HK$', TWD: 'NT$', KRW: '₩', SGD: 'S$',
+  INR: '₹', PKR: '₨ ', BDT: '৳ ', LKR: 'Rs ', NPR: 'Rs ', BTN: 'Nu ',
+  IDR: 'Rp ', MYR: 'RM ', THB: '฿', PHP: '₱', VND: '₫', MMK: 'K ',
+  KHR: '៛ ', LAK: '₭ ', BND: 'B$', MOP: 'MOP$', MNT: '₮ ',
+  AUD: 'A$', NZD: 'NZ$', FJD: 'FJ$', PGK: 'K ', WST: 'WS$',
+  KZT: '₸ ', UZS: 'so\'m ', KGS: 'с ', TJS: 'SM ', TMT: 'T ',
+  // Middle East
+  AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ', KWD: 'KWD ', BHD: 'BD ',
+  OMR: 'OMR ', JOD: 'JD ', ILS: '₪', IRR: '﷼ ', IQD: 'IQD ', SYP: 'SP ',
+  LBP: 'LL ', YER: 'YR ',
+  // Africa
+  ZAR: 'R ', NGN: '₦', KES: 'KSh ', GHS: 'GH₵ ', EGP: 'E£ ', MAD: 'MAD ',
+  TND: 'DT ', DZD: 'DA ', ETB: 'Br ', UGX: 'USh ', TZS: 'TSh ', XOF: 'CFA ',
+  XAF: 'FCFA ', MUR: 'Rs ', RWF: 'RF ', ZMW: 'ZK ', BWP: 'P ', NAD: 'N$',
+  MZN: 'MT ', AOA: 'Kz ', CDF: 'FC ', MGA: 'Ar ',
 };
 
 function currencySymbol(currency: string): string {
