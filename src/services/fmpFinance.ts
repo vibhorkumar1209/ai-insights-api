@@ -405,7 +405,7 @@ export async function fmpFetchIncomeStatement(
 // ── Balance Sheet ─────────────────────────────────────────────────────────────
 
 export async function fmpFetchBalanceSheet(
-  symbol: string, currency = 'USD'
+  symbol: string, currency = ''
 ): Promise<FinancialStatementRow[] | null> {
   try {
     const data = await fmpFetch<FMPBalanceSheet[]>(
@@ -437,7 +437,7 @@ export async function fmpFetchBalanceSheet(
       { label: 'Retained Earnings', value: formatCurrency(cur.retainedEarnings, c), previousValue: prev ? formatCurrency(prev.retainedEarnings, c) : undefined, yoy: calcYoY(cur.retainedEarnings, prev?.retainedEarnings) },
       { label: 'Total Stockholders Equity', value: formatCurrency(cur.totalStockholdersEquity, c), previousValue: prev ? formatCurrency(prev.totalStockholdersEquity, c) : undefined, yoy: calcYoY(cur.totalStockholdersEquity, prev?.totalStockholdersEquity), isBold: true },
       { label: 'Total Liabilities & Equity', value: formatCurrency(cur.totalLiabilitiesAndTotalEquity, c), previousValue: prev ? formatCurrency(prev.totalLiabilitiesAndTotalEquity, c) : undefined, yoy: calcYoY(cur.totalLiabilitiesAndTotalEquity, prev?.totalLiabilitiesAndTotalEquity), isBold: true },
-    ].filter((r) => r.isSection || (r.value !== 'N/A' && r.value !== '$0.00' && r.value !== '$0'));
+    ].filter((r) => r.isSection || (r.value !== 'N/A' && !r.value?.match(/^-?[^\d]*0(\.00)?$/)));
   } catch (err) {
     console.warn('[FMP] Balance sheet fetch failed:', err);
     return null;
@@ -447,7 +447,7 @@ export async function fmpFetchBalanceSheet(
 // ── Cash Flow Statement ───────────────────────────────────────────────────────
 
 export async function fmpFetchCashFlow(
-  symbol: string, currency = 'USD'
+  symbol: string, currency = ''
 ): Promise<FinancialStatementRow[] | null> {
   try {
     const data = await fmpFetch<FMPCashFlow[]>(
@@ -476,7 +476,7 @@ export async function fmpFetchCashFlow(
       { label: 'SUMMARY', value: '', isSection: true },
       { label: 'Free Cash Flow', value: formatCurrency(cur.freeCashFlow, c), previousValue: prev ? formatCurrency(prev.freeCashFlow, c) : undefined, yoy: calcYoY(cur.freeCashFlow, prev?.freeCashFlow), isBold: true },
       { label: 'Net Change in Cash', value: formatCurrency(cur.netChangeInCash, c), previousValue: prev ? formatCurrency(prev.netChangeInCash, c) : undefined, isBold: true },
-    ].filter((r) => r.isSection || (r.value !== 'N/A' && r.value !== '$0.00' && r.value !== '$0'));
+    ].filter((r) => r.isSection || (r.value !== 'N/A' && !r.value?.match(/^-?[^\d]*0(\.00)?$/)));
   } catch (err) {
     console.warn('[FMP] Cash flow fetch failed:', err);
     return null;
@@ -532,7 +532,7 @@ interface FMPSegmentRevenue {
 }
 
 export async function fmpFetchSegmentRevenue(
-  symbol: string, currency = 'USD'
+  symbol: string, currency = ''
 ): Promise<{ data: any; parsed: { segment: string; revenue: string; percentage: number; yoyGrowth?: string }[] | null; currency: string } | null> {
   try {
     // Try primary endpoint: /revenue-breakdown (includes segment data)
@@ -553,18 +553,21 @@ export async function fmpFetchSegmentRevenue(
       return null;
     }
 
+    // Resolve currency from data if not explicitly provided
+    const resolvedCurrency = currency || data[0]?.reportedCurrency || 'USD';
+
     // Parse segment data into structured format
     const parsed = data
       .filter((seg: any) => seg.segment && seg.revenue)
       .map((seg: any) => ({
         segment: seg.segment || 'Unknown',
-        revenue: formatCurrency(seg.revenue, currency),
+        revenue: formatCurrency(seg.revenue, resolvedCurrency),
         percentage: typeof seg.percentage === 'number' ? seg.percentage : 0,
-        yoyGrowth: undefined, // FMP typically doesn't provide YoY for segments; Claude will add if needed
+        yoyGrowth: undefined,
       }));
 
     console.log('[FMP] Segment revenue data retrieved for', symbol, ':', data.length, 'records');
-    return { data, parsed: parsed.length > 0 ? parsed : null, currency };
+    return { data, parsed: parsed.length > 0 ? parsed : null, currency: resolvedCurrency };
   } catch (err) {
     console.warn('[FMP] Segment revenue fetch failed (expected for many companies):', symbol, '—', err instanceof Error ? err.message : err);
     return null;
@@ -585,7 +588,7 @@ interface FMPGeographicRevenue {
 }
 
 export async function fmpFetchGeographicRevenue(
-  symbol: string, currency = 'USD'
+  symbol: string, currency = ''
 ): Promise<{ data: any; parsed: { region: string; revenue: string; percentage: number; yoyGrowth?: string }[] | null; currency: string } | null> {
   try {
     // Try primary endpoint: /revenue-by-geography (includes geographic breakdown)
@@ -606,18 +609,21 @@ export async function fmpFetchGeographicRevenue(
       return null;
     }
 
+    // Resolve currency from data if not explicitly provided
+    const resolvedCurrency = currency || data[0]?.reportedCurrency || 'USD';
+
     // Parse geographic data into structured format
     const parsed = data
       .filter((geo: any) => (geo.country || geo.continent || geo.region) && geo.revenue)
       .map((geo: any) => ({
         region: geo.country || geo.continent || geo.region || 'Unknown',
-        revenue: formatCurrency(geo.revenue, currency),
+        revenue: formatCurrency(geo.revenue, resolvedCurrency),
         percentage: typeof geo.percentage === 'number' ? geo.percentage : 0,
-        yoyGrowth: undefined, // FMP typically doesn't provide YoY for geography; Claude will add if needed
+        yoyGrowth: undefined,
       }));
 
     console.log('[FMP] Geographic revenue data retrieved for', symbol, ':', data.length, 'records');
-    return { data, parsed: parsed.length > 0 ? parsed : null, currency };
+    return { data, parsed: parsed.length > 0 ? parsed : null, currency: resolvedCurrency };
   } catch (err) {
     console.warn('[FMP] Geographic revenue fetch failed (expected for many companies):', symbol, '—', err instanceof Error ? err.message : err);
     return null;
