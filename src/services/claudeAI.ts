@@ -178,6 +178,11 @@ function safeParseJsonArray(raw: string): unknown[] | null {
 // Market sizing uses base year (2025) first; other sections use current year (2026)
 const RECENCY_DIRECTIVE = 'RECENCY RULE: For market sizing sections (market_overview, market_size_by_segment): Prioritize 2025 (base year) first, then 2024, then 2023. For all other sections (market_dynamics, competition_analysis, regulatory_overview, porters_five_forces, swot, tei_analysis): Prioritize 2026 data first, then 2025, then 2024. If using data from 2023 or earlier, clearly label as "(2023 or earlier - historical context)". When conflicting data exists across years, use the most recent available year. Do NOT use pre-2023 data unless essential for historical/trend context and explicitly labeled.';
 
+const WRITING_DIRECTIVE = `WRITING RULES (apply to every word of output):
+1. NO SYNTHETIC DATA: Every figure, statistic, percentage, and fact must come from actual research, provided data, or verified training knowledge about this specific company or industry. Never invent, estimate, or fabricate numbers. If a figure is unavailable, omit it or state it is not publicly disclosed — do not fill the gap with a plausible-sounding number.
+2. NO SENTENCE HYPHENS: Do not use hyphens to join words within sentences or as connective punctuation. Write "data driven" not "data-driven", "well known" not "well-known", "cost effective" not "cost-effective". Retain hyphens only in established compound nouns where the hyphen is part of the accepted spelling (e.g. follow-up, re-enter).
+3. HUMAN LANGUAGE: Write as an experienced analyst would speak to a senior executive — direct, specific, and free of AI clichés. Banned phrases: "delve into", "leverage" (when meaning "use"), "unlock", "it is worth noting", "in the realm of", "comprehensive", "cutting-edge", "robust" (when describing solutions), "game-changer", "transformative", "holistic", "synergies", "actionable insights", "empower", "seamlessly", "it is important to note", "in today's landscape", "in conclusion". Say what you mean plainly.`;
+
 // ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
 
 import { Competitor } from '@ai-insights/types';
@@ -258,7 +263,7 @@ Include:
 
 Write in professional business language, third person. No headers, bullet points, or markdown.`,
     }],
-    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE}`,
+    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
   });
 
   const content = message.content[0];
@@ -285,7 +290,8 @@ export async function synthesizeBenchmarkingTable(
 - Never leave a cell empty — always provide a meaningful best-known answer.
 - FORMATTING: Each value field MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**SAP S/4HANA** deployed across 12 regions • **AI-powered** demand forecasting in pilot • Cloud migration **60% complete**"
 - Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
 
@@ -353,7 +359,8 @@ Rules:
 - Never leave any field empty.
 - FORMATTING: All text fields (peersBestPractice, solutionFit) MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**Real-time analytics** across supply chain • **Automated procurement** reducing cycle time by 40%"
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Create a gap analysis for "${input.targetCompany}" vs peers: ${peerNames}.
 
@@ -434,7 +441,8 @@ export async function synthesizeThemes(
 - Never produce empty fields — always provide a meaningful answer.
 - Write in natural business language without hyphens, dashes, or arrows in descriptions. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Analyse the following research on "${input.companyName}" and identify their top ${config.label}.
 
@@ -498,7 +506,8 @@ Rules:
 - Every cell must have substantive content — no vague generalities, no empty fields.
 - Write in natural business language without hyphens, dashes, or arrows. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Analyse the following research on "${input.companyName}"${input.companyDomain ? ` (website: ${input.companyDomain})` : ''} and produce a company-focused Challenges & Growth analysis.
 
@@ -893,7 +902,8 @@ Rules:
 - When extracting financial statement rows, include 8-15 key line items per statement.
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON.
 - NEVER mention that data comes from training knowledge — present all content neutrally without disclosing data sources.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   // Compact the Yahoo data for context (truncate to avoid token overflow on large datasets)
   const revenueStr = (truncateFinancialRows(yahooData.revenueHistory, 8) || [])
@@ -1150,7 +1160,8 @@ Rules:
 - Be specific with ranges: "$800M–$1.2B" not "high revenue".
 - Insights should be actionable intelligence, not generic descriptions.
 - Output ONLY valid JSON. No markdown fences.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Produce a financial profile for private company "${input.companyName}".
 
@@ -1283,7 +1294,8 @@ Otherwise, identify ${input.yourCompany}'s most relevant solutions for ${input.t
 - Confident, consultative tone. Back claims with evidence (G2/Gartner, case study metrics, analyst data).
 - Use [Client A, Fortune 500 ${input.targetIndustry} Company] when real names unavailable.
 - Derive priorities/solutions from research if not user-supplied; use them consistently.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Sales Play: "${input.yourCompany}" displacing "${input.competitorName}" at "${input.targetAccount}" (${input.targetIndustry}).
 
@@ -1394,7 +1406,8 @@ Rules:
 - Prefer direct quotes in the excerpt field when available — use quotation marks.
 - Write in natural business language without hyphens, dashes, or arrows. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Analyse the following research on "${input.companyName}"${input.companyDomain ? ` (website: ${input.companyDomain})` : ''} and produce a Key Prospective Buyers table.
 
@@ -1496,7 +1509,8 @@ Rules:
 - Description and Examples fields MUST use bullet points. Each bullet starts with "• ".
 ${examplesRule}
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON object.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const exampleTemplateBiz = isGlobal
     ? `"examples": "• Americas: Specific example with company/country name\\n• EMEA: Specific example with company/country name\\n• APAC: Specific example with company/country name"`
@@ -1713,7 +1727,7 @@ RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: 3000,  // accommodate 6-10 segments with 3-6 sub-segments each + 15-20 competitors
     temperature: 0.0,  // fully deterministic JSON generation
-    system: `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE}`,
+    system: `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1840,7 +1854,7 @@ RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: 4096,
     temperature: 0,
-    system: `You are a quantitative market sizing analyst. Produce data-grounded market estimates. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
+    system: `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -1954,7 +1968,7 @@ RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: 8192,
     temperature: 0.2,
-    system: `You are a senior market analyst producing an executive summary for C-suite readers. Be concise, impactful, and data-driven. Output ONLY valid JSON. ${RECENCY_DIRECTIVE}`,
+    system: `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -2139,7 +2153,7 @@ CRITICAL RULES:
     model: SYNTHESIS_MODEL,
     max_tokens: maxTokens,
     temperature: 0.1,  // deterministic JSON output
-    system: `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE}`,
+    system: `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -2278,7 +2292,8 @@ Rules:
 - Every topic must be specific enough that a buyer would pay $3,000–$5,000 for a standalone report.
 - Cite analyst coverage gaps and research platform data where possible.
 - Output ONLY a valid JSON array. No markdown fences, no text outside the JSON.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Based on the following research, identify ${input.numberOfTopics} ${modeLabel} niche report topics.
 
@@ -2351,7 +2366,8 @@ Rules:
 - Priority ratings must be justified by evidence.
 - Write in natural business language without hyphens, dashes, or arrows.
 - Output ONLY valid JSON. No markdown fences.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const frameworkDimensions: Record<string, string[]> = {
     'BCG Matrix': ['Stars', 'Cash Cows', 'Question Marks', 'Dogs'],
@@ -2483,7 +2499,8 @@ Rules:
 - Every segment must be distinct and non-overlapping
 - Strategic evolution must be derived from business model changes over time
 - Output ONLY valid JSON. No markdown fences.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Analyze "${companyName}" and identify their current business segments.
 
@@ -2554,7 +2571,8 @@ Rules:
 - Every narrative should clearly signal strategic intent
 - Use executive tone: crisp, insightful, no fluff
 - Output ONLY valid JSON. No markdown fences.
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Reconstruct "${companyName}"'s business timeline as a strategic narrative.
 
@@ -2613,7 +2631,7 @@ export async function synthesizeTechHeatMap(
   input: TechHeatMapInput,
   onChunk?: (accumulated: string) => void
 ): Promise<{ headline: string; rows: TechHeatMapRow[] }> {
-  const systemPrompt = `You are a technology investment analyst. Output ONLY valid JSON. No markdown fences.`;
+  const systemPrompt = `You are a technology investment analyst. Output ONLY valid JSON. No markdown fences. ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Assess technology investment levels for companies in the "${input.industry}" industry operating in "${input.geography}" over the next 6 months.
 
@@ -2712,7 +2730,8 @@ Rules:
 - Assign adoption stages 1-5: 1=minimal (<10%), 2=early (10-30%), 3=growth (30-60%), 4=widespread (60-85%), 5=dominant (85%+)
 - Provide specific vendor names, implementations, and deployment examples
 - Output ONLY valid JSON with no markdown fences
-- ${RECENCY_DIRECTIVE}`;
+- ${RECENCY_DIRECTIVE}
+- ${WRITING_DIRECTIVE}`;
 
   const truncatedCompResearch = truncateResearch(competitorResearch, 20000);
   const truncatedSegResearch = truncateResearch(industrySegmentResearch, 20000);
@@ -3120,7 +3139,7 @@ export async function synthesizeSalesPlay2(
 ): Promise<{ winThemes: SalesPlay2WinTheme[]; opportunities: SalesPlay2Opportunity[]; competitors: SalesPlay2Competitor[] }> {
   const hasResearch = !isEmptyResearch(research);
 
-  const systemPrompt = `You are an elite B2B sales strategist. Output ONLY valid JSON. No markdown fences.`;
+  const systemPrompt = `You are an elite B2B sales strategist. Output ONLY valid JSON. No markdown fences. ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Generate a Sales Play II for ${input.yourCompany} targeting ${input.targetAccount} in the ${input.targetIndustry} industry. Primary competitor to displace: ${input.competitorName}.
 ${input.strategicPriorities?.length ? `\nTarget Account Strategic Priorities:\n${input.strategicPriorities.join('\n')}` : ''}
