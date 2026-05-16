@@ -49,9 +49,23 @@ async function fmpFetch<T>(path: string, retries = 2): Promise<T> {
 
 // ── Format helpers ────────────────────────────────────────────────────────────
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', CAD: 'C$', AUD: 'A$', NZD: 'NZ$', SGD: 'S$', HKD: 'HK$', TWD: 'NT$',
+  GBP: '£', EUR: '€', CHF: 'CHF ', SEK: 'kr ', NOK: 'kr ', DKK: 'kr ',
+  INR: '₹', JPY: '¥', CNY: '¥', KRW: '₩', THB: '฿', IDR: 'Rp ',
+  BRL: 'R$', MXN: 'MX$', ARS: 'AR$', CLP: 'CL$', COP: 'CO$',
+  ZAR: 'R ', AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ', KWD: 'KWD ',
+  TRY: '₺', PLN: 'zł ', CZK: 'Kč ', HUF: 'Ft ', RUB: '₽',
+  ILS: '₪', EGP: 'E£ ', NGN: '₦', KES: 'KSh ',
+};
+
+function currencySymbol(currency: string): string {
+  return CURRENCY_SYMBOLS[currency?.toUpperCase()] ?? `${currency} `;
+}
+
 function formatCurrency(val: number | null | undefined, currency = 'USD'): string {
   if (val == null) return 'N/A';
-  const sym = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$';
+  const sym = currencySymbol(currency);
   const abs = Math.abs(val);
   const sign = val < 0 ? '-' : '';
   if (abs >= 1e12) return `${sign}${sym}${(abs / 1e12).toFixed(2)}T`;
