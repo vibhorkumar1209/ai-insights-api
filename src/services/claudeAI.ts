@@ -3201,10 +3201,37 @@ Output JSON:
 
 // ── Consulting Intelligence Synthesis ────────────────────────────────────────
 
+/**
+ * From the broad discovery text, extract the top 10 firm names that have
+ * verifiably published thought leadership on the topic.
+ */
+export async function extractTopFirmsFromDiscovery(
+  discoveryText: string,
+  topic: string
+): Promise<string[]> {
+  const response = await client.messages.create({
+    model: FAST_MODEL,
+    max_tokens: 512,
+    system: 'You extract firm names from research text. Return only a JSON array of strings. No markdown, no explanation.',
+    messages: [{
+      role: 'user',
+      content: `From the research text below, identify up to 10 consulting, advisory, or analyst firms that have verifiably published thought leadership content on "${topic}". Only include firms for which there is clear evidence of a report, white paper, article, or research piece in the text. Return a JSON array of firm names, most evidence-rich first.\n\nRESEARCH TEXT:\n${discoveryText.slice(0, 10000)}`,
+    }],
+  });
+  const raw = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const match = cleaned.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try {
+    const arr = JSON.parse(match[0]);
+    return Array.isArray(arr) ? arr.slice(0, 10) : [];
+  } catch { return []; }
+}
+
 export async function synthesiseConsultingIntelligence(
   topic: string,
   geography: string,
-  selectedFirms: string[],
+  discoveredFirms: string[],
   firmResearch: Array<{ firm: string; rawText: string }>
 ): Promise<Partial<ConsultingIntelligenceJob>> {
   const systemPrompt = `You are a senior research analyst synthesising thought leadership from top consulting and analyst firms.
@@ -3226,7 +3253,7 @@ Return a single valid JSON object with no markdown fencing.`;
     .join('\n\n');
 
   const userPrompt = `Synthesise the following consulting firm research on: "${topic}" (Geography: ${geography})
-Firms included: ${selectedFirms.join(', ')}
+Firms included: ${discoveredFirms.join(', ')}
 
 --- RESEARCH DATA ---
 ${firmResearchText.slice(0, 60000)}

@@ -17,20 +17,10 @@ const VALID_GEOGRAPHIES = [
 
 /** POST /api/consulting-intelligence — start analysis */
 router.post('/', aiLimiter, (req: Request, res: Response): void => {
-  const { topic, geography, selectedFirms } = req.body;
+  const { topic, geography } = req.body;
 
   if (!topic || typeof topic !== 'string' || !topic.trim()) {
     res.status(400).json({ error: 'topic is required' });
-    return;
-  }
-
-  if (!Array.isArray(selectedFirms) || selectedFirms.length === 0) {
-    res.status(400).json({ error: 'selectedFirms must be a non-empty array' });
-    return;
-  }
-
-  if (selectedFirms.length > 5) {
-    res.status(400).json({ error: 'Maximum 5 firms allowed' });
     return;
   }
 
@@ -41,7 +31,6 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   const jobId = createConsultingIntelligenceJob({
     topic: topic.trim().slice(0, 2000),
     geography: geoValue,
-    selectedFirms: selectedFirms.map((f: unknown) => String(f).trim()).slice(0, 5),
   });
 
   runConsultingIntelligenceAnalysis(jobId).catch((err) =>

@@ -977,18 +977,49 @@ Be thorough, data-driven, and consultancy-grade in your analysis. Avoid generic 
   }
 }
 
-// ── Consulting Intelligence Firm Research ─────────────────────────────────────
+// ── Consulting Intelligence: Discovery + Per-firm Deep Research ───────────────
 
+/**
+ * Broad discovery query — finds which firms have published thought leadership
+ * on the topic. Returns raw text listing firms, reports, themes.
+ */
+export async function discoverConsultingTLFirms(
+  topic: string,
+  geography: string
+): Promise<string> {
+  const query = `
+Top consulting firms analyst firms advisory organizations published thought leadership reports white papers research "${topic}" ${geography} 2023 2024 2025.
+Include: McKinsey BCG Bain Deloitte PwC EY KPMG Gartner Forrester IDC Accenture IBM Consulting Capgemini Everest Group HFS Research Infosys Consulting Oliver Wyman Roland Berger Kearney Bain BCG World Economic Forum MIT Sloan HBR CB Insights PitchBook Oxford Economics.
+For each firm found: list report/article titles, key insights, strategic themes, statistics, URLs if available.
+Focus on verifiable published content only. Include publication dates.
+`.trim();
+
+  try {
+    const result = await runResearch(query, 'base');
+    return result.slice(0, 15000);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Discovery failed';
+    return `Discovery failed for topic "${topic}": ${msg}`;
+  }
+}
+
+/**
+ * Deep per-firm research once the firm has been identified as having content.
+ */
 export async function researchConsultingFirmTL(
   firm: string,
   topic: string,
   geography: string
 ): Promise<string> {
-  const query = `${firm} thought leadership research report "${topic}" ${geography} strategic insights market analysis 2024 2025`;
+  const query = `
+"${firm}" published thought leadership research report white paper "${topic}" ${geography} 2023 2024 2025.
+Extract: key insights, strategic recommendations, market statistics, CAGR figures, adoption rates, named executives quoted, report titles, publication dates, direct URLs.
+Only include content actually published by ${firm}. Do not extrapolate or invent.
+`.trim();
 
   try {
     const result = await runResearch(query, 'base');
-    return result.slice(0, 8000);
+    return result.slice(0, 10000);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Research failed';
     return `Research unavailable for ${firm} on topic "${topic}": ${msg}`;

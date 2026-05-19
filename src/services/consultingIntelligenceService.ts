@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ConsultingIntelligenceJob } from '@ai-insights/types';
-import { researchConsultingFirmTL } from './parallelAI.js';
-import { synthesiseConsultingIntelligence } from './claudeAI.js';
+import { discoverConsultingTLFirms, researchConsultingFirmTL } from './parallelAI.js';
+import { extractTopFirmsFromDiscovery, synthesiseConsultingIntelligence } from './claudeAI.js';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -50,7 +50,6 @@ function update(jobId: string, patch: Partial<ConsultingIntelligenceJob>): Consu
 export function createConsultingIntelligenceJob(params: {
   topic: string;
   geography: string;
-  selectedFirms: string[];
 }): string {
   const jobId = uuidv4();
   jobs.set(jobId, {
@@ -59,7 +58,6 @@ export function createConsultingIntelligenceJob(params: {
     progress: 0,
     topic: params.topic,
     geography: params.geography,
-    selectedFirms: params.selectedFirms,
     createdAt: new Date().toISOString(),
   });
   return jobId;
@@ -71,31 +69,49 @@ export function getConsultingIntelligenceJob(jobId: string): ConsultingIntellige
 
 // ── Main orchestrator ──────────────────────────────────────────────────────────
 
-export async function runConsultingIntelligenceAnalysis(
-  jobId: string
-): Promise<void> {
+export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) throw new Error(`Job ${jobId} not found`);
 
-  const { topic, geography, selectedFirms } = job;
+  const { topic, geography } = job;
 
   try {
-    // Step 1: Research each firm via Parallel.AI (parallel)
+    // ── Step 1: Broad discovery query ──────────────────────────────────────────
     let current = update(jobId, {
       status: 'researching',
       progress: 5,
-      currentStep: `Researching ${selectedFirms.length} consulting firms via Parallel.AI…`,
+      currentStep: 'Scanning thought leadership landscape…',
     });
     emit(jobId, 'progress', current);
 
-    const progressPerFirm = Math.floor(75 / selectedFirms.length);
+    const discoveryText = await discoverConsultingTLFirms(topic, geography);
 
-    const firmResearchPromises = selectedFirms.map(async (firm, idx) => {
+    current = update(jobId, { progress: 20, currentStep: 'Identifying top firms with published content…' });
+    emit(jobId, 'progress', current);
+
+    // ── Step 2: Extract top 10 firms from discovery ────────────────────────────
+    const discoveredFirms = await extractTopFirmsFromDiscovery(discoveryText, topic);
+
+    if (discoveredFirms.length === 0) {
+      throw new Error('No firms with verifiable thought leadership found for this topic. Try broadening the topic or geography.');
+    }
+
+    current = update(jobId, {
+      progress: 25,
+      discoveredFirms,
+      currentStep: `Found ${discoveredFirms.length} firms — conducting deep research…`,
+    });
+    emit(jobId, 'progress', current);
+
+    // ── Step 3: Deep per-firm research in parallel ─────────────────────────────
+    const progressPerFirm = Math.floor(50 / discoveredFirms.length);
+
+    const firmResearchPromises = discoveredFirms.map(async (firm, idx) => {
       const rawText = await researchConsultingFirmTL(firm, topic, geography);
-      const newProgress = Math.min(5 + progressPerFirm * (idx + 1), 80);
+      const newProgress = Math.min(25 + progressPerFirm * (idx + 1), 75);
       current = update(jobId, {
         progress: newProgress,
-        currentStep: `Researched: ${firm}`,
+        currentStep: `Researching: ${firm}`,
       });
       emit(jobId, 'progress', current);
       return { firm, rawText };
@@ -103,17 +119,17 @@ export async function runConsultingIntelligenceAnalysis(
 
     const firmResearch = await Promise.all(firmResearchPromises);
 
-    // Step 2: Synthesise via Claude
+    // ── Step 4: Claude synthesis ───────────────────────────────────────────────
     current = update(jobId, {
       status: 'synthesising',
-      progress: 82,
-      currentStep: 'Synthesising insights across all firms…',
+      progress: 78,
+      currentStep: `Synthesising insights from ${discoveredFirms.length} firms…`,
     });
     emit(jobId, 'progress', current);
 
-    const results = await synthesiseConsultingIntelligence(topic, geography, selectedFirms, firmResearch);
+    const results = await synthesiseConsultingIntelligence(topic, geography, discoveredFirms, firmResearch);
 
-    // Done
+    // ── Done ───────────────────────────────────────────────────────────────────
     current = update(jobId, {
       status: 'complete',
       progress: 100,
