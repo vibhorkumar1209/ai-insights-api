@@ -948,3 +948,85 @@ export interface SalesPlay2Result {
   competitors?: SalesPlay2Competitor[];
 }
 
+// ── Consulting Intelligence ───────────────────────────────────────────────────
+
+export interface TLFirmInsight {
+  firmName: string;
+  keyThemes: string[];
+  keyInsights: string[];
+  strategicImplications: string[];
+  marketOutlook: string;
+  keyStatistics: string[];
+  useCases: string[];
+  risks: string[];
+  sourceUrl?: string;
+  reportTitle?: string;
+  publicationDate?: string;
+}
+
+export interface TLMetric {
+  metric: string;
+  value: string;
+  sourceFirm: string;
+  geography: string;
+  year: string;
+  sourceUrl?: string;
+}
+
+export interface TLInsight {
+  insight: string;
+  sourceFirm: string;
+  report: string;
+  publishedDate: string;
+  url?: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface TLTheme {
+  theme: string;
+  frequency: number;
+  strategicUrgency: 'high' | 'medium' | 'low';
+  businessImpact: 'high' | 'medium' | 'low';
+  description: string;
+}
+
+export interface TLChartSpec {
+  type: 'bar' | 'line' | 'table';
+  title: string;
+  description: string;
+  data: Array<Record<string, string | number>>;
+  xKey?: string;
+  yKey?: string;
+  sourceFirms: string[];
+  dataQuality: 'complete' | 'partial' | 'insufficient';
+}
+
+export interface ConsultingIntelligenceJob {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesising' | 'complete' | 'error';
+  progress?: number;
+  currentStep?: string;
+  topic: string;
+  geography: string;
+  selectedFirms: string[];
+  executiveSummary?: {
+    topInsights: string[];
+    emergingTrends: string[];
+    consensusViewpoints: string[];
+    contrarianOpinions: string[];
+    strategicImplications: string[];
+    futureOutlook: string;
+  };
+  firmAnalyses?: TLFirmInsight[];
+  comparativeMatrix?: Array<Record<string, string>>;
+  emergingThemes?: TLTheme[];
+  quantitativeEvidence?: TLMetric[];
+  sourceAttribution?: TLInsight[];
+  charts?: TLChartSpec[];
+  strategicRecommendations?: string[];
+  researchMethodology?: string;
+  error?: string;
+  createdAt?: string;
+  completedAt?: string;
+}
+

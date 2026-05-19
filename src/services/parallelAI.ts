@@ -976,3 +976,21 @@ Be thorough, data-driven, and consultancy-grade in your analysis. Avoid generic 
     return `Research unavailable for ${framework} analysis of ${industryOrSegment}: ${msg}`;
   }
 }
+
+// ── Consulting Intelligence Firm Research ─────────────────────────────────────
+
+export async function researchConsultingFirmTL(
+  firm: string,
+  topic: string,
+  geography: string
+): Promise<string> {
+  const query = `${firm} thought leadership research report "${topic}" ${geography} strategic insights market analysis 2024 2025`;
+
+  try {
+    const result = await runResearch(query, 'base');
+    return result.slice(0, 8000);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${firm} on topic "${topic}": ${msg}`;
+  }
+}

@@ -19,6 +19,7 @@ import {
   TechHeatMapInput, TechHeatMapRow,
   ContentGenerationInput,
   SalesPlay2Input, SalesPlay2WinTheme, SalesPlay2Opportunity, SalesPlay2Competitor,
+  TLFirmInsight, TLMetric, TLInsight, TLTheme, TLChartSpec, ConsultingIntelligenceJob,
 } from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
@@ -3195,5 +3196,134 @@ Output JSON:
     winThemes: parsed.winThemes || [],
     opportunities: parsed.opportunities || [],
     competitors: parsed.competitors || [],
+  };
+}
+
+// ── Consulting Intelligence Synthesis ────────────────────────────────────────
+
+export async function synthesiseConsultingIntelligence(
+  topic: string,
+  geography: string,
+  selectedFirms: string[],
+  firmResearch: Array<{ firm: string; rawText: string }>
+): Promise<Partial<ConsultingIntelligenceJob>> {
+  const systemPrompt = `You are a senior research analyst synthesising thought leadership from top consulting and analyst firms.
+
+STRICT RULES:
+- NO synthetic data. Only extract facts, statistics, and insights that are explicitly present in the provided research text.
+- NEVER hallucinate statistics, quotes, or firm positions.
+- If a section lacks sufficient evidence from the research text, set it to an empty array or "Insufficient evidence available".
+- Do not invent percentages, market sizes, or forecasts that are not in the research.
+- Only include quantitative metrics (TLMetric) when a specific number appears in the research text.
+- Only include charts when the data quality is "complete" or "partial" with real data points from the research.
+
+${WRITING_DIRECTIVE}
+
+Return a single valid JSON object with no markdown fencing.`;
+
+  const firmResearchText = firmResearch
+    .map(({ firm, rawText }) => `=== ${firm} ===\n${rawText}`)
+    .join('\n\n');
+
+  const userPrompt = `Synthesise the following consulting firm research on: "${topic}" (Geography: ${geography})
+Firms included: ${selectedFirms.join(', ')}
+
+--- RESEARCH DATA ---
+${firmResearchText.slice(0, 60000)}
+--- END RESEARCH DATA ---
+
+Return a JSON object with exactly these fields:
+{
+  "executiveSummary": {
+    "topInsights": ["string", ...],
+    "emergingTrends": ["string", ...],
+    "consensusViewpoints": ["string", ...],
+    "contrarianOpinions": ["string", ...],
+    "strategicImplications": ["string", ...],
+    "futureOutlook": "string"
+  },
+  "firmAnalyses": [
+    {
+      "firmName": "string",
+      "keyThemes": ["string", ...],
+      "keyInsights": ["string", ...],
+      "strategicImplications": ["string", ...],
+      "marketOutlook": "string",
+      "keyStatistics": ["string", ...],
+      "useCases": ["string", ...],
+      "risks": ["string", ...]
+    }
+  ],
+  "comparativeMatrix": [{"Firm": "string", "Focus Area": "string", "Key Position": "string", "Maturity View": "string"}],
+  "emergingThemes": [
+    {
+      "theme": "string",
+      "frequency": number,
+      "strategicUrgency": "high"|"medium"|"low",
+      "businessImpact": "high"|"medium"|"low",
+      "description": "string"
+    }
+  ],
+  "quantitativeEvidence": [
+    {
+      "metric": "string",
+      "value": "string",
+      "sourceFirm": "string",
+      "geography": "string",
+      "year": "string"
+    }
+  ],
+  "sourceAttribution": [
+    {
+      "insight": "string",
+      "sourceFirm": "string",
+      "report": "string",
+      "publishedDate": "string",
+      "confidence": "high"|"medium"|"low"
+    }
+  ],
+  "charts": [
+    {
+      "type": "bar"|"line"|"table",
+      "title": "string",
+      "description": "string",
+      "data": [{"label": "string", "value": number}],
+      "xKey": "label",
+      "yKey": "value",
+      "sourceFirms": ["string"],
+      "dataQuality": "complete"|"partial"|"insufficient"
+    }
+  ],
+  "strategicRecommendations": ["string", ...],
+  "researchMethodology": "string"
+}`;
+
+  const response = await client.messages.create({
+    model: SYNTHESIS_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const raw = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('synthesiseConsultingIntelligence: no JSON in response');
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  return {
+    executiveSummary: parsed.executiveSummary,
+    firmAnalyses: (parsed.firmAnalyses || []) as TLFirmInsight[],
+    comparativeMatrix: parsed.comparativeMatrix || [],
+    emergingThemes: (parsed.emergingThemes || []) as TLTheme[],
+    quantitativeEvidence: (parsed.quantitativeEvidence || []) as TLMetric[],
+    sourceAttribution: (parsed.sourceAttribution || []) as TLInsight[],
+    charts: (parsed.charts || []) as TLChartSpec[],
+    strategicRecommendations: parsed.strategicRecommendations || [],
+    researchMethodology: parsed.researchMethodology || '',
   };
 }
