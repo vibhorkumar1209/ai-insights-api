@@ -3328,23 +3328,46 @@ Return a JSON object with exactly these fields:
   "researchMethodology": "string"
 }`;
 
-  // Use streaming + hard 90s abort — plain messages.create() hangs indefinitely
+  // Use Sonnet with 6k tokens — Haiku/3k truncated mid-JSON causing empty results
   const stream = client.messages.stream({
-    model: FAST_MODEL,   // Haiku: 3-5x faster than Sonnet for structured JSON
-    max_tokens: 3000,
+    model: SYNTHESIS_MODEL,
+    max_tokens: 6000,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
-  const timeoutHandle = setTimeout(() => stream.abort(), 90_000);
+  const timeoutHandle = setTimeout(() => stream.abort(), 150_000);
   let raw = '';
   stream.on('text', (chunk) => { raw += chunk; });
-  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  await stream.finalMessage().catch(() => { /* timeout abort — use partial */ }).finally(() => clearTimeout(timeoutHandle));
 
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  const jsonMatch = cleaned.match(/\{[\s\S]*/);
   if (!jsonMatch) throw new Error('synthesiseConsultingIntelligence: no JSON in response');
-  const parsed = JSON.parse(jsonMatch[0]);
+
+  // Attempt parse; if truncated, try to close open structure
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    // Truncated — find last complete top-level key by trimming to last full array/string
+    const partial = jsonMatch[0];
+    // Close any open arrays/objects with safe defaults
+    const recovered = partial
+      .replace(/,\s*$/, '')          // trailing comma
+      .replace(/"\s*$/, '"')         // unclosed string → close it
+      + (partial.match(/\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*$/) ? ']' : '') // close open array
+      + '}';
+    try {
+      parsed = JSON.parse(recovered);
+    } catch {
+      // Last resort: extract any complete JSON object
+      const safeMatch = partial.match(/\{[\s\S]*\}/);
+      if (!safeMatch) throw new Error('synthesiseConsultingIntelligence: unparseable JSON');
+      parsed = JSON.parse(safeMatch[0]);
+    }
+  }
 
   return {
     executiveSummary: parsed.executiveSummary,
