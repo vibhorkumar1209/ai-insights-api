@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ConsultingIntelligenceJob } from '@ai-insights/types';
-import { discoverConsultingTLFirms, researchConsultingFirmTL } from './parallelAI.js';
+import { discoverConsultingTLFirms, researchConsultingFirmsBatch } from './parallelAI.js';
 import { extractTopFirmsFromDiscovery, synthesiseConsultingIntelligence } from './claudeAI.js';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
@@ -99,25 +99,37 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     current = update(jobId, {
       progress: 25,
       discoveredFirms,
-      currentStep: `Found ${discoveredFirms.length} firms — conducting deep research…`,
+      currentStep: `Found ${discoveredFirms.length} firms — researching in batches…`,
     });
     emit(jobId, 'progress', current);
 
-    // ── Step 3: Deep per-firm research in parallel ─────────────────────────────
-    const progressPerFirm = Math.floor(50 / discoveredFirms.length);
+    // ── Step 3: Batched research — 3 parallel calls covering all firms ─────────
+    // Split firms into up to 3 groups (e.g. 10 firms → 4+3+3)
+    const batchSize = Math.ceil(discoveredFirms.length / 3);
+    const batches: string[][] = [];
+    for (let i = 0; i < discoveredFirms.length; i += batchSize) {
+      batches.push(discoveredFirms.slice(i, i + batchSize));
+    }
 
-    const firmResearchPromises = discoveredFirms.map(async (firm, idx) => {
-      const rawText = await researchConsultingFirmTL(firm, topic, geography);
-      const newProgress = Math.min(25 + progressPerFirm * (idx + 1), 75);
-      current = update(jobId, {
-        progress: newProgress,
-        currentStep: `Researching: ${firm}`,
-      });
-      emit(jobId, 'progress', current);
-      return { firm, rawText };
+    current = update(jobId, { progress: 30, currentStep: `Running ${batches.length} research batches in parallel…` });
+    emit(jobId, 'progress', current);
+
+    const batchResults = await Promise.all(
+      batches.map((batch, idx) =>
+        researchConsultingFirmsBatch(batch, topic, geography).then((rawText) => {
+          const newProgress = Math.min(35 + 15 * (idx + 1), 65);
+          current = update(jobId, { progress: newProgress, currentStep: `Batch ${idx + 1}/${batches.length} complete` });
+          emit(jobId, 'progress', current);
+          return { batch, rawText };
+        })
+      )
+    );
+
+    // Flatten batch results into per-firm entries for Claude synthesis
+    const firmResearch = discoveredFirms.map((firm) => {
+      const batchResult = batchResults.find((b) => b.batch.includes(firm));
+      return { firm, rawText: batchResult?.rawText || '' };
     });
-
-    const firmResearch = await Promise.all(firmResearchPromises);
 
     // ── Step 4: Claude synthesis ───────────────────────────────────────────────
     current = update(jobId, {

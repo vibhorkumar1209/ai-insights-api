@@ -1004,24 +1004,32 @@ Focus on verifiable published content only. Include publication dates.
 }
 
 /**
- * Deep per-firm research once the firm has been identified as having content.
+ * Batch research: one Parallel.AI call covering multiple firms at once.
+ * Much faster than individual per-firm calls on limited infrastructure.
  */
-export async function researchConsultingFirmTL(
-  firm: string,
+export async function researchConsultingFirmsBatch(
+  firms: string[],
   topic: string,
   geography: string
 ): Promise<string> {
+  const firmList = firms.join(', ');
   const query = `
-"${firm}" published thought leadership research report white paper "${topic}" ${geography} 2023 2024 2025.
-Extract: key insights, strategic recommendations, market statistics, CAGR figures, adoption rates, named executives quoted, report titles, publication dates, direct URLs.
-Only include content actually published by ${firm}. Do not extrapolate or invent.
+Research published thought leadership on "${topic}" (${geography}) from these firms: ${firmList}.
+For EACH firm separately, extract:
+- Report/article/white paper titles and publication dates (2022-2025)
+- Key strategic insights and recommendations
+- Market statistics, CAGR figures, investment estimates cited
+- Technology or business implications highlighted
+- Named quotes or attributed viewpoints
+- Direct URLs where available
+Only include content verifiably published by each firm. Separate each firm's findings clearly with "=== FIRM NAME ===" headers.
 `.trim();
 
   try {
     const result = await runResearch(query, 'base');
-    return result.slice(0, 10000);
+    return result.slice(0, 20000);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Research failed';
-    return `Research unavailable for ${firm} on topic "${topic}": ${msg}`;
+    return `Research unavailable for firms [${firmList}] on topic "${topic}": ${msg}`;
   }
 }
