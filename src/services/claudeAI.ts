@@ -3259,7 +3259,7 @@ Return a single valid JSON object with no markdown fencing.`;
 Target firms to cover: ${discoveredFirms.join(', ')}
 
 --- LIVE RESEARCH DATA ---
-${researchText.slice(0, 55000)}
+${researchText.slice(0, 25000)}
 --- END LIVE RESEARCH DATA ---
 
 Return a JSON object with exactly these fields:
@@ -3328,17 +3328,18 @@ Return a JSON object with exactly these fields:
   "researchMethodology": "string"
 }`;
 
-  const response = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 3000,  // capped — prevents runaway latency on free-tier infra
+  // Use streaming + hard 90s abort — plain messages.create() hangs indefinitely
+  const stream = client.messages.stream({
+    model: FAST_MODEL,   // Haiku: 3-5x faster than Sonnet for structured JSON
+    max_tokens: 3000,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
-  const raw = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
+  const timeoutHandle = setTimeout(() => stream.abort(), 90_000);
+  let raw = '';
+  stream.on('text', (chunk) => { raw += chunk; });
+  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
 
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
