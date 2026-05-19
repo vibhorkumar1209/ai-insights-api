@@ -151,6 +151,11 @@ async function pollTask(runId: string): Promise<string> {
   throw new Error('Parallel.AI task timed out after 5 minutes');
 }
 
+/** Public single-query wrapper used by consultingIntelligenceService */
+export async function runResearchQuery(query: string): Promise<string> {
+  return runResearch(query, 'base');
+}
+
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

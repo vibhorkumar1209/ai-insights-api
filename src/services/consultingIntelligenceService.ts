@@ -7,7 +7,6 @@ import { synthesiseConsultingIntelligence } from './claudeAI.js';
 
 const jobs = new Map<string, ConsultingIntelligenceJob>();
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
-
 setInterval(() => {
   const cutoff = Date.now() - JOB_TTL_MS;
   for (const [id, job] of jobs.entries()) {
@@ -25,19 +24,16 @@ export function subscribeToConsultingJob(jobId: string, cb: SSECallback): void {
   list.push(cb);
   subscribers.set(jobId, list);
 }
-
 export function unsubscribeFromConsultingJob(jobId: string, cb: SSECallback): void {
   const list = (subscribers.get(jobId) || []).filter((c) => c !== cb);
   if (list.length > 0) subscribers.set(jobId, list);
   else subscribers.delete(jobId);
 }
-
 function emit(jobId: string, event: string, data: unknown): void {
   (subscribers.get(jobId) || []).forEach((cb) => {
-    try { cb(event, data); } catch { /* ignore closed connections */ }
+    try { cb(event, data); } catch { /* ignore */ }
   });
 }
-
 function update(jobId: string, patch: Partial<ConsultingIntelligenceJob>): ConsultingIntelligenceJob {
   const current = jobs.get(jobId)!;
   const updated = { ...current, ...patch };
@@ -47,24 +43,28 @@ function update(jobId: string, patch: Partial<ConsultingIntelligenceJob>): Consu
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export function createConsultingIntelligenceJob(params: {
-  topic: string;
-  geography: string;
-}): string {
+export function createConsultingIntelligenceJob(params: { topic: string; geography: string }): string {
   const jobId = uuidv4();
   jobs.set(jobId, {
-    jobId,
-    status: 'pending',
-    progress: 0,
-    topic: params.topic,
-    geography: params.geography,
+    jobId, status: 'pending', progress: 0,
+    topic: params.topic, geography: params.geography,
     createdAt: new Date().toISOString(),
   });
   return jobId;
 }
-
 export function getConsultingIntelligenceJob(jobId: string): ConsultingIntelligenceJob | undefined {
   return jobs.get(jobId);
+}
+
+// ── Heartbeat ─────────────────────────────────────────────────────────────────
+
+function startHeartbeat(jobId: string, baseProgress: number, maxProgress: number, label: string) {
+  let p = baseProgress;
+  return setInterval(() => {
+    p = Math.min(p + 1, maxProgress);
+    const hb = update(jobId, { progress: p, currentStep: label });
+    emit(jobId, 'progress', hb);
+  }, 15_000);
 }
 
 // ── Main orchestrator ──────────────────────────────────────────────────────────
@@ -72,86 +72,85 @@ export function getConsultingIntelligenceJob(jobId: string): ConsultingIntellige
 export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) throw new Error(`Job ${jobId} not found`);
-
   const { topic, geography } = job;
 
-  // Heartbeat helper — emits a progress tick every 25s so the frontend
-  // stuck-timer (45s) never fires during long Parallel.AI or Claude calls.
-  function startHeartbeat(baseProgress: number, maxProgress: number, label: string): ReturnType<typeof setInterval> {
-    let p = baseProgress;
-    return setInterval(() => {
-      p = Math.min(p + 1, maxProgress);
-      const hb = update(jobId, { progress: p, currentStep: label });
-      emit(jobId, 'progress', hb);
-    }, 15_000);
-  }
-
-  // Standard set of top consulting/analyst firms — Claude attributes content to these
-  const STANDARD_FIRMS = ['McKinsey & Company', 'Boston Consulting Group', 'Deloitte', 'Gartner', 'Accenture', 'PwC', 'Forrester', 'IDC', 'Bain & Company', 'EY'];
+  const STANDARD_FIRMS = [
+    'McKinsey & Company', 'Boston Consulting Group', 'Deloitte', 'Gartner',
+    'Accenture', 'PwC', 'Forrester', 'IDC', 'Bain & Company', 'EY',
+  ];
 
   try {
-    // ── Step 1: Kick off with standard firms immediately ──────────────────────
-    const discoveredFirms = STANDARD_FIRMS;
-
+    // ── Step 1: Research — run queries SEQUENTIALLY to avoid CPU thrash ────────
     let current = update(jobId, {
-      status: 'researching',
-      progress: 10,
-      discoveredFirms,
-      currentStep: 'Running 4 parallel research queries across consulting & analyst sources…',
+      status: 'researching', progress: 10,
+      discoveredFirms: STANDARD_FIRMS,
+      currentStep: 'Researching consulting & analyst thought leadership…',
     });
     emit(jobId, 'progress', current);
 
-    current = update(jobId, {
-      progress: 15,
-      discoveredFirms,
-      currentStep: `Researching: strategy consulting, Big Four, tech analysts, market intelligence…`,
-    });
-    emit(jobId, 'progress', current);
-
-    // ── Step 3: 4 topic-focused research queries (all parallel) ───────────────
-    // Topic-centric queries yield far richer results than firm-centric ones.
-    current = update(jobId, { progress: 28, currentStep: 'Researching across strategy, advisory, tech analyst, and market intelligence sources…' });
-    emit(jobId, 'progress', current);
-
-    const researchHeartbeat = startHeartbeat(29, 64, 'Researching thought leadership content…');
-    let researchBatches: Array<{ label: string; rawText: string }>;
+    const researchHB = startHeartbeat(jobId, 11, 64, 'Researching thought leadership…');
+    let researchBatches: Array<{ label: string; rawText: string }> = [];
     try {
-      researchBatches = await researchConsultingTLTopicBatches(topic, geography);
-      const done = researchBatches.filter((b) => !b.rawText.includes('failed')).length;
-      current = update(jobId, { progress: 65, currentStep: `Research complete — ${done}/4 batches successful` });
-      emit(jobId, 'progress', current);
+      // Run sequentially — 4 parallel calls overwhelm Render free tier (0.1 vCPU)
+      const batchDefs = [
+        { label: 'strategy', query: `McKinsey, BCG, Bain, Accenture, Oliver Wyman strategic insights reports on "${topic}" in ${geography} 2023-2025: key findings, statistics, recommendations, URLs.` },
+        { label: 'advisory', query: `Deloitte, PwC, EY, KPMG, IBM Consulting published research on "${topic}" in ${geography} 2023-2025: industry outlooks, transformation studies, data points.` },
+        { label: 'analysts', query: `Gartner, Forrester, IDC, Everest Group analyst reports predictions on "${topic}" in ${geography} 2023-2025: forecasts, market sizes, adoption rates, maturity assessments.` },
+        { label: 'market', query: `Market research investment data on "${topic}" in ${geography} 2023-2025: growth rates, market size, CB Insights, WEF, HBR, MIT Sloan, S&P Global findings.` },
+      ];
+
+      for (let i = 0; i < batchDefs.length; i++) {
+        const { label, query } = batchDefs[i];
+        const progress = 12 + i * 12;
+        current = update(jobId, { progress, currentStep: `Researching batch ${i + 1}/4: ${label}…` });
+        emit(jobId, 'progress', current);
+        try {
+          const { runResearchQuery } = await import('./parallelAI.js');
+          const rawText = await runResearchQuery(query);
+          researchBatches.push({ label, rawText: rawText.slice(0, 12000) });
+        } catch {
+          researchBatches.push({ label, rawText: `No data retrieved for ${label} batch.` });
+        }
+        current = update(jobId, { progress: progress + 8, currentStep: `Batch ${i + 1}/4 complete` });
+        emit(jobId, 'progress', current);
+      }
     } finally {
-      clearInterval(researchHeartbeat);
+      clearInterval(researchHB);
     }
 
-    // ── Step 4: Claude synthesis ───────────────────────────────────────────────
-    current = update(jobId, {
-      status: 'synthesising',
-      progress: 78,
-      currentStep: `Synthesising insights from ${discoveredFirms.length} firms…`,
-    });
+    current = update(jobId, { progress: 65, currentStep: 'All research complete — synthesising…' });
     emit(jobId, 'progress', current);
 
-    // Heartbeat during synthesis (Claude Sonnet can take 60-90s on large context)
-    let synthProgress = 79;
-    const synthHeartbeat = setInterval(() => {
-      synthProgress = Math.min(synthProgress + 3, 96);
-      current = update(jobId, { progress: synthProgress, currentStep: 'Synthesising analyst-grade report…' });
-      emit(jobId, 'progress', current);
-    }, 15_000);
+    // ── Step 2: Synthesis ──────────────────────────────────────────────────────
+    current = update(jobId, { status: 'synthesising', progress: 70, currentStep: 'Building analyst-grade synthesis…' });
+    emit(jobId, 'progress', current);
 
-    let results: Partial<ConsultingIntelligenceJob>;
+    const synthHB = startHeartbeat(jobId, 71, 95, 'Synthesising insights…');
+    let results: Partial<ConsultingIntelligenceJob> = {};
     try {
-      results = await synthesiseConsultingIntelligence(topic, geography, discoveredFirms, researchBatches);
+      results = await synthesiseConsultingIntelligence(topic, geography, STANDARD_FIRMS, researchBatches);
+    } catch (synthErr) {
+      console.error(`[consultingIntelligence] synthesis error for ${jobId}:`, synthErr);
+      // Graceful fallback — return basic result so client isn't left hanging
+      results = {
+        executiveSummary: {
+          topInsights: [`Research on "${topic}" in ${geography} completed across ${researchBatches.filter(b => !b.rawText.includes('No data')).length} source categories.`],
+          emergingTrends: [],
+          consensusViewpoints: [],
+          contrarianOpinions: [],
+          strategicImplications: [],
+          futureOutlook: 'Synthesis could not be completed. Please retry with a more specific topic.',
+        },
+        strategicRecommendations: ['Please retry — synthesis step encountered an error.'],
+        researchMethodology: `Researched ${researchBatches.length} batches. Synthesis failed: ${synthErr instanceof Error ? synthErr.message : 'unknown error'}`,
+      };
     } finally {
-      clearInterval(synthHeartbeat);
+      clearInterval(synthHB);
     }
 
     // ── Done ───────────────────────────────────────────────────────────────────
     current = update(jobId, {
-      status: 'complete',
-      progress: 100,
-      currentStep: 'Complete',
+      status: 'complete', progress: 100, currentStep: 'Complete',
       ...results,
       completedAt: new Date().toISOString(),
     });
@@ -160,7 +159,6 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Analysis failed';
     console.error(`[consultingIntelligence] job ${jobId} failed:`, message);
-    const failed = update(jobId, { status: 'error', error: message });
-    emit(jobId, 'error', failed);
+    emit(jobId, 'error', update(jobId, { status: 'error', error: message }));
   }
 }
