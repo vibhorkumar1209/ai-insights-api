@@ -3327,7 +3327,7 @@ Return a JSON object with exactly these fields:
 
   const response = await client.messages.create({
     model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: 3000,  // capped — prevents runaway latency on free-tier infra
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   });

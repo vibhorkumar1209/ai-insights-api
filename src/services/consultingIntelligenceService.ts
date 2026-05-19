@@ -114,16 +114,29 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     current = update(jobId, { progress: 30, currentStep: `Running ${batches.length} research batches in parallel…` });
     emit(jobId, 'progress', current);
 
-    const batchResults = await Promise.all(
-      batches.map((batch, idx) =>
-        researchConsultingFirmsBatch(batch, topic, geography).then((rawText) => {
-          const newProgress = Math.min(35 + 15 * (idx + 1), 65);
-          current = update(jobId, { progress: newProgress, currentStep: `Batch ${idx + 1}/${batches.length} complete` });
-          emit(jobId, 'progress', current);
-          return { batch, rawText };
-        })
-      )
-    );
+    // Heartbeat: emit a progress ping every 25s so the frontend stuck-timer (45s) never fires
+    let heartbeatProgress = 31;
+    const heartbeat = setInterval(() => {
+      heartbeatProgress = Math.min(heartbeatProgress + 2, 64);
+      current = update(jobId, { progress: heartbeatProgress, currentStep: 'Researching thought leadership content…' });
+      emit(jobId, 'progress', current);
+    }, 25_000);
+
+    let batchResults: Array<{ batch: string[]; rawText: string }>;
+    try {
+      batchResults = await Promise.all(
+        batches.map((batch, idx) =>
+          researchConsultingFirmsBatch(batch, topic, geography).then((rawText) => {
+            const newProgress = Math.min(35 + 15 * (idx + 1), 65);
+            current = update(jobId, { progress: newProgress, currentStep: `Batch ${idx + 1}/${batches.length} complete (${batch.join(', ')})` });
+            emit(jobId, 'progress', current);
+            return { batch, rawText };
+          })
+        )
+      );
+    } finally {
+      clearInterval(heartbeat);
+    }
 
     // Flatten batch results into per-firm entries for Claude synthesis
     const firmResearch = discoveredFirms.map((firm) => {
@@ -139,7 +152,20 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     });
     emit(jobId, 'progress', current);
 
-    const results = await synthesiseConsultingIntelligence(topic, geography, discoveredFirms, firmResearch);
+    // Heartbeat during synthesis (Claude Sonnet can take 60-90s on large context)
+    let synthProgress = 79;
+    const synthHeartbeat = setInterval(() => {
+      synthProgress = Math.min(synthProgress + 3, 96);
+      current = update(jobId, { progress: synthProgress, currentStep: 'Synthesising analyst-grade report…' });
+      emit(jobId, 'progress', current);
+    }, 25_000);
+
+    let results: Partial<ConsultingIntelligenceJob>;
+    try {
+      results = await synthesiseConsultingIntelligence(topic, geography, discoveredFirms, firmResearch);
+    } finally {
+      clearInterval(synthHeartbeat);
+    }
 
     // ── Done ───────────────────────────────────────────────────────────────────
     current = update(jobId, {
