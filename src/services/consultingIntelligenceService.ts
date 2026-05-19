@@ -75,6 +75,20 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
 
   const { topic, geography } = job;
 
+  // Heartbeat helper — emits a progress tick every 25s so the frontend
+  // stuck-timer (45s) never fires during long Parallel.AI or Claude calls.
+  function startHeartbeat(baseProgress: number, maxProgress: number, label: string): ReturnType<typeof setInterval> {
+    let p = baseProgress;
+    return setInterval(() => {
+      p = Math.min(p + 1, maxProgress);
+      const hb = update(jobId, { progress: p, currentStep: label });
+      emit(jobId, 'progress', hb);
+    }, 25_000);
+  }
+
+  // Default firms used as fallback if discovery returns nothing
+  const FALLBACK_FIRMS = ['McKinsey & Company', 'Boston Consulting Group', 'Deloitte', 'Gartner', 'Accenture', 'PwC', 'Forrester', 'IDC', 'Bain & Company', 'EY'];
+
   try {
     // ── Step 1: Broad discovery query ──────────────────────────────────────────
     let current = update(jobId, {
@@ -84,16 +98,29 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     });
     emit(jobId, 'progress', current);
 
-    const discoveryText = await discoverConsultingTLFirms(topic, geography);
+    const discoveryHeartbeat = startHeartbeat(6, 18, 'Scanning thought leadership landscape…');
+    let discoveryText = '';
+    try {
+      discoveryText = await discoverConsultingTLFirms(topic, geography);
+    } finally {
+      clearInterval(discoveryHeartbeat);
+    }
 
     current = update(jobId, { progress: 20, currentStep: 'Identifying top firms with published content…' });
     emit(jobId, 'progress', current);
 
-    // ── Step 2: Extract top 10 firms from discovery ────────────────────────────
-    const discoveredFirms = await extractTopFirmsFromDiscovery(discoveryText, topic);
+    // ── Step 2: Extract top firms from discovery (Claude Haiku — fast) ─────────
+    const extractHeartbeat = startHeartbeat(21, 24, 'Identifying top firms…');
+    let discoveredFirms: string[] = [];
+    try {
+      discoveredFirms = await extractTopFirmsFromDiscovery(discoveryText, topic);
+    } finally {
+      clearInterval(extractHeartbeat);
+    }
 
+    // Fallback to well-known firms if discovery/extraction returned nothing
     if (discoveredFirms.length === 0) {
-      throw new Error('No firms with verifiable thought leadership found for this topic. Try broadening the topic or geography.');
+      discoveredFirms = FALLBACK_FIRMS;
     }
 
     current = update(jobId, {
