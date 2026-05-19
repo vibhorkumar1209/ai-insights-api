@@ -4,7 +4,7 @@ import { Competitor } from '@ai-insights/types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 90000;  // 90 seconds — fail fast to free memory
+const TASK_TIMEOUT_MS = 75000;  // 75 seconds — fail fast; consulting uses 4 parallel calls
 const MAX_RETRIES = 0;          // no retry — saves memory on Render free tier
 
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────

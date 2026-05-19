@@ -83,7 +83,7 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
       p = Math.min(p + 1, maxProgress);
       const hb = update(jobId, { progress: p, currentStep: label });
       emit(jobId, 'progress', hb);
-    }, 25_000);
+    }, 15_000);
   }
 
   // Standard set of top consulting/analyst firms — Claude attributes content to these
@@ -138,7 +138,7 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
       synthProgress = Math.min(synthProgress + 3, 96);
       current = update(jobId, { progress: synthProgress, currentStep: 'Synthesising analyst-grade report…' });
       emit(jobId, 'progress', current);
-    }, 25_000);
+    }, 15_000);
 
     let results: Partial<ConsultingIntelligenceJob>;
     try {
