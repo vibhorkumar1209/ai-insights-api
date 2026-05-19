@@ -3232,32 +3232,35 @@ export async function synthesiseConsultingIntelligence(
   topic: string,
   geography: string,
   discoveredFirms: string[],
-  firmResearch: Array<{ firm: string; rawText: string }>
+  researchBatches: Array<{ label: string; rawText: string }>
 ): Promise<Partial<ConsultingIntelligenceJob>> {
-  const systemPrompt = `You are a senior research analyst synthesising thought leadership from top consulting and analyst firms.
+  const systemPrompt = `You are a senior analyst at a top-tier research firm, producing an analyst-grade thought leadership synthesis on a given topic.
 
-STRICT RULES:
-- NO synthetic data. Only extract facts, statistics, and insights that are explicitly present in the provided research text.
-- NEVER hallucinate statistics, quotes, or firm positions.
-- If a section lacks sufficient evidence from the research text, set it to an empty array or "Insufficient evidence available".
-- Do not invent percentages, market sizes, or forecasts that are not in the research.
-- Only include quantitative metrics (TLMetric) when a specific number appears in the research text.
-- Only include charts when the data quality is "complete" or "partial" with real data points from the research.
+SOURCES: You have two inputs to draw from:
+1. LIVE RESEARCH: Real-time research blobs collected from Parallel.AI (provided below). Use specific data, quotes, statistics, and report titles from this text wherever available.
+2. TRAINING KNOWLEDGE: Your deep knowledge of what McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, Forrester, IDC, Accenture, IBM Consulting, and other top firms have published on this topic. Use this to fill gaps and attribute positions to named firms accurately.
+
+SYNTHESIS RULES:
+- Always produce substantive, expert-level output. Never return empty arrays or "insufficient evidence" — synthesise what you know.
+- Attribute all insights to specific named firms (e.g. "McKinsey argues…", "Gartner predicts…", "Deloitte's 2024 Global Tech Survey found…").
+- For statistics: use real numbers from the research text when available. When using training knowledge, frame as "According to [Firm]'s published research…" without fabricating specific numbers you don't know.
+- Distinguish clearly: facts vs. predictions vs. vendor claims vs. analyst opinions.
+- Produce concise, executive-grade language. No marketing filler.
 
 ${WRITING_DIRECTIVE}
 
 Return a single valid JSON object with no markdown fencing.`;
 
-  const firmResearchText = firmResearch
-    .map(({ firm, rawText }) => `=== ${firm} ===\n${rawText}`)
+  const researchText = researchBatches
+    .map(({ label, rawText }) => `=== RESEARCH BATCH: ${label.toUpperCase()} ===\n${rawText}`)
     .join('\n\n');
 
-  const userPrompt = `Synthesise the following consulting firm research on: "${topic}" (Geography: ${geography})
-Firms included: ${discoveredFirms.join(', ')}
+  const userPrompt = `Produce an analyst-grade thought leadership synthesis on: "${topic}" (Geography: ${geography})
+Target firms to cover: ${discoveredFirms.join(', ')}
 
---- RESEARCH DATA ---
-${firmResearchText.slice(0, 60000)}
---- END RESEARCH DATA ---
+--- LIVE RESEARCH DATA ---
+${researchText.slice(0, 55000)}
+--- END LIVE RESEARCH DATA ---
 
 Return a JSON object with exactly these fields:
 {

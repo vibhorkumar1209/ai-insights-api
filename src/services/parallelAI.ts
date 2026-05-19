@@ -983,53 +983,44 @@ Be thorough, data-driven, and consultancy-grade in your analysis. Avoid generic 
  * Broad discovery query — finds which firms have published thought leadership
  * on the topic. Returns raw text listing firms, reports, themes.
  */
-export async function discoverConsultingTLFirms(
-  topic: string,
-  geography: string
-): Promise<string> {
-  const query = `
-Top consulting firms analyst firms advisory organizations published thought leadership reports white papers research "${topic}" ${geography} 2023 2024 2025.
-Include: McKinsey BCG Bain Deloitte PwC EY KPMG Gartner Forrester IDC Accenture IBM Consulting Capgemini Everest Group HFS Research Infosys Consulting Oliver Wyman Roland Berger Kearney Bain BCG World Economic Forum MIT Sloan HBR CB Insights PitchBook Oxford Economics.
-For each firm found: list report/article titles, key insights, strategic themes, statistics, URLs if available.
-Focus on verifiable published content only. Include publication dates.
-`.trim();
-
-  try {
-    const result = await runResearch(query, 'base');
-    return result.slice(0, 15000);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Discovery failed';
-    return `Discovery failed for topic "${topic}": ${msg}`;
-  }
-}
-
 /**
- * Batch research: one Parallel.AI call covering multiple firms at once.
- * Much faster than individual per-firm calls on limited infrastructure.
+ * Returns 4 rich topic-focused research blobs covering different firm clusters.
+ * Topic-centric queries perform far better in Parallel.AI than firm-centric ones.
  */
-export async function researchConsultingFirmsBatch(
-  firms: string[],
+export async function researchConsultingTLTopicBatches(
   topic: string,
   geography: string
-): Promise<string> {
-  const firmList = firms.join(', ');
-  const query = `
-Research published thought leadership on "${topic}" (${geography}) from these firms: ${firmList}.
-For EACH firm separately, extract:
-- Report/article/white paper titles and publication dates (2022-2025)
-- Key strategic insights and recommendations
-- Market statistics, CAGR figures, investment estimates cited
-- Technology or business implications highlighted
-- Named quotes or attributed viewpoints
-- Direct URLs where available
-Only include content verifiably published by each firm. Separate each firm's findings clearly with "=== FIRM NAME ===" headers.
-`.trim();
+): Promise<Array<{ label: string; rawText: string }>> {
+  const queries = [
+    {
+      label: 'strategy-consulting',
+      query: `What are the latest strategic insights, frameworks, and reports on "${topic}" in ${geography} from McKinsey, BCG, Bain, Accenture, Oliver Wyman, Kearney, Roland Berger? Include report titles, key findings, statistics, market outlook, strategic recommendations, executive quotes, and URLs from 2022-2025.`,
+    },
+    {
+      label: 'big4-advisory',
+      query: `What are Deloitte, PwC, EY, KPMG, IBM Consulting, and Capgemini saying about "${topic}" in ${geography}? Include their published reports, white papers, industry outlooks, transformation studies, digital surveys, and key data points from 2022-2025.`,
+    },
+    {
+      label: 'tech-analysts',
+      query: `What are Gartner, Forrester, IDC, Everest Group, HFS Research, and ISG saying about "${topic}" in ${geography}? Include analyst predictions, market forecasts, hype cycles, Wave reports, technology assessments, adoption statistics, and vendor positioning from 2022-2025.`,
+    },
+    {
+      label: 'market-research',
+      query: `What are the latest market size, investment trends, startup activity, and economic research findings on "${topic}" in ${geography}? Include reports from CB Insights, PitchBook, World Economic Forum, Oxford Economics, MIT Sloan, HBR, S&P Global — key statistics, growth rates, investment volumes, and strategic outlooks from 2022-2025.`,
+    },
+  ];
 
-  try {
-    const result = await runResearch(query, 'base');
-    return result.slice(0, 20000);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Research failed';
-    return `Research unavailable for firms [${firmList}] on topic "${topic}": ${msg}`;
-  }
+  const results = await Promise.all(
+    queries.map(async ({ label, query }) => {
+      try {
+        const rawText = await runResearch(query, 'base');
+        return { label, rawText: rawText.slice(0, 15000) };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Research failed';
+        return { label, rawText: `Research batch "${label}" failed: ${msg}` };
+      }
+    })
+  );
+
+  return results;
 }

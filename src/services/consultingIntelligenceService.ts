@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ConsultingIntelligenceJob } from '@ai-insights/types';
-import { discoverConsultingTLFirms, researchConsultingFirmsBatch } from './parallelAI.js';
-import { extractTopFirmsFromDiscovery, synthesiseConsultingIntelligence } from './claudeAI.js';
+import { researchConsultingTLTopicBatches } from './parallelAI.js';
+import { synthesiseConsultingIntelligence } from './claudeAI.js';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -86,90 +86,43 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     }, 25_000);
   }
 
-  // Default firms used as fallback if discovery returns nothing
-  const FALLBACK_FIRMS = ['McKinsey & Company', 'Boston Consulting Group', 'Deloitte', 'Gartner', 'Accenture', 'PwC', 'Forrester', 'IDC', 'Bain & Company', 'EY'];
+  // Standard set of top consulting/analyst firms — Claude attributes content to these
+  const STANDARD_FIRMS = ['McKinsey & Company', 'Boston Consulting Group', 'Deloitte', 'Gartner', 'Accenture', 'PwC', 'Forrester', 'IDC', 'Bain & Company', 'EY'];
 
   try {
-    // ── Step 1: Broad discovery query ──────────────────────────────────────────
+    // ── Step 1: Kick off with standard firms immediately ──────────────────────
+    const discoveredFirms = STANDARD_FIRMS;
+
     let current = update(jobId, {
       status: 'researching',
-      progress: 5,
-      currentStep: 'Scanning thought leadership landscape…',
+      progress: 10,
+      discoveredFirms,
+      currentStep: 'Running 4 parallel research queries across consulting & analyst sources…',
     });
     emit(jobId, 'progress', current);
-
-    const discoveryHeartbeat = startHeartbeat(6, 18, 'Scanning thought leadership landscape…');
-    let discoveryText = '';
-    try {
-      discoveryText = await discoverConsultingTLFirms(topic, geography);
-    } finally {
-      clearInterval(discoveryHeartbeat);
-    }
-
-    current = update(jobId, { progress: 20, currentStep: 'Identifying top firms with published content…' });
-    emit(jobId, 'progress', current);
-
-    // ── Step 2: Extract top firms from discovery (Claude Haiku — fast) ─────────
-    const extractHeartbeat = startHeartbeat(21, 24, 'Identifying top firms…');
-    let discoveredFirms: string[] = [];
-    try {
-      discoveredFirms = await extractTopFirmsFromDiscovery(discoveryText, topic);
-    } finally {
-      clearInterval(extractHeartbeat);
-    }
-
-    // Fallback to well-known firms if discovery/extraction returned nothing
-    if (discoveredFirms.length === 0) {
-      discoveredFirms = FALLBACK_FIRMS;
-    }
 
     current = update(jobId, {
-      progress: 25,
+      progress: 15,
       discoveredFirms,
-      currentStep: `Found ${discoveredFirms.length} firms — researching in batches…`,
+      currentStep: `Researching: strategy consulting, Big Four, tech analysts, market intelligence…`,
     });
     emit(jobId, 'progress', current);
 
-    // ── Step 3: Batched research — 3 parallel calls covering all firms ─────────
-    // Split firms into up to 3 groups (e.g. 10 firms → 4+3+3)
-    const batchSize = Math.ceil(discoveredFirms.length / 3);
-    const batches: string[][] = [];
-    for (let i = 0; i < discoveredFirms.length; i += batchSize) {
-      batches.push(discoveredFirms.slice(i, i + batchSize));
-    }
-
-    current = update(jobId, { progress: 30, currentStep: `Running ${batches.length} research batches in parallel…` });
+    // ── Step 3: 4 topic-focused research queries (all parallel) ───────────────
+    // Topic-centric queries yield far richer results than firm-centric ones.
+    current = update(jobId, { progress: 28, currentStep: 'Researching across strategy, advisory, tech analyst, and market intelligence sources…' });
     emit(jobId, 'progress', current);
 
-    // Heartbeat: emit a progress ping every 25s so the frontend stuck-timer (45s) never fires
-    let heartbeatProgress = 31;
-    const heartbeat = setInterval(() => {
-      heartbeatProgress = Math.min(heartbeatProgress + 2, 64);
-      current = update(jobId, { progress: heartbeatProgress, currentStep: 'Researching thought leadership content…' });
-      emit(jobId, 'progress', current);
-    }, 25_000);
-
-    let batchResults: Array<{ batch: string[]; rawText: string }>;
+    const researchHeartbeat = startHeartbeat(29, 64, 'Researching thought leadership content…');
+    let researchBatches: Array<{ label: string; rawText: string }>;
     try {
-      batchResults = await Promise.all(
-        batches.map((batch, idx) =>
-          researchConsultingFirmsBatch(batch, topic, geography).then((rawText) => {
-            const newProgress = Math.min(35 + 15 * (idx + 1), 65);
-            current = update(jobId, { progress: newProgress, currentStep: `Batch ${idx + 1}/${batches.length} complete (${batch.join(', ')})` });
-            emit(jobId, 'progress', current);
-            return { batch, rawText };
-          })
-        )
-      );
+      researchBatches = await researchConsultingTLTopicBatches(topic, geography);
+      const done = researchBatches.filter((b) => !b.rawText.includes('failed')).length;
+      current = update(jobId, { progress: 65, currentStep: `Research complete — ${done}/4 batches successful` });
+      emit(jobId, 'progress', current);
     } finally {
-      clearInterval(heartbeat);
+      clearInterval(researchHeartbeat);
     }
-
-    // Flatten batch results into per-firm entries for Claude synthesis
-    const firmResearch = discoveredFirms.map((firm) => {
-      const batchResult = batchResults.find((b) => b.batch.includes(firm));
-      return { firm, rawText: batchResult?.rawText || '' };
-    });
 
     // ── Step 4: Claude synthesis ───────────────────────────────────────────────
     current = update(jobId, {
@@ -189,7 +142,7 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
 
     let results: Partial<ConsultingIntelligenceJob>;
     try {
-      results = await synthesiseConsultingIntelligence(topic, geography, discoveredFirms, firmResearch);
+      results = await synthesiseConsultingIntelligence(topic, geography, discoveredFirms, researchBatches);
     } finally {
       clearInterval(synthHeartbeat);
     }
