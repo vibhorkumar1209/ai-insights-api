@@ -3405,60 +3405,71 @@ export async function runVucaSynthesis(
   const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks.
 Use 2024–2026 data. Cite sources inline (e.g. "McKinsey, 2025"). Include geopolitical context where relevant.`;
 
-  // ── Call 1: VUCA × 4W1H Matrix (same regardless of client mode) ──────────
-  const call1 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
+  // ── Call 1: VUCA × 4W1H Matrix ───────────────────────────────────────────
+  const clientHowNote = clientMode
+    ? `\nThis is for ${companyContext!.name} (${companyContext!.domain}). For the "how" field, tailor the operational actions and 30/60/90-day signals specifically to how ${companyContext!.name}'s products/solutions can respond to or capitalise on each VUCA dimension.`
+    : '';
+
+  const call1 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}${clientHowNote}
 
 Context: ${ctx}
 
 Return JSON with key "vuca4w1hMatrix" — exactly 4 objects, one per VUCA dimension.
 Each object: vucaDimension (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), lens (5-8 word label),
 what (named situation + quantified stat + inline source), why (2+ causal links + mechanism),
-where (named countries/corridors/jurisdictions, epicentre vs ripple), when (3-phase timeline: Acute | Structural Reset | Recovery + dates), how (2-3 operational actions + 30/60/90-day signal).
+where (named countries/corridors/jurisdictions, epicentre vs ripple), when (3-phase timeline: Acute | Structural Reset | Recovery + dates), how (2-3 operational actions + 30/60/90-day signal${clientMode ? ` specific to ${companyContext!.name}` : ''}).
 
 {"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
 
-  // ── Call 2a: Generic IT Spend + Geopolitical (no client context) ──────────
-  const call2Generic = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
-
-Context: ${ctx}
-
-Return JSON with exactly 3 keys:
-
-"itSpendImpact": 8 objects (each VUCA dimension ≥2 times, no duplicate itSpendCategory).
-Fields: vucaDriver (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), itSpendCategory (specific named tech), baselineSpend (with source), impactMechanism (causal chain — regulatory mandate / operational necessity / competitive response / risk mitigation), quantifiedImpact (e.g. "+20-30% | +$1-2B"), netDelta (e.g. "+$1-2B"), direction (▲ EXPAND | ▼ COMPRESS | ► REALLOCATE).
-
-"itSpendSummaryTotal": { "netDelta": "summed range", "dominantDirection": "▲ EXPAND" }
-
-"geopoliticalStress": 5 objects covering US-China tariffs, Russia-Ukraine, Middle East/Hormuz, plus regional events relevant to ${geography}/${industry}.
-Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism, severity (High/Medium/Low), severityRationale, itBudgetSignal.`;
-
-  // ── Call 2b: Client-specific IT Impact + Geopolitical ─────────────────────
-  const call2Client = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
-Client Company: ${companyContext?.name} (${companyContext?.domain})
+  // ── Call 2: IT Spend Impact (client-specific OR general industry) ─────────
+  // Both modes produce the same ClientITImpactRow schema.
+  // Client mode: rows specific to company's product portfolio.
+  // Generic mode: rows cover general IT vendor landscape for the industry.
+  const call2 = clientMode
+    ? `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
+Client Company: ${companyContext!.name} (${companyContext!.domain})
 
 COMPANY PROFILE (what this company sells):
-${companyContext?.profile?.slice(0, 3000)}
+${companyContext!.profile.slice(0, 3000)}
 
 Context: ${ctx}
 
-This analysis is for a SALES / ACCOUNT PLANNING use case. The client sells IT products/services/solutions.
-Produce Table 2 showing which VUCA-driven stress events create technology spend opportunities for this specific client.
-Each row = one impacted tech spend category (produce multiple rows per stress event if multiple categories are impacted).
+This analysis is for a SALES / ACCOUNT PLANNING use case. Produce Table 2 showing which VUCA-driven stress events create technology spend opportunities for this specific client.
+Each row = one impacted tech spend category (multiple rows per stress event if multiple categories are impacted).
 
-Return JSON with exactly 2 keys:
-
-"clientITImpact": array of 10-14 objects. Cover all 4 VUCA dimensions. Multiple rows per stress event allowed (one per tech category).
+Return JSON with key "clientITImpact" — array of 10-14 objects covering all 4 VUCA dimensions.
 Fields:
-- stressEvent: named geopolitical/market event (e.g. "US-China Section 301 tariffs on semiconductors")
+- stressEvent: named geopolitical/market event
 - vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
 - estImpactOnTechSpending: quantified spend shift (e.g. "+20-30% | +$1.5-2.5B globally")
 - impact: "H" | "M" | "L"
-- impactedTechSpendCategory: SPECIFIC named technology category the client can address (e.g. "Supply Chain Visibility & Control Tower", "OT/ICS Cybersecurity", "AI-Driven Demand Sensing"). Must match or relate to the client's actual product portfolio.
-- roleInOrganization: How the client's specific product/solution/service fills this category — be specific to what they sell. Name their actual products if known.
-- recommendation: Concrete sales/positioning recommendation for the client. What to pitch, to whom (CIO/CISO/COO), and the 30/60/90-day signal.
+- impactedTechSpendCategory: SPECIFIC named tech category matching ${companyContext!.name}'s actual portfolio (e.g. "Supply Chain Visibility", "OT/ICS Cybersecurity"). Name their real products if known.
+- roleInOrganization: How ${companyContext!.name}'s specific product/solution fills this category — name actual products.
+- recommendation: Concrete sales pitch for ${companyContext!.name} — what to pitch, to whom (CIO/CISO/COO), 30/60/90-day signal.`
+    : `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 
-"geopoliticalStress": 5 objects covering US-China tariffs, Russia-Ukraine, Middle East/Hormuz, plus regional events.
-Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism, severity (High/Medium/Low), severityRationale, itBudgetSignal (must relate to client's portfolio where possible).`;
+Context: ${ctx}
+
+Produce Table 2 showing which VUCA-driven stress events impact IT spending in the ${industry} industry.
+Each row = one impacted tech spend category (multiple rows per stress event if multiple categories are impacted).
+
+Return JSON with key "clientITImpact" — array of 10-12 objects covering all 4 VUCA dimensions.
+Fields:
+- stressEvent: named geopolitical/market event
+- vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
+- estImpactOnTechSpending: quantified spend shift for the industry (e.g. "+15-25% | +$2-3B globally")
+- impact: "H" | "M" | "L"
+- impactedTechSpendCategory: specific named IT spend category impacted across the ${industry} industry (e.g. "Supply Chain Visibility Platforms", "Predictive Maintenance AI", "Regulatory Compliance Automation")
+- roleInOrganization: typical organizational role/function that owns this spend category in ${industry} companies (e.g. "CIO + Head of Supply Chain", "CISO + OT Security Lead") — describe the function, not a specific company
+- recommendation: strategic recommendation for any IT vendor selling in this space — what capabilities to lead with, which buyer persona to target, key 30/60/90-day market signal to watch`;
+
+  // ── Call 3: Geopolitical Stress Overlay (always separate to avoid truncation) ──
+  const call3 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
+
+Context: ${ctx}
+
+Return JSON with key "geopoliticalStress" — exactly 5 objects covering US-China tariffs, Russia-Ukraine, Middle East/Hormuz, plus regional events relevant to ${geography}/${industry}.
+Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism (how this stress event flows into the ${industry} industry), severity (High/Medium/Low), severityRationale (1-2 sentences), itBudgetSignal (specific IT spend category that will move as a result).`;
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
@@ -3466,30 +3477,25 @@ Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissio
     .catch((e) => { console.error('[vuca] call1 error:', e.message); return ''; });
   console.log(`[vuca] call1 done len=${raw1.length} preview="${raw1.slice(0, 80)}"`);
 
-  const raw2 = await claudeCreate(systemPrompt, clientMode ? call2Client : call2Generic, 3500, 100_000, FAST_MODEL)
+  const raw2 = await claudeCreate(systemPrompt, call2, 4000, 110_000, FAST_MODEL)
     .catch((e) => { console.error('[vuca] call2 error:', e.message); return ''; });
   console.log(`[vuca] call2 done len=${raw2.length} preview="${raw2.slice(0, 80)}"`);
 
+  const raw3 = await claudeCreate(systemPrompt, call3, 2000, 60_000, FAST_MODEL)
+    .catch((e) => { console.error('[vuca] call3 error:', e.message); return ''; });
+  console.log(`[vuca] call3 done len=${raw3.length} preview="${raw3.slice(0, 80)}"`);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let p1: any = {}, p2: any = {};
+  let p1: any = {}, p2: any = {}, p3: any = {};
   try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse fail:', String(e), raw1.slice(0, 300)); }
   try { p2 = parseJsonRobust(raw2); } catch (e) { console.error('[vuca] call2 parse fail:', String(e), raw2.slice(0, 300)); }
-
-  if (clientMode) {
-    return {
-      vuca4w1hMatrix: (p1.vuca4w1hMatrix || []) as VucaRow[],
-      itSpendImpact: [],
-      itSpendSummaryTotal: undefined,
-      clientITImpact: (p2.clientITImpact || []) as ClientITImpactRow[],
-      geopoliticalStress: (p2.geopoliticalStress || []) as GeoStressRow[],
-    };
-  }
+  try { p3 = parseJsonRobust(raw3); } catch (e) { console.error('[vuca] call3 parse fail:', String(e), raw3.slice(0, 300)); }
 
   return {
     vuca4w1hMatrix: (p1.vuca4w1hMatrix || []) as VucaRow[],
-    itSpendImpact: (p2.itSpendImpact || []) as ITSpendRow[],
-    itSpendSummaryTotal: p2.itSpendSummaryTotal || { netDelta: 'N/A', dominantDirection: '▲ EXPAND' },
-    clientITImpact: [],
-    geopoliticalStress: (p2.geopoliticalStress || []) as GeoStressRow[],
+    itSpendImpact: [],
+    itSpendSummaryTotal: undefined,
+    clientITImpact: (p2.clientITImpact || []) as ClientITImpactRow[],
+    geopoliticalStress: (p3.geopoliticalStress || []) as GeoStressRow[],
   };
 }
