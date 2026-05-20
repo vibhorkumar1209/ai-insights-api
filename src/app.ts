@@ -72,6 +72,24 @@ app.use('/api/content-generation', memoryGuard, contentGenerationRouter);
 app.use('/api/consulting-intelligence', memoryGuard, consultingIntelligenceRouter);
 app.use('/api/vuca-analysis', memoryGuard, vucaAnalysisRouter);
 
+// ── Debug: test Claude connectivity ──────────────────────────────────────────
+app.get('/api/debug-claude', async (_req, res) => {
+  const start = Date.now();
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{ role: 'user', content: 'Reply with: {"ok":true}' }],
+    });
+    const text = resp.content[0].type === 'text' ? resp.content[0].text : '(no text)';
+    res.json({ ok: true, ms: Date.now() - start, text, apiKeySet: !!process.env.ANTHROPIC_API_KEY });
+  } catch (e) {
+    res.status(500).json({ ok: false, ms: Date.now() - start, error: String(e), apiKeySet: !!process.env.ANTHROPIC_API_KEY });
+  }
+});
+
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });

@@ -3376,9 +3376,9 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
 // ── VUCA × 4W1H Analysis ──────────────────────────────────────────────────────
 
 // messages.create() with Promise.race timeout — more reliable than stream.abort() on Render
-async function claudeCreate(system: string, user: string, maxTokens: number, timeoutMs: number): Promise<string> {
+async function claudeCreate(system: string, user: string, maxTokens: number, timeoutMs: number, model = FAST_MODEL): Promise<string> {
   const promise = client.messages.create({
-    model: SYNTHESIS_MODEL,
+    model,
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
@@ -3436,17 +3436,18 @@ Fields: vucaDriver (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), itSpendCategory (spec
 "geopoliticalStress": array of 5 objects covering US-China tariffs, Russia-Ukraine, Middle East/Hormuz, plus relevant regional events.
 Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism, severity (High/Medium/Low), severityRationale, itBudgetSignal.`;
 
-  console.log(`[vuca] starting synthesis for ${industry} / ${geography}`);
+  console.log(`[vuca] starting synthesis for "${industry}" / "${geography}", context len=${researchText.length}`);
 
-  const raw1 = await claudeCreate(systemPrompt, call1, 2500, 120_000)
+  // Use Haiku — 5× faster than Sonnet, avoids 120s timeout on Render free tier
+  const raw1 = await claudeCreate(systemPrompt, call1, 3000, 90_000, FAST_MODEL)
     .catch((e) => { console.error('[vuca] call1 error:', e.message); return ''; });
 
-  console.log(`[vuca] call1 done, raw length: ${raw1.length}`);
+  console.log(`[vuca] call1 done, raw length=${raw1.length}, preview: ${raw1.slice(0, 120)}`);
 
-  const raw2 = await claudeCreate(systemPrompt, call2, 2500, 120_000)
+  const raw2 = await claudeCreate(systemPrompt, call2, 3000, 90_000, FAST_MODEL)
     .catch((e) => { console.error('[vuca] call2 error:', e.message); return ''; });
 
-  console.log(`[vuca] call2 done, raw length: ${raw2.length}`);
+  console.log(`[vuca] call2 done, raw length=${raw2.length}, preview: ${raw2.slice(0, 120)}`);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {};
