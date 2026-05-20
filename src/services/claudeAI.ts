@@ -3453,10 +3453,9 @@ Each object:
   "itBudgetSignal": "Which specific IT spend category is most directly activated"
 }`;
 
-  const [raw1, raw2] = await Promise.all([
-    runClaudeStream(SYNTHESIS_MODEL, 4000, systemPrompt, call1Prompt, 150_000),
-    runClaudeStream(SYNTHESIS_MODEL, 4000, systemPrompt, call2Prompt, 150_000),
-  ]);
+  // Sequential — parallel Sonnet calls overwhelm Render free tier (0.1 vCPU)
+  const raw1 = await runClaudeStream(SYNTHESIS_MODEL, 4000, systemPrompt, call1Prompt, 150_000);
+  const raw2 = await runClaudeStream(SYNTHESIS_MODEL, 4000, systemPrompt, call2Prompt, 150_000);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {};
