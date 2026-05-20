@@ -3228,156 +3228,132 @@ export async function extractTopFirmsFromDiscovery(
   } catch { return []; }
 }
 
+// ── Helper: run a Claude stream with timeout, return raw text ─────────────────
+async function runClaudeStream(
+  model: string,
+  maxTokens: number,
+  system: string,
+  userContent: string,
+  timeoutMs: number,
+): Promise<string> {
+  const stream = client.messages.stream({
+    model,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: 'user', content: userContent }],
+  });
+  const handle = setTimeout(() => stream.abort(), timeoutMs);
+  let raw = '';
+  stream.on('text', (c) => { raw += c; });
+  await stream.finalMessage().catch(() => { /* abort/timeout — use partial */ }).finally(() => clearTimeout(handle));
+  return raw;
+}
+
+// ── Helper: parse JSON robustly (handles truncation) ─────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseJsonRobust(raw: string): any {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const start = cleaned.indexOf('{');
+  if (start === -1) throw new Error('no JSON object found');
+  const text = cleaned.slice(start);
+  // Try direct parse first
+  try { return JSON.parse(text); } catch { /* fall through */ }
+  // Try greedily extracting the largest complete {...} block
+  let depth = 0; let end = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end !== -1) { try { return JSON.parse(text.slice(0, end + 1)); } catch { /* fall through */ } }
+  throw new Error('unparseable JSON');
+}
+
 export async function synthesiseConsultingIntelligence(
   topic: string,
   geography: string,
   discoveredFirms: string[],
   researchBatches: Array<{ label: string; rawText: string }>
 ): Promise<Partial<ConsultingIntelligenceJob>> {
-  const systemPrompt = `You are a senior analyst at a top-tier research firm, producing an analyst-grade thought leadership synthesis on a given topic.
+  const hasRealResearch = researchBatches.some(b => !b.rawText.includes('No data retrieved'));
+  const researchNote = hasRealResearch
+    ? 'Use the LIVE RESEARCH DATA below as primary source. Fill gaps from training knowledge.'
+    : 'No live research was retrieved. Use your extensive training knowledge about published reports from McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, Forrester, IDC, Accenture and other firms on this topic. Produce substantive, attributed insights.';
 
-SOURCES: You have two inputs to draw from:
-1. LIVE RESEARCH: Real-time research blobs collected from Parallel.AI (provided below). Use specific data, quotes, statistics, and report titles from this text wherever available.
-2. TRAINING KNOWLEDGE: Your deep knowledge of what McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, Forrester, IDC, Accenture, IBM Consulting, and other top firms have published on this topic. Use this to fill gaps and attribute positions to named firms accurately.
+  const systemPrompt = `You are a senior analyst producing an analyst-grade thought leadership synthesis.
+${researchNote}
+RULES: Always produce substantive output. Never return empty arrays. Attribute insights to specific named firms.
+Return only valid JSON with no markdown fencing.`;
 
-SYNTHESIS RULES:
-- Always produce substantive, expert-level output. Never return empty arrays or "insufficient evidence" — synthesise what you know.
-- Attribute all insights to specific named firms (e.g. "McKinsey argues…", "Gartner predicts…", "Deloitte's 2024 Global Tech Survey found…").
-- For statistics: use real numbers from the research text when available. When using training knowledge, frame as "According to [Firm]'s published research…" without fabricating specific numbers you don't know.
-- Distinguish clearly: facts vs. predictions vs. vendor claims vs. analyst opinions.
-- Produce concise, executive-grade language. No marketing filler.
+  const researchText = hasRealResearch
+    ? researchBatches.map(({ label, rawText }) => `=== ${label.toUpperCase()} ===\n${rawText}`).join('\n\n').slice(0, 20000)
+    : '(No live research — use training knowledge)';
 
-${WRITING_DIRECTIVE}
+  const firms = discoveredFirms.slice(0, 6).join(', ');
 
-Return a single valid JSON object with no markdown fencing.`;
+  // ── Call 1: Executive summary + themes + recommendations (must complete) ──
+  const call1Prompt = `Topic: "${topic}" | Geography: ${geography} | Firms: ${firms}
 
-  const researchText = researchBatches
-    .map(({ label, rawText }) => `=== RESEARCH BATCH: ${label.toUpperCase()} ===\n${rawText}`)
-    .join('\n\n');
+LIVE RESEARCH:
+${researchText}
 
-  const userPrompt = `Produce an analyst-grade thought leadership synthesis on: "${topic}" (Geography: ${geography})
-Target firms to cover: ${discoveredFirms.join(', ')}
-
---- LIVE RESEARCH DATA ---
-${researchText.slice(0, 25000)}
---- END LIVE RESEARCH DATA ---
-
-Return a JSON object with exactly these fields:
+Return JSON:
 {
   "executiveSummary": {
-    "topInsights": ["string", ...],
-    "emergingTrends": ["string", ...],
-    "consensusViewpoints": ["string", ...],
-    "contrarianOpinions": ["string", ...],
-    "strategicImplications": ["string", ...],
-    "futureOutlook": "string"
+    "topInsights": ["5 key insights attributed to named firms"],
+    "emergingTrends": ["4-5 trends"],
+    "consensusViewpoints": ["3-4 points where firms agree"],
+    "contrarianOpinions": ["2-3 contrarian views"],
+    "strategicImplications": ["4-5 strategic implications"],
+    "futureOutlook": "2-3 sentence outlook paragraph"
   },
-  "firmAnalyses": [
-    {
-      "firmName": "string",
-      "keyThemes": ["string", ...],
-      "keyInsights": ["string", ...],
-      "strategicImplications": ["string", ...],
-      "marketOutlook": "string",
-      "keyStatistics": ["string", ...],
-      "useCases": ["string", ...],
-      "risks": ["string", ...]
-    }
-  ],
-  "comparativeMatrix": [{"Firm": "string", "Focus Area": "string", "Key Position": "string", "Maturity View": "string"}],
   "emergingThemes": [
-    {
-      "theme": "string",
-      "frequency": number,
-      "strategicUrgency": "high"|"medium"|"low",
-      "businessImpact": "high"|"medium"|"low",
-      "description": "string"
-    }
+    {"theme": "string", "frequency": number, "strategicUrgency": "high"|"medium"|"low", "businessImpact": "high"|"medium"|"low", "description": "string"}
   ],
-  "quantitativeEvidence": [
-    {
-      "metric": "string",
-      "value": "string",
-      "sourceFirm": "string",
-      "geography": "string",
-      "year": "string"
-    }
-  ],
-  "sourceAttribution": [
-    {
-      "insight": "string",
-      "sourceFirm": "string",
-      "report": "string",
-      "publishedDate": "string",
-      "confidence": "high"|"medium"|"low"
-    }
-  ],
-  "charts": [
-    {
-      "type": "bar"|"line"|"table",
-      "title": "string",
-      "description": "string",
-      "data": [{"label": "string", "value": number}],
-      "xKey": "label",
-      "yKey": "value",
-      "sourceFirms": ["string"],
-      "dataQuality": "complete"|"partial"|"insufficient"
-    }
-  ],
-  "strategicRecommendations": ["string", ...],
-  "researchMethodology": "string"
+  "strategicRecommendations": ["5-6 actionable recommendations"],
+  "researchMethodology": "brief string describing sources used"
 }`;
 
-  // Use Sonnet with 6k tokens — Haiku/3k truncated mid-JSON causing empty results
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 6000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const timeoutHandle = setTimeout(() => stream.abort(), 150_000);
-  let raw = '';
-  stream.on('text', (chunk) => { raw += chunk; });
-  await stream.finalMessage().catch(() => { /* timeout abort — use partial */ }).finally(() => clearTimeout(timeoutHandle));
-
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const jsonMatch = cleaned.match(/\{[\s\S]*/);
-  if (!jsonMatch) throw new Error('synthesiseConsultingIntelligence: no JSON in response');
-
-  // Attempt parse; if truncated, try to close open structure
+  const raw1 = await runClaudeStream(SYNTHESIS_MODEL, 2500, systemPrompt, call1Prompt, 120_000);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let parsed: any;
-  try {
-    parsed = JSON.parse(jsonMatch[0]);
-  } catch {
-    // Truncated — find last complete top-level key by trimming to last full array/string
-    const partial = jsonMatch[0];
-    // Close any open arrays/objects with safe defaults
-    const recovered = partial
-      .replace(/,\s*$/, '')          // trailing comma
-      .replace(/"\s*$/, '"')         // unclosed string → close it
-      + (partial.match(/\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*$/) ? ']' : '') // close open array
-      + '}';
-    try {
-      parsed = JSON.parse(recovered);
-    } catch {
-      // Last resort: extract any complete JSON object
-      const safeMatch = partial.match(/\{[\s\S]*\}/);
-      if (!safeMatch) throw new Error('synthesiseConsultingIntelligence: unparseable JSON');
-      parsed = JSON.parse(safeMatch[0]);
-    }
+  let part1: any = {};
+  try { part1 = parseJsonRobust(raw1); } catch (e) {
+    console.error('[synthesiseConsultingIntelligence] call1 parse failed:', e, 'raw:', raw1.slice(0, 200));
+  }
+
+  // ── Call 2: Firm analyses + evidence (best-effort, won't fail the job) ────
+  const call2Prompt = `Topic: "${topic}" | Geography: ${geography}
+
+LIVE RESEARCH:
+${researchText.slice(0, 15000)}
+
+Return JSON with exactly these fields:
+{
+  "firmAnalyses": [
+    {"firmName": "string", "keyThemes": ["2-3"], "keyInsights": ["2-3"], "marketOutlook": "string", "keyStatistics": ["1-2"], "risks": ["1-2"]}
+  ],
+  "quantitativeEvidence": [
+    {"metric": "string", "value": "string", "sourceFirm": "string", "geography": "string", "year": "string"}
+  ],
+  "comparativeMatrix": [{"Firm": "string", "Focus Area": "string", "Key Position": "string", "Maturity View": "string"}]
+}
+Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Include 5-6 matrix rows.`;
+
+  const raw2 = await runClaudeStream(FAST_MODEL, 3000, systemPrompt, call2Prompt, 90_000);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let part2: any = {};
+  try { part2 = parseJsonRobust(raw2); } catch (e) {
+    console.warn('[synthesiseConsultingIntelligence] call2 parse failed (non-fatal):', e);
   }
 
   return {
-    executiveSummary: parsed.executiveSummary,
-    firmAnalyses: (parsed.firmAnalyses || []) as TLFirmInsight[],
-    comparativeMatrix: parsed.comparativeMatrix || [],
-    emergingThemes: (parsed.emergingThemes || []) as TLTheme[],
-    quantitativeEvidence: (parsed.quantitativeEvidence || []) as TLMetric[],
-    sourceAttribution: (parsed.sourceAttribution || []) as TLInsight[],
-    charts: (parsed.charts || []) as TLChartSpec[],
-    strategicRecommendations: parsed.strategicRecommendations || [],
-    researchMethodology: parsed.researchMethodology || '',
+    executiveSummary: part1.executiveSummary,
+    emergingThemes: (part1.emergingThemes || []) as TLTheme[],
+    strategicRecommendations: part1.strategicRecommendations || [],
+    researchMethodology: part1.researchMethodology || `Synthesised from ${researchBatches.length} research batches using Claude training knowledge.`,
+    firmAnalyses: (part2.firmAnalyses || []) as TLFirmInsight[],
+    quantitativeEvidence: (part2.quantitativeEvidence || []) as TLMetric[],
+    comparativeMatrix: part2.comparativeMatrix || [],
+    sourceAttribution: [] as TLInsight[],
+    charts: [] as TLChartSpec[],
   };
 }
