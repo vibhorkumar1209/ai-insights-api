@@ -3473,7 +3473,7 @@ Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissio
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  const raw1 = await claudeCreate(systemPrompt, call1, 3000, 90_000, FAST_MODEL)
+  const raw1 = await claudeCreate(systemPrompt, call1, 3800, 100_000, FAST_MODEL)
     .catch((e) => { console.error('[vuca] call1 error:', e.message); return ''; });
   console.log(`[vuca] call1 done len=${raw1.length} preview="${raw1.slice(0, 80)}"`);
 
@@ -3487,7 +3487,7 @@ Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissio
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {}, p3: any = {};
-  try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse fail:', String(e), raw1.slice(0, 300)); }
+  try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse fail (len=%d):', raw1.length, String(e), raw1.slice(0, 400)); }
   try { p2 = parseJsonRobust(raw2); } catch (e) { console.error('[vuca] call2 parse fail:', String(e), raw2.slice(0, 300)); }
   try { p3 = parseJsonRobust(raw3); } catch (e) { console.error('[vuca] call3 parse fail:', String(e), raw3.slice(0, 300)); }
 
