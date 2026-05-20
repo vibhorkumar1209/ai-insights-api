@@ -43,11 +43,19 @@ function update(jobId: string, patch: Partial<VucaAnalysisJob>): VucaAnalysisJob
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function createVucaJob(params: { industry: string; geography: string }): string {
+export function createVucaJob(params: {
+  industry: string;
+  geography: string;
+  companyName?: string;
+  companyDomain?: string;
+}): string {
   const jobId = uuidv4();
   jobs.set(jobId, {
     jobId, status: 'pending', progress: 0,
     industry: params.industry, geography: params.geography,
+    companyName: params.companyName,
+    companyDomain: params.companyDomain,
+    clientMode: !!(params.companyName && params.companyDomain),
     analysisDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
     createdAt: new Date().toISOString(),
   });
@@ -67,10 +75,7 @@ function startHeartbeat(jobId: string, base: number, max: number, label: string)
   }, 15_000);
 }
 
-// ── Promise.race wrapper — hard wall-clock cap on any async call ──────────────
-// AbortController + node-fetch doesn't reliably cancel on Render free tier.
-// Promise.race ALWAYS moves forward after timeoutMs regardless of underlying state.
-// The dangling Promise resolves/rejects on its own (TCP timeout ~2-4 min).
+// ── Promise.race wrapper — hard wall-clock cap, always resolves ───────────────
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
   return Promise.race([
     promise,
@@ -83,7 +88,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Pr
 export async function runVucaAnalysis(jobId: string): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) throw new Error(`Job ${jobId} not found`);
-  const { industry, geography, analysisDate } = job;
+  const { industry, geography, analysisDate, companyName, companyDomain } = job;
+  const clientMode = !!(companyName && companyDomain);
 
   try {
     // ── Step 1: Research via Parallel.AI ─────────────────────────────────────
@@ -93,48 +99,98 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
     });
     emit(jobId, 'progress', current);
 
-    const BATCH_TIMEOUT = 50_000; // 50s per batch — resolves with '' on timeout
-    const queries = [
-      `${industry} ${geography} market volatility disruption risks 2024 2025 McKinsey BCG Deloitte analysis`,
-      `${industry} ${geography} geopolitical uncertainty tariffs regulation digital transformation 2025`,
-      `${industry} ${geography} IT spend technology investment trends forecast 2025 2026 Gartner IDC Forrester`,
-    ];
-
-    const researchHB = startHeartbeat(jobId, 6, 48, 'Searching for market intelligence…');
+    const BATCH_TIMEOUT = 50_000;
+    const researchHB = startHeartbeat(jobId, 6, clientMode ? 38 : 48, 'Searching for market intelligence…');
     let combinedResearch = '';
+
     try {
-      for (let i = 0; i < queries.length; i++) {
-        current = update(jobId, { progress: 8 + i * 12, currentStep: `Web search ${i + 1}/3: ${['volatility & risks', 'geopolitical & regulatory', 'IT spend & technology'][i]}…` });
+      const industryQueries = [
+        `${industry} ${geography} market volatility disruption risks 2024 2025 McKinsey BCG Deloitte analysis`,
+        `${industry} ${geography} geopolitical uncertainty tariffs regulation digital transformation 2025`,
+        `${industry} ${geography} IT spend technology investment trends forecast 2025 2026 Gartner IDC Forrester`,
+      ];
+
+      for (let i = 0; i < industryQueries.length; i++) {
+        current = update(jobId, {
+          progress: 8 + i * 10,
+          currentStep: `Web search ${i + 1}/${clientMode ? 4 : 3}: ${['volatility & risks', 'geopolitical & regulatory', 'IT spend & technology'][i]}…`,
+        });
         emit(jobId, 'progress', current);
 
         const t0 = Date.now();
-        const text = await withTimeout(runResearchQuery(queries[i]), BATCH_TIMEOUT, '');
-        const elapsed = Date.now() - t0;
-        console.log(`[vuca] batch ${i + 1} done in ${elapsed}ms, len=${text.length}`);
-
-        if (text) combinedResearch += `\n\n=== SEARCH ${i + 1}: ${queries[i].slice(0, 60)} ===\n${text.slice(0, 8000)}`;
+        const text = await withTimeout(runResearchQuery(industryQueries[i]), BATCH_TIMEOUT, '');
+        console.log(`[vuca] industry batch ${i + 1} done in ${Date.now() - t0}ms, len=${text.length}`);
+        if (text) combinedResearch += `\n\n=== INDUSTRY BATCH ${i + 1} ===\n${text.slice(0, 7000)}`;
       }
     } finally {
       clearInterval(researchHB);
     }
 
-    const sourcesFound = combinedResearch.length > 100;
-    console.log(`[vuca] research done, combined len=${combinedResearch.length}, sources=${sourcesFound}`);
+    // ── Step 1b: Company research (client mode only) ──────────────────────────
+    let companyProfile = '';
+    if (clientMode && companyName && companyDomain) {
+      current = update(jobId, { progress: 40, currentStep: `Researching ${companyName} products & solutions…` });
+      emit(jobId, 'progress', current);
 
-    current = update(jobId, { progress: 50, currentStep: `Research complete (${sourcesFound ? 'web sources found' : 'using training knowledge'}) — synthesising…` });
+      const companyHB = startHeartbeat(jobId, 41, 50, `Analysing ${companyName} portfolio…`);
+      try {
+        // Query 1: company products from their website
+        const q1 = `site:${companyDomain} products solutions services technology offerings`;
+        const q2 = `"${companyName}" ${companyDomain} IT products software services portfolio customers case studies 2024 2025`;
+
+        const t0 = Date.now();
+        const [r1, r2] = await Promise.all([
+          withTimeout(runResearchQuery(q1), BATCH_TIMEOUT, ''),
+          withTimeout(runResearchQuery(q2), BATCH_TIMEOUT, ''),
+        ]);
+        console.log(`[vuca] company research done in ${Date.now() - t0}ms, r1=${r1.length}, r2=${r2.length}`);
+
+        companyProfile = [
+          r1 ? `=== ${companyDomain} website ===\n${r1.slice(0, 4000)}` : '',
+          r2 ? `=== ${companyName} profile ===\n${r2.slice(0, 4000)}` : '',
+        ].filter(Boolean).join('\n\n');
+
+        if (companyProfile) {
+          update(jobId, { companyProfile: companyProfile.slice(0, 500) }); // store summary
+        }
+      } finally {
+        clearInterval(companyHB);
+      }
+    }
+
+    const sourcesFound = combinedResearch.length > 100;
+    console.log(`[vuca] all research done, industry=${combinedResearch.length}, company=${companyProfile.length}`);
+
+    current = update(jobId, {
+      progress: 52,
+      currentStep: `Research complete (${sourcesFound ? 'web sources found' : 'training knowledge'})${clientMode ? ` + ${companyName} portfolio` : ''} — synthesising…`,
+    });
     emit(jobId, 'progress', current);
 
     // ── Step 2: Synthesis ─────────────────────────────────────────────────────
-    current = update(jobId, { status: 'synthesising', progress: 55, currentStep: 'Building VUCA × 4W1H matrix…' });
+    current = update(jobId, {
+      status: 'synthesising', progress: 55,
+      currentStep: clientMode
+        ? `Building client-specific analysis for ${companyName}…`
+        : 'Building VUCA × 4W1H matrix…',
+    });
     emit(jobId, 'progress', current);
 
     const synthHB = startHeartbeat(jobId, 56, 95, 'Generating intelligence tables…');
-    let results: Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'geopoliticalStress'>;
+    let results: Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'clientITImpact' | 'geopoliticalStress'>;
     try {
-      results = await runVucaSynthesis(industry, geography, analysisDate!, combinedResearch);
+      const companyCtx = clientMode && companyName && companyDomain
+        ? { name: companyName, domain: companyDomain, profile: companyProfile || `${companyName} — IT products/services company at ${companyDomain}` }
+        : undefined;
+
+      results = await runVucaSynthesis(industry, geography, analysisDate!, combinedResearch, companyCtx);
     } catch (synthErr) {
       console.error(`[vucaAnalysis] synthesis error for ${jobId}:`, synthErr);
-      results = { vuca4w1hMatrix: [], itSpendImpact: [], itSpendSummaryTotal: { netDelta: 'N/A', dominantDirection: '▲ EXPAND' }, geopoliticalStress: [] };
+      results = {
+        vuca4w1hMatrix: [], itSpendImpact: [],
+        itSpendSummaryTotal: { netDelta: 'N/A', dominantDirection: '▲ EXPAND' },
+        clientITImpact: [], geopoliticalStress: [],
+      };
     } finally {
       clearInterval(synthHB);
     }

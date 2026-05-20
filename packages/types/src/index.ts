@@ -1061,6 +1061,17 @@ export interface GeoStressRow {
   itBudgetSignal: string;
 }
 
+// Client-specific IT impact row (used when companyName/companyDomain provided)
+export interface ClientITImpactRow {
+  stressEvent: string;
+  vucaDriver: 'VOLATILE' | 'UNCERTAIN' | 'COMPLEX' | 'AMBIGUOUS';
+  estImpactOnTechSpending: string;   // e.g. "+15–20% | +$2–3B"
+  impact: 'H' | 'M' | 'L';
+  impactedTechSpendCategory: string; // specific named technology category
+  roleInOrganization: string;        // how the client's product/solution addresses this
+  recommendation: string;            // what the client should pitch / position
+}
+
 export interface VucaAnalysisJob {
   jobId: string;
   status: 'pending' | 'researching' | 'synthesising' | 'complete' | 'error';
@@ -1069,9 +1080,16 @@ export interface VucaAnalysisJob {
   industry: string;
   geography: string;
   analysisDate?: string;
+  // Optional client context
+  companyName?: string;
+  companyDomain?: string;
+  companyProfile?: string;           // scraped/researched summary of what company sells
+  clientMode?: boolean;              // true when company context was provided
+  // Table data
   vuca4w1hMatrix?: VucaRow[];
-  itSpendImpact?: ITSpendRow[];
+  itSpendImpact?: ITSpendRow[];                          // generic mode
   itSpendSummaryTotal?: { netDelta: string; dominantDirection: string };
+  clientITImpact?: ClientITImpactRow[];                  // client mode
   geopoliticalStress?: GeoStressRow[];
   error?: string;
   createdAt?: string;

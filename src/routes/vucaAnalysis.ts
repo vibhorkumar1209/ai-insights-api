@@ -22,9 +22,12 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
+  const { companyName, companyDomain } = req.body;
   const jobId = createVucaJob({
     industry: industry.trim().slice(0, 200),
     geography: geography.trim().slice(0, 100),
+    companyName: typeof companyName === 'string' ? companyName.trim().slice(0, 200) : undefined,
+    companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 200) : undefined,
   });
 
   runVucaAnalysis(jobId).catch((err) =>
