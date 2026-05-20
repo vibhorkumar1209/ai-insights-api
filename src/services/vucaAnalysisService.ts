@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { VucaAnalysisJob } from '@ai-insights/types';
 import { runVucaSynthesis } from './claudeAI.js';
+import { runResearchQuery } from './parallelAI.js';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 
@@ -66,6 +67,17 @@ function startHeartbeat(jobId: string, base: number, max: number, label: string)
   }, 15_000);
 }
 
+// ── Promise.race wrapper — hard wall-clock cap on any async call ──────────────
+// AbortController + node-fetch doesn't reliably cancel on Render free tier.
+// Promise.race ALWAYS moves forward after timeoutMs regardless of underlying state.
+// The dangling Promise resolves/rejects on its own (TCP timeout ~2-4 min).
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+  ]);
+}
+
 // ── Main orchestrator ─────────────────────────────────────────────────────────
 
 export async function runVucaAnalysis(jobId: string): Promise<void> {
@@ -74,20 +86,52 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
   const { industry, geography, analysisDate } = job;
 
   try {
-    // VUCA is knowledge-based (geopolitics, market dynamics) — no Parallel.AI needed.
-    // Parallel.AI's node-fetch AbortController doesn't reliably timeout on Render free tier,
-    // causing 10+ minute hangs. Claude training knowledge is sufficient for VUCA analysis.
-
+    // ── Step 1: Research via Parallel.AI ─────────────────────────────────────
     let current = update(jobId, {
-      status: 'synthesising', progress: 10,
-      currentStep: 'Building VUCA × 4W1H analysis…',
+      status: 'researching', progress: 5,
+      currentStep: 'Searching web for VUCA intelligence…',
     });
     emit(jobId, 'progress', current);
 
-    const synthHB = startHeartbeat(jobId, 11, 95, 'Generating intelligence tables…');
+    const BATCH_TIMEOUT = 50_000; // 50s per batch — resolves with '' on timeout
+    const queries = [
+      `${industry} ${geography} market volatility disruption risks 2024 2025 McKinsey BCG Deloitte analysis`,
+      `${industry} ${geography} geopolitical uncertainty tariffs regulation digital transformation 2025`,
+      `${industry} ${geography} IT spend technology investment trends forecast 2025 2026 Gartner IDC Forrester`,
+    ];
+
+    const researchHB = startHeartbeat(jobId, 6, 48, 'Searching for market intelligence…');
+    let combinedResearch = '';
+    try {
+      for (let i = 0; i < queries.length; i++) {
+        current = update(jobId, { progress: 8 + i * 12, currentStep: `Web search ${i + 1}/3: ${['volatility & risks', 'geopolitical & regulatory', 'IT spend & technology'][i]}…` });
+        emit(jobId, 'progress', current);
+
+        const t0 = Date.now();
+        const text = await withTimeout(runResearchQuery(queries[i]), BATCH_TIMEOUT, '');
+        const elapsed = Date.now() - t0;
+        console.log(`[vuca] batch ${i + 1} done in ${elapsed}ms, len=${text.length}`);
+
+        if (text) combinedResearch += `\n\n=== SEARCH ${i + 1}: ${queries[i].slice(0, 60)} ===\n${text.slice(0, 8000)}`;
+      }
+    } finally {
+      clearInterval(researchHB);
+    }
+
+    const sourcesFound = combinedResearch.length > 100;
+    console.log(`[vuca] research done, combined len=${combinedResearch.length}, sources=${sourcesFound}`);
+
+    current = update(jobId, { progress: 50, currentStep: `Research complete (${sourcesFound ? 'web sources found' : 'using training knowledge'}) — synthesising…` });
+    emit(jobId, 'progress', current);
+
+    // ── Step 2: Synthesis ─────────────────────────────────────────────────────
+    current = update(jobId, { status: 'synthesising', progress: 55, currentStep: 'Building VUCA × 4W1H matrix…' });
+    emit(jobId, 'progress', current);
+
+    const synthHB = startHeartbeat(jobId, 56, 95, 'Generating intelligence tables…');
     let results: Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'geopoliticalStress'>;
     try {
-      results = await runVucaSynthesis(industry, geography, analysisDate!, '');
+      results = await runVucaSynthesis(industry, geography, analysisDate!, combinedResearch);
     } catch (synthErr) {
       console.error(`[vucaAnalysis] synthesis error for ${jobId}:`, synthErr);
       results = { vuca4w1hMatrix: [], itSpendImpact: [], itSpendSummaryTotal: { netDelta: 'N/A', dominantDirection: '▲ EXPAND' }, geopoliticalStress: [] };
