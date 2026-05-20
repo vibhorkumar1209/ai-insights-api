@@ -92,11 +92,12 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     let researchBatches: Array<{ label: string; rawText: string }> = [];
     try {
       // Run sequentially — 4 parallel calls overwhelm Render free tier (0.1 vCPU)
+      // General topic+geo searches — synthesis will filter & attribute to consulting firms
       const batchDefs = [
-        { label: 'strategy', query: `McKinsey, BCG, Bain, Accenture, Oliver Wyman strategic insights reports on "${topic}" in ${geography} 2023-2025: key findings, statistics, recommendations, URLs.` },
-        { label: 'advisory', query: `Deloitte, PwC, EY, KPMG, IBM Consulting published research on "${topic}" in ${geography} 2023-2025: industry outlooks, transformation studies, data points.` },
-        { label: 'analysts', query: `Gartner, Forrester, IDC, Everest Group analyst reports predictions on "${topic}" in ${geography} 2023-2025: forecasts, market sizes, adoption rates, maturity assessments.` },
-        { label: 'market', query: `Market research investment data on "${topic}" in ${geography} 2023-2025: growth rates, market size, CB Insights, WEF, HBR, MIT Sloan, S&P Global findings.` },
+        { label: 'reports', query: `"${topic}" ${geography} research report analysis 2024 2025 site:mckinsey.com OR site:bcg.com OR site:bain.com OR site:deloitte.com OR site:pwc.com OR site:ey.com OR site:accenture.com OR site:kpmg.com` },
+        { label: 'analysts', query: `"${topic}" ${geography} forecast outlook trends 2024 2025 site:gartner.com OR site:forrester.com OR site:idc.com OR site:everestgrp.com OR site:hbr.org OR site:weforum.org` },
+        { label: 'insights', query: `"${topic}" ${geography} strategy insights statistics market size 2024 2025 consulting firm report` },
+        { label: 'trends', query: `"${topic}" ${geography} trends challenges opportunities recommendations industry 2025` },
       ];
 
       for (let i = 0; i < batchDefs.length; i++) {

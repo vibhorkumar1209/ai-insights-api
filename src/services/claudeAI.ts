@@ -3276,12 +3276,16 @@ export async function synthesiseConsultingIntelligence(
 ): Promise<Partial<ConsultingIntelligenceJob>> {
   const hasRealResearch = researchBatches.some(b => !b.rawText.includes('No data retrieved'));
   const researchNote = hasRealResearch
-    ? 'Use the LIVE RESEARCH DATA below as primary source. Fill gaps from training knowledge.'
-    : 'No live research was retrieved. Use your extensive training knowledge about published reports from McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, Forrester, IDC, Accenture and other firms on this topic. Produce substantive, attributed insights.';
+    ? `The LIVE RESEARCH DATA below contains web search results about "${topic}" in ${geography}. Identify content from McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, Forrester, IDC, Accenture, HBR, WEF and other research/consulting firms. Extract and attribute their specific findings, statistics, and positions.`
+    : `No live web research was retrieved. Use your extensive training knowledge of published reports from McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, Forrester, IDC, Accenture and other leading firms on "${topic}" in ${geography}. Produce substantive, attributed insights.`;
 
-  const systemPrompt = `You are a senior analyst producing an analyst-grade thought leadership synthesis.
+  const systemPrompt = `You are a senior analyst producing an analyst-grade thought leadership synthesis on consulting and research firm positions.
 ${researchNote}
-RULES: Always produce substantive output. Never return empty arrays. Attribute insights to specific named firms.
+RULES:
+- Always produce substantive, expert-level output. Never return empty arrays or vague statements.
+- Attribute ALL insights to specific named firms (e.g. "McKinsey argues…", "Gartner forecasts…", "Deloitte's 2024 survey found…").
+- Use real statistics when available from research. When using training knowledge, frame as "According to [Firm]'s research…".
+- Identify which consulting/analyst firms appear in the research and focus on their positions.
 Return only valid JSON with no markdown fencing.`;
 
   const researchText = hasRealResearch
@@ -3345,8 +3349,18 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
     console.warn('[synthesiseConsultingIntelligence] call2 parse failed (non-fatal):', e);
   }
 
+  // Always guarantee executiveSummary — never let it be undefined
+  const execSummary = part1.executiveSummary ?? {
+    topInsights: [`Synthesis completed for "${topic}" in ${geography}. Research drew from ${researchBatches.filter(b => !b.rawText.includes('No data retrieved')).length} live sources and Claude training knowledge.`],
+    emergingTrends: part1.emergingThemes?.map((t: TLTheme) => t.theme) || [],
+    consensusViewpoints: [],
+    contrarianOpinions: [],
+    strategicImplications: part1.strategicRecommendations?.slice(0, 3) || [],
+    futureOutlook: 'Detailed synthesis available — see firm analyses and strategic recommendations below.',
+  };
+
   return {
-    executiveSummary: part1.executiveSummary,
+    executiveSummary: execSummary,
     emergingThemes: (part1.emergingThemes || []) as TLTheme[],
     strategicRecommendations: part1.strategicRecommendations || [],
     researchMethodology: part1.researchMethodology || `Synthesised from ${researchBatches.length} research batches using Claude training knowledge.`,
