@@ -1030,3 +1030,51 @@ export interface ConsultingIntelligenceJob {
   completedAt?: string;
 }
 
+// ── VUCA × 4W1H Analysis ──────────────────────────────────────────────────────
+
+export interface VucaRow {
+  vucaDimension: 'VOLATILE' | 'UNCERTAIN' | 'COMPLEX' | 'AMBIGUOUS';
+  lens: string;
+  what: string;
+  why: string;
+  where: string;
+  when: string;
+  how: string;
+}
+
+export interface ITSpendRow {
+  vucaDriver: string;
+  itSpendCategory: string;
+  baselineSpend: string;
+  impactMechanism: string;
+  quantifiedImpact: string;
+  netDelta: string;
+  direction: '▲ EXPAND' | '▼ COMPRESS' | '► REALLOCATE';
+}
+
+export interface GeoStressRow {
+  stressEvent: string;
+  status: 'Active' | 'Resolved' | 'Escalating' | 'Monitoring';
+  transmissionMechanism: string;
+  severity: 'High' | 'Medium' | 'Low';
+  severityRationale: string;
+  itBudgetSignal: string;
+}
+
+export interface VucaAnalysisJob {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesising' | 'complete' | 'error';
+  progress?: number;
+  currentStep?: string;
+  industry: string;
+  geography: string;
+  analysisDate?: string;
+  vuca4w1hMatrix?: VucaRow[];
+  itSpendImpact?: ITSpendRow[];
+  itSpendSummaryTotal?: { netDelta: string; dominantDirection: string };
+  geopoliticalStress?: GeoStressRow[];
+  error?: string;
+  createdAt?: string;
+  completedAt?: string;
+}
+

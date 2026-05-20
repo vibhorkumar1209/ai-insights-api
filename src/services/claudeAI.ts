@@ -20,6 +20,7 @@ import {
   ContentGenerationInput,
   SalesPlay2Input, SalesPlay2WinTheme, SalesPlay2Opportunity, SalesPlay2Competitor,
   TLFirmInsight, TLMetric, TLInsight, TLTheme, TLChartSpec, ConsultingIntelligenceJob,
+  VucaRow, ITSpendRow, GeoStressRow, VucaAnalysisJob,
 } from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
@@ -3369,5 +3370,103 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
     comparativeMatrix: part2.comparativeMatrix || [],
     sourceAttribution: [] as TLInsight[],
     charts: [] as TLChartSpec[],
+  };
+}
+
+// ── VUCA × 4W1H Analysis ──────────────────────────────────────────────────────
+
+export async function runVucaSynthesis(
+  industry: string,
+  geography: string,
+  analysisDate: string,
+  researchText: string,
+): Promise<Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'geopoliticalStress'>> {
+
+  const systemPrompt = `You are a senior industry analyst producing a VUCA × 4W1H + IT Spend Impact analysis.
+OUTPUT IS JSON ONLY — no prose, no markdown fences.
+DATA RULES:
+- Use ONLY primary/institutional sources: company filings, trade associations, government agencies, multilateral bodies (WEF, IMF, World Bank), named research firms (McKinsey, Bain, Deloitte, Oliver Wyman, S&P Global, Wood Mackenzie, BloombergNEF, IEA, IATA, Gartner, Forrester, IDC).
+- NEVER cite syndicated aggregators (MarketsandMarkets, Grand View Research, Mordor Intelligence, Fortune Business Insights, Allied Market Research).
+- Every quantified stat must carry inline source attribution (e.g. "S&P Global, 2025").
+- Use 2024–2026 data only. Flag pre-2024 data explicitly.
+- Include geopolitical context: Middle East conflict, US–China tariffs, Russia–Ukraine, regional instability where relevant.`;
+
+  // ── Call 1: VUCA × 4W1H Matrix (4 rows, 1 per dimension) ────────────────
+  const call1Prompt = `INDUSTRY: ${industry}
+GEOGRAPHY: ${geography}
+ANALYSIS DATE: ${analysisDate}
+
+RESEARCH CONTEXT:
+${researchText.slice(0, 18000)}
+
+Return JSON with key "vuca4w1hMatrix" containing exactly 4 objects — one per VUCA dimension:
+{
+  "vuca4w1hMatrix": [
+    {
+      "vucaDimension": "VOLATILE",
+      "lens": "Short label for this volatility driver (5-8 words)",
+      "what": "Named situation with quantified stats and inline source. Include named companies/regulations/events.",
+      "why": "Root cause chain with minimum 2 causal links. Name the mechanism.",
+      "where": "Named countries, corridors, hubs, regulatory jurisdictions. Differentiate epicentre from ripple zones.",
+      "when": "Structured timeline: Acute phase | Structural Reset | Recovery with specific dates where known.",
+      "how": "2-3 specific operational recommendations. Include 30/60/90-day prioritisation signal."
+    },
+    { "vucaDimension": "UNCERTAIN", ... },
+    { "vucaDimension": "COMPLEX", ... },
+    { "vucaDimension": "AMBIGUOUS", ... }
+  ]
+}
+All cells must be substantive — minimum 40 words each. HOW cells must be operational, not generic.`;
+
+  // ── Call 2: IT Spend + Geopolitical tables ──────────────────────────────
+  const call2Prompt = `INDUSTRY: ${industry}
+GEOGRAPHY: ${geography}
+ANALYSIS DATE: ${analysisDate}
+
+RESEARCH CONTEXT:
+${researchText.slice(0, 12000)}
+
+Return JSON with two keys:
+
+1. "itSpendImpact": array of EXACTLY 12 objects. Each VUCA dimension must appear at least twice. No duplicate IT spend categories.
+Each object:
+{
+  "vucaDriver": "VOLATILE"|"UNCERTAIN"|"COMPLEX"|"AMBIGUOUS",
+  "itSpendCategory": "Specific named technology category (never generic 'IT' or 'Software')",
+  "baselineSpend": "Estimated current annual spend with source",
+  "impactMechanism": "How this VUCA pressure transmits into this budget line — name regulatory mandate / operational necessity / competitive response / risk mitigation",
+  "quantifiedImpact": "Format: '+25–35% | +$1.5–2.5B' or '–15–20% | –$0.4–0.8B'",
+  "netDelta": "Dollar range e.g. '+$1.5–2.5B'",
+  "direction": "▲ EXPAND" | "▼ COMPRESS" | "► REALLOCATE"
+}
+
+2. "itSpendSummaryTotal": { "netDelta": "sum of ranges e.g. '+$8–14B'", "dominantDirection": "▲ EXPAND" }
+
+3. "geopoliticalStress": array of 5-7 objects covering: US–China tariffs, Russia–Ukraine energy, Middle East/Hormuz, US tariff regime (USMCA/bilateral), plus any region-specific events relevant to ${geography}/${industry}.
+Each object:
+{
+  "stressEvent": "Named conflict/war/sanction/trade action",
+  "status": "Active"|"Resolved"|"Escalating"|"Monitoring",
+  "transmissionMechanism": "How this event enters the industry's cost structure, supply chain, demand, or regulatory environment",
+  "severity": "High"|"Medium"|"Low",
+  "severityRationale": "One-line rationale",
+  "itBudgetSignal": "Which specific IT spend category is most directly activated"
+}`;
+
+  const [raw1, raw2] = await Promise.all([
+    runClaudeStream(SYNTHESIS_MODEL, 4000, systemPrompt, call1Prompt, 150_000),
+    runClaudeStream(SYNTHESIS_MODEL, 4000, systemPrompt, call2Prompt, 150_000),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let p1: any = {}, p2: any = {};
+  try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse failed:', e, raw1.slice(0, 200)); }
+  try { p2 = parseJsonRobust(raw2); } catch (e) { console.error('[vuca] call2 parse failed:', e, raw2.slice(0, 200)); }
+
+  return {
+    vuca4w1hMatrix: (p1.vuca4w1hMatrix || []) as VucaRow[],
+    itSpendImpact: (p2.itSpendImpact || []) as ITSpendRow[],
+    itSpendSummaryTotal: p2.itSpendSummaryTotal || { netDelta: 'N/A', dominantDirection: '▲ EXPAND' },
+    geopoliticalStress: (p2.geopoliticalStress || []) as GeoStressRow[],
   };
 }
