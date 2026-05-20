@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { VucaAnalysisJob } from '@ai-insights/types';
 import { runVucaSynthesis } from './claudeAI.js';
-import { runResearchQuery } from './parallelAI.js';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 
@@ -75,47 +74,20 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
   const { industry, geography, analysisDate } = job;
 
   try {
-    // ── Step 1: Research ──────────────────────────────────────────────────────
+    // VUCA is knowledge-based (geopolitics, market dynamics) — no Parallel.AI needed.
+    // Parallel.AI's node-fetch AbortController doesn't reliably timeout on Render free tier,
+    // causing 10+ minute hangs. Claude training knowledge is sufficient for VUCA analysis.
+
     let current = update(jobId, {
-      status: 'researching', progress: 5,
-      currentStep: 'Researching industry VUCA drivers…',
+      status: 'synthesising', progress: 10,
+      currentStep: 'Building VUCA × 4W1H analysis…',
     });
     emit(jobId, 'progress', current);
 
-    const researchHB = startHeartbeat(jobId, 6, 55, 'Gathering market intelligence…');
-    let combinedResearch = '';
-    try {
-      const queries = [
-        `"${industry}" ${geography} market volatility risks disruptions 2024 2025 site:mckinsey.com OR site:bcg.com OR site:deloitte.com OR site:pwc.com OR site:ey.com OR site:bain.com OR site:accenture.com`,
-        `"${industry}" ${geography} geopolitical uncertainty tariffs regulation technology investment 2024 2025 site:weforum.org OR site:imf.org OR site:worldbank.org OR site:gartner.com OR site:idc.com OR site:forrester.com`,
-        `"${industry}" ${geography} IT spend technology budget digital transformation 2025 2026 analyst forecast`,
-      ];
-
-      for (let i = 0; i < queries.length; i++) {
-        current = update(jobId, { progress: 10 + i * 12, currentStep: `Research batch ${i + 1}/3…` });
-        emit(jobId, 'progress', current);
-        try {
-          const text = await runResearchQuery(queries[i]);
-          combinedResearch += `\n\n=== BATCH ${i + 1} ===\n${text.slice(0, 10000)}`;
-        } catch {
-          combinedResearch += `\n\n=== BATCH ${i + 1} ===\nNo data retrieved.`;
-        }
-      }
-    } finally {
-      clearInterval(researchHB);
-    }
-
-    current = update(jobId, { progress: 55, currentStep: 'Research complete — building analysis…' });
-    emit(jobId, 'progress', current);
-
-    // ── Step 2: Synthesis ─────────────────────────────────────────────────────
-    current = update(jobId, { status: 'synthesising', progress: 60, currentStep: 'Synthesising VUCA × 4W1H matrix…' });
-    emit(jobId, 'progress', current);
-
-    const synthHB = startHeartbeat(jobId, 61, 95, 'Generating tables…');
+    const synthHB = startHeartbeat(jobId, 11, 95, 'Generating intelligence tables…');
     let results: Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'geopoliticalStress'>;
     try {
-      results = await runVucaSynthesis(industry, geography, analysisDate!, combinedResearch);
+      results = await runVucaSynthesis(industry, geography, analysisDate!, '');
     } catch (synthErr) {
       console.error(`[vucaAnalysis] synthesis error for ${jobId}:`, synthErr);
       results = { vuca4w1hMatrix: [], itSpendImpact: [], itSpendSummaryTotal: { netDelta: 'N/A', dominantDirection: '▲ EXPAND' }, geopoliticalStress: [] };
