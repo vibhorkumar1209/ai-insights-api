@@ -3419,36 +3419,39 @@ export async function runVucaSynthesis(
 
   const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks. Use 2024–2026 data. Cite sources inline where available.`;
 
-  // ── Call 1: VUCA × 4W1H Matrix ───────────────────────────────────────────
-  const clientHowNote = clientMode
-    ? ` For "how" field: tailor all actions and signals specifically to ${companyContext!.name}'s products/solutions.`
-    : '';
-
-  const call1 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}${clientHowNote}
-
+  // ── Call 1a: VUCA Driver, Effects & Demand table ─────────────────────────
+  const call1a = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 Context: ${ctx}
 
-Return JSON with exactly 2 keys:
-
-"vucaDriverEffects": exactly 4 objects (one per VUCA dimension) — a summary table.
-Fields per object:
+Return JSON — key "vucaDriverEffects", exactly 4 objects (one per VUCA dimension).
+Fields:
 - vucaDimension: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
-- driver: 1 sentence naming the primary force causing this VUCA condition (e.g. "US-China decoupling driving semiconductor export controls and supply chain fragmentation")
-- effects: 3-4 bullet points (each starting with "• ") describing key disruption effects on the ${industry} industry
-- demand: 3-4 bullet points (each starting with "• ") describing what new IT/technology demand this VUCA condition creates
+- driver: 1 sentence — the primary force causing this VUCA condition
+- effects: 3-4 bullet points (each starting "• ") — key disruption effects on ${industry}
+- demand: 3-4 bullet points (each starting "• ") — new IT/technology demand this condition creates
 
-"vuca4w1hMatrix": exactly 4 objects (one per VUCA dimension).
-Ensure coverage of: armed conflicts & wars, supply chain disruptions, pandemic/health crises, energy price shocks, trade wars & tariffs, currency volatility, regulatory upheaval, climate events — whichever are most material for ${industry}.
-Fields per object:
+{"vucaDriverEffects":[{"vucaDimension":"VOLATILE","driver":"","effects":"","demand":""},{"vucaDimension":"UNCERTAIN","driver":"","effects":"","demand":""},{"vucaDimension":"COMPLEX","driver":"","effects":"","demand":""},{"vucaDimension":"AMBIGUOUS","driver":"","effects":"","demand":""}]}`;
+
+  // ── Call 1b: VUCA × 4W1H Matrix ─────────────────────────────────────────
+  const clientHowNote = clientMode
+    ? ` Tailor all "how" adaptation actions specifically to ${companyContext!.name}'s products/solutions.`
+    : '';
+
+  const call1b = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}${clientHowNote}
+Context: ${ctx}
+
+Return JSON — key "vuca4w1hMatrix", exactly 4 objects (one per VUCA dimension).
+Cover: armed conflicts & wars, supply chain disruptions, pandemic/health crises, energy shocks, trade wars & tariffs, regulatory upheaval, climate events — most material for ${industry}.
+Fields:
 - vucaDimension: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
-- lens: 5-8 word descriptor of the dominant stress theme
-- what: named situation with quantified stat and inline source (2-3 sentences)
-- why: 2-3 causal links explaining root cause and mechanism
-- where: named countries, corridors, or jurisdictions (epicentre vs ripple zones)
-- when: 3-phase timeline — Acute (current), Structural Reset (6-18 months), Recovery (18-36 months) with approximate dates
-- how: Answer "What does this situation mean for ${clientMode ? companyContext!.name : 'organisations in ' + industry} and what must they do to adapt?" — 3 concrete adaptation actions with 30/60/90-day signals${clientMode ? `, specific to ${companyContext!.name}'s products/solutions` : ''}
+- lens: 5-8 word descriptor of dominant stress theme
+- what: named situation with quantified stat (2 sentences)
+- why: 2-3 causal links — root cause and mechanism
+- where: named countries/corridors (epicentre vs ripple zones)
+- when: 3-phase timeline — Acute (now), Structural Reset (6-18 months), Recovery (18-36 months)
+- how: "What does this mean for ${clientMode ? companyContext!.name : 'organisations in ' + industry} and what must they do to adapt?" — 2-3 concrete actions with 30/60/90-day signals
 
-{"vucaDriverEffects":[{"vucaDimension":"VOLATILE","driver":"","effects":"","demand":""},{"vucaDimension":"UNCERTAIN","driver":"","effects":"","demand":""},{"vucaDimension":"COMPLEX","driver":"","effects":"","demand":""},{"vucaDimension":"AMBIGUOUS","driver":"","effects":"","demand":""}],"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
+{"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
 
   // ── Call 2: IT Spend Impact ───────────────────────────────────────────────
   const call2 = clientMode
@@ -3502,23 +3505,25 @@ Fields:
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  // Run all 3 synthesis calls in parallel — they are async network waits, not CPU work.
-  // Parallel reduces total wall-clock time from ~3-4 min sequential → ~1-2 min.
-  const [raw1, raw2, raw3] = await Promise.all([
-    vucaCall(systemPrompt, call1, 6500, 95_000, 'call1-vuca'),
-    vucaCall(systemPrompt, call2, 6500, 95_000, 'call2-spend'),
-    vucaCall(systemPrompt, call3, 3200, 60_000, 'call3-geo'),
+  // All 4 calls fire in parallel — async network waits, no CPU contention on Render 0.1 vCPU.
+  // call1a and call1b are split so each focuses on one table (prevents token truncation).
+  const [rawA, rawB, raw2, raw3] = await Promise.all([
+    vucaCall(systemPrompt, call1a, 3000, 90_000, 'call1a-drivers'),
+    vucaCall(systemPrompt, call1b, 5000, 95_000, 'call1b-matrix'),
+    vucaCall(systemPrompt, call2,  6500, 95_000, 'call2-spend'),
+    vucaCall(systemPrompt, call3,  3200, 60_000, 'call3-geo'),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let p1: any = {}, p2: any = {}, p3: any = {};
-  try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse fail (len=%d): %s | %s', raw1.length, String(e), raw1.slice(0, 400)); }
+  let pA: any = {}, pB: any = {}, p2: any = {}, p3: any = {};
+  try { pA = parseJsonRobust(rawA); } catch (e) { console.error('[vuca] call1a parse fail (len=%d): %s | %s', rawA.length, String(e), rawA.slice(0, 400)); }
+  try { pB = parseJsonRobust(rawB); } catch (e) { console.error('[vuca] call1b parse fail (len=%d): %s | %s', rawB.length, String(e), rawB.slice(0, 400)); }
   try { p2 = parseJsonRobust(raw2); } catch (e) { console.error('[vuca] call2 parse fail (len=%d): %s | %s', raw2.length, String(e), raw2.slice(0, 400)); }
   try { p3 = parseJsonRobust(raw3); } catch (e) { console.error('[vuca] call3 parse fail (len=%d): %s | %s', raw3.length, String(e), raw3.slice(0, 400)); }
 
   return {
-    vucaDriverEffects: (p1.vucaDriverEffects || []) as VucaDriverEffectRow[],
-    vuca4w1hMatrix: (p1.vuca4w1hMatrix || []) as VucaRow[],
+    vucaDriverEffects: (pA.vucaDriverEffects || []) as VucaDriverEffectRow[],
+    vuca4w1hMatrix: (pB.vuca4w1hMatrix || []) as VucaRow[],
     itSpendImpact: [],
     itSpendSummaryTotal: undefined,
     clientITImpact: (p2.clientITImpact || []) as ClientITImpactRow[],
