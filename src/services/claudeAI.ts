@@ -3391,6 +3391,20 @@ async function claudeCreate(system: string, user: string, maxTokens: number, tim
   return block.type === 'text' ? block.text : '';
 }
 
+// ── Retry wrapper: attempt up to 2 times if response is too short ─────────────
+async function vucaCall(
+  system: string, user: string, maxTokens: number, timeoutMs: number, label: string
+): Promise<string> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const raw = await claudeCreate(system, user, maxTokens, timeoutMs, FAST_MODEL)
+      .catch((e: Error) => { console.error(`[vuca] ${label} attempt ${attempt} error: ${e.message}`); return ''; });
+    console.log(`[vuca] ${label} attempt ${attempt} len=${raw.length} preview="${raw.slice(0, 80)}"`);
+    if (raw.length > 80) return raw;
+    console.warn(`[vuca] ${label} attempt ${attempt} too short — retrying`);
+  }
+  return '';
+}
+
 export async function runVucaSynthesis(
   industry: string,
   geography: string,
@@ -3399,97 +3413,59 @@ export async function runVucaSynthesis(
   companyContext?: { name: string; domain: string; profile: string },
 ): Promise<Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'clientITImpact' | 'geopoliticalStress'>> {
 
-  const ctx = researchText.slice(0, 8000);
+  // Trim context per call — shorter prompt = faster Haiku response on Render 0.1 vCPU
+  const ctx = researchText.slice(0, 5000);
   const clientMode = !!(companyContext?.name && companyContext?.profile);
 
-  const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks.
-Use 2024–2026 data. Cite sources inline (e.g. "McKinsey, 2025"). Include geopolitical context where relevant.`;
+  const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks. Keep all text fields concise (under 40 words each). Use 2024–2026 data.`;
 
   // ── Call 1: VUCA × 4W1H Matrix ───────────────────────────────────────────
   const clientHowNote = clientMode
-    ? `\nThis is for ${companyContext!.name} (${companyContext!.domain}). For the "how" field, tailor the operational actions and 30/60/90-day signals specifically to how ${companyContext!.name}'s products/solutions can respond to or capitalise on each VUCA dimension.`
+    ? ` For "how" field: tailor actions to ${companyContext!.name}'s specific products/solutions.`
     : '';
 
   const call1 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}${clientHowNote}
 
-Context: ${ctx}
+Context (use for grounding): ${ctx}
 
-Return JSON with key "vuca4w1hMatrix" — exactly 4 objects, one per VUCA dimension.
-Each object: vucaDimension (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), lens (5-8 word label),
-what (named situation + quantified stat + inline source), why (2+ causal links + mechanism),
-where (named countries/corridors/jurisdictions, epicentre vs ripple), when (3-phase timeline: Acute | Structural Reset | Recovery + dates), how (2-3 operational actions + 30/60/90-day signal${clientMode ? ` specific to ${companyContext!.name}` : ''}).
+Return JSON — key "vuca4w1hMatrix", exactly 4 objects (one per VUCA dimension). Each field max 35 words.
+Fields: vucaDimension (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), lens (5-7 word label), what (situation + stat + source), why (2 causal links), where (named geographies), when (Acute/Reset/Recovery timeline), how (2 actions + signal${clientMode ? ` for ${companyContext!.name}` : ''}).
 
 {"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
 
-  // ── Call 2: IT Spend Impact (client-specific OR general industry) ─────────
-  // Both modes produce the same ClientITImpactRow schema.
-  // Client mode: rows specific to company's product portfolio.
-  // Generic mode: rows cover general IT vendor landscape for the industry.
+  // ── Call 2: IT Spend Impact ───────────────────────────────────────────────
   const call2 = clientMode
-    ? `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
-Client Company: ${companyContext!.name} (${companyContext!.domain})
-
-COMPANY PROFILE (what this company sells):
-${companyContext!.profile.slice(0, 3000)}
-
+    ? `Industry: ${industry} | Geography: ${geography}
+Client: ${companyContext!.name} (${companyContext!.domain})
+Profile: ${companyContext!.profile.slice(0, 2000)}
 Context: ${ctx}
 
-This analysis is for a SALES / ACCOUNT PLANNING use case. Produce Table 2 showing which VUCA-driven stress events create technology spend opportunities for this specific client.
-Each row = one impacted tech spend category (multiple rows per stress event if multiple categories are impacted).
-
-Return JSON with key "clientITImpact" — array of 10-14 objects covering all 4 VUCA dimensions.
-Fields:
-- stressEvent: named geopolitical/market event
-- vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
-- estImpactOnTechSpending: quantified spend shift (e.g. "+20-30% | +$1.5-2.5B globally")
-- impact: "H" | "M" | "L"
-- impactedTechSpendCategory: SPECIFIC named tech category matching ${companyContext!.name}'s actual portfolio (e.g. "Supply Chain Visibility", "OT/ICS Cybersecurity"). Name their real products if known.
-- roleInOrganization: How ${companyContext!.name}'s specific product/solution fills this category — name actual products.
-- recommendation: Concrete sales pitch for ${companyContext!.name} — what to pitch, to whom (CIO/CISO/COO), key signal. Keep under 40 words.`
-    : `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
-
+Return JSON — key "clientITImpact", exactly 8 objects covering all 4 VUCA dimensions (2 per dimension). Each text field max 30 words.
+Fields: stressEvent, vucaDriver (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), estImpactOnTechSpending (e.g. "+20% | +$1B"), impact ("H"/"M"/"L"), impactedTechSpendCategory (named category matching ${companyContext!.name} portfolio), roleInOrganization (how ${companyContext!.name}'s product fills this — name actual products), recommendation (pitch + buyer + signal, max 30 words).`
+    : `Industry: ${industry} | Geography: ${geography}
 Context: ${ctx}
 
-Produce Table 2 showing which VUCA-driven stress events impact IT spending in the ${industry} industry.
-Each row = one impacted tech spend category (multiple rows per stress event if multiple categories are impacted).
+Return JSON — key "clientITImpact", exactly 8 objects covering all 4 VUCA dimensions (2 per dimension). Each text field max 30 words.
+Fields: stressEvent, vucaDriver (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), estImpactOnTechSpending (e.g. "+15% | +$2B"), impact ("H"/"M"/"L"), impactedTechSpendCategory (specific IT spend category in ${industry}), roleInOrganization (typical buyer role/function in ${industry} companies), recommendation (what to pitch + to whom + key signal, max 30 words).`;
 
-Return JSON with key "clientITImpact" — array of 10-12 objects covering all 4 VUCA dimensions.
-Fields:
-- stressEvent: named geopolitical/market event
-- vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
-- estImpactOnTechSpending: quantified spend shift for the industry (e.g. "+15-25% | +$2-3B globally")
-- impact: "H" | "M" | "L"
-- impactedTechSpendCategory: specific named IT spend category impacted across the ${industry} industry (e.g. "Supply Chain Visibility Platforms", "Predictive Maintenance AI", "Regulatory Compliance Automation")
-- roleInOrganization: typical organizational role/function that owns this spend category in ${industry} companies (e.g. "CIO + Head of Supply Chain", "CISO + OT Security Lead") — describe the function, not a specific company
-- recommendation: strategic recommendation for any IT vendor selling in this space — what capabilities to lead with, which buyer persona to target, key market signal to watch. Keep under 40 words.`;
-
-  // ── Call 3: Geopolitical Stress Overlay (always separate to avoid truncation) ──
-  const call3 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
-
+  // ── Call 3: Geopolitical Stress Overlay ──────────────────────────────────
+  const call3 = `Industry: ${industry} | Geography: ${geography}
 Context: ${ctx}
 
-Return JSON with key "geopoliticalStress" — exactly 5 objects covering US-China tariffs, Russia-Ukraine, Middle East/Hormuz, plus regional events relevant to ${geography}/${industry}.
-Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism (how this stress event flows into the ${industry} industry), severity (High/Medium/Low), severityRationale (1-2 sentences), itBudgetSignal (specific IT spend category that will move as a result).`;
+Return JSON — key "geopoliticalStress", exactly 5 objects. Each text field max 30 words.
+Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism (how it hits ${industry}), severity (High/Medium/Low), severityRationale (1 sentence), itBudgetSignal (IT spend category that moves).`;
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  const raw1 = await claudeCreate(systemPrompt, call1, 3800, 100_000, FAST_MODEL)
-    .catch((e) => { console.error('[vuca] call1 error:', e.message); return ''; });
-  console.log(`[vuca] call1 done len=${raw1.length} preview="${raw1.slice(0, 80)}"`);
-
-  const raw2 = await claudeCreate(systemPrompt, call2, 4500, 120_000, FAST_MODEL)
-    .catch((e) => { console.error('[vuca] call2 error:', e.message); return ''; });
-  console.log(`[vuca] call2 done len=${raw2.length} preview="${raw2.slice(0, 80)}"`);
-
-  const raw3 = await claudeCreate(systemPrompt, call3, 2000, 60_000, FAST_MODEL)
-    .catch((e) => { console.error('[vuca] call3 error:', e.message); return ''; });
-  console.log(`[vuca] call3 done len=${raw3.length} preview="${raw3.slice(0, 80)}"`);
+  const raw1 = await vucaCall(systemPrompt, call1, 3500, 100_000, 'call1-vuca');
+  const raw2 = await vucaCall(systemPrompt, call2, 3500, 100_000, 'call2-spend');
+  const raw3 = await vucaCall(systemPrompt, call3, 1800, 60_000,  'call3-geo');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {}, p3: any = {};
-  try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse fail (len=%d):', raw1.length, String(e), raw1.slice(0, 400)); }
-  try { p2 = parseJsonRobust(raw2); } catch (e) { console.error('[vuca] call2 parse fail:', String(e), raw2.slice(0, 300)); }
-  try { p3 = parseJsonRobust(raw3); } catch (e) { console.error('[vuca] call3 parse fail:', String(e), raw3.slice(0, 300)); }
+  try { p1 = parseJsonRobust(raw1); } catch (e) { console.error('[vuca] call1 parse fail (len=%d): %s | %s', raw1.length, String(e), raw1.slice(0, 400)); }
+  try { p2 = parseJsonRobust(raw2); } catch (e) { console.error('[vuca] call2 parse fail (len=%d): %s | %s', raw2.length, String(e), raw2.slice(0, 400)); }
+  try { p3 = parseJsonRobust(raw3); } catch (e) { console.error('[vuca] call3 parse fail (len=%d): %s | %s', raw3.length, String(e), raw3.slice(0, 400)); }
 
   return {
     vuca4w1hMatrix: (p1.vuca4w1hMatrix || []) as VucaRow[],
