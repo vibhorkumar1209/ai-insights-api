@@ -3417,49 +3417,86 @@ export async function runVucaSynthesis(
   const ctx = researchText.slice(0, 5000);
   const clientMode = !!(companyContext?.name && companyContext?.profile);
 
-  const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks. Keep all text fields concise (under 40 words each). Use 2024–2026 data.`;
+  const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks. Use 2024–2026 data. Cite sources inline where available.`;
 
   // ── Call 1: VUCA × 4W1H Matrix ───────────────────────────────────────────
   const clientHowNote = clientMode
-    ? ` For "how" field: tailor actions to ${companyContext!.name}'s specific products/solutions.`
+    ? ` For "how" field: tailor all actions and signals specifically to ${companyContext!.name}'s products/solutions.`
     : '';
 
   const call1 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}${clientHowNote}
 
-Context (use for grounding): ${ctx}
+Context: ${ctx}
 
-Return JSON — key "vuca4w1hMatrix", exactly 4 objects (one per VUCA dimension). Each field max 35 words.
-Fields: vucaDimension (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), lens (5-7 word label), what (situation + stat + source), why (2 causal links), where (named geographies), when (Acute/Reset/Recovery timeline), how (2 actions + signal${clientMode ? ` for ${companyContext!.name}` : ''}).
+Return JSON — key "vuca4w1hMatrix", exactly 4 objects (one per VUCA dimension).
+Ensure each dimension covers the most material real-world stress factors for ${industry} — including (where relevant): armed conflicts & wars, supply chain disruptions, pandemic/health crises, energy price shocks, trade wars & tariffs, currency volatility, regulatory upheaval, climate events.
+Fields per object:
+- vucaDimension: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
+- lens: 5-8 word descriptor of the dominant stress theme
+- what: named situation with quantified stat and inline source (2-3 sentences)
+- why: 2-3 causal links explaining root cause and mechanism
+- where: named countries, corridors, or jurisdictions (epicentre vs ripple zones)
+- when: 3-phase timeline — Acute (current), Structural Reset (6-18 months), Recovery (18-36 months) with approximate dates
+- how: 3 concrete operational actions with 30/60/90-day signals${clientMode ? ` specific to ${companyContext!.name}'s portfolio` : ''}
 
 {"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
 
   // ── Call 2: IT Spend Impact ───────────────────────────────────────────────
   const call2 = clientMode
-    ? `Industry: ${industry} | Geography: ${geography}
+    ? `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 Client: ${companyContext!.name} (${companyContext!.domain})
-Profile: ${companyContext!.profile.slice(0, 2000)}
+Profile: ${companyContext!.profile.slice(0, 2500)}
 Context: ${ctx}
 
-Return JSON — key "clientITImpact", exactly 8 objects covering all 4 VUCA dimensions (2 per dimension). Each text field max 30 words.
-Fields: stressEvent, vucaDriver (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), estImpactOnTechSpending (e.g. "+20% | +$1B"), impact ("H"/"M"/"L"), impactedTechSpendCategory (named category matching ${companyContext!.name} portfolio), roleInOrganization (how ${companyContext!.name}'s product fills this — name actual products), recommendation (pitch + buyer + signal, max 30 words).`
-    : `Industry: ${industry} | Geography: ${geography}
+SALES / ACCOUNT PLANNING analysis. Identify VUCA-driven stress events that create IT spend opportunities for ${companyContext!.name}.
+Cover the full range of stress factors: armed conflicts, supply chain crises, pandemic/health risks, energy shocks, trade tariffs, regulatory mandates, cyber threats, climate disruption.
+One row per impacted tech spend category (multiple rows per stress event allowed).
+
+Return JSON — key "clientITImpact", 10-14 objects covering all 4 VUCA dimensions.
+Fields:
+- stressEvent: specific named event (e.g. "Russia-Ukraine war — European energy supply disruption")
+- vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
+- estImpactOnTechSpending: quantified shift with range (e.g. "+20-30% | +$1.5-2.5B globally")
+- impact: "H" | "M" | "L"
+- impactedTechSpendCategory: specific named tech category matching ${companyContext!.name}'s portfolio — name actual products/solutions if known
+- roleInOrganization: how ${companyContext!.name}'s product/solution addresses this category — be specific, name real products
+- recommendation: concrete pitch for ${companyContext!.name} — what to position, to whom (CIO/CISO/COO/CFO), and the 30/60/90-day buying signal`
+    : `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 Context: ${ctx}
 
-Return JSON — key "clientITImpact", exactly 8 objects covering all 4 VUCA dimensions (2 per dimension). Each text field max 30 words.
-Fields: stressEvent, vucaDriver (VOLATILE/UNCERTAIN/COMPLEX/AMBIGUOUS), estImpactOnTechSpending (e.g. "+15% | +$2B"), impact ("H"/"M"/"L"), impactedTechSpendCategory (specific IT spend category in ${industry}), roleInOrganization (typical buyer role/function in ${industry} companies), recommendation (what to pitch + to whom + key signal, max 30 words).`;
+Identify VUCA-driven stress events impacting IT spending in the ${industry} industry.
+Cover the full range of stress factors: armed conflicts & wars, supply chain crises, pandemic/health risks, energy shocks, trade tariffs & sanctions, regulatory mandates, cyber threats, climate disruption.
+One row per impacted tech spend category (multiple rows per stress event allowed).
+
+Return JSON — key "clientITImpact", 10-14 objects covering all 4 VUCA dimensions.
+Fields:
+- stressEvent: specific named event (e.g. "US-China semiconductor export controls", "Red Sea shipping disruption")
+- vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
+- estImpactOnTechSpending: quantified shift for the ${industry} industry (e.g. "+15-25% | +$2-3B globally")
+- impact: "H" | "M" | "L"
+- impactedTechSpendCategory: specific named IT category impacted (e.g. "Supply Chain Visibility Platforms", "Predictive Maintenance AI", "Regulatory Compliance Automation")
+- roleInOrganization: typical buyer role/function in ${industry} companies that owns this spend (e.g. "CIO + Head of Supply Chain", "CISO + OT Security Lead")
+- recommendation: strategic positioning for any IT vendor in this space — capability to lead with, buyer persona, key buying signal`;
 
   // ── Call 3: Geopolitical Stress Overlay ──────────────────────────────────
-  const call3 = `Industry: ${industry} | Geography: ${geography}
+  const call3 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 Context: ${ctx}
 
-Return JSON — key "geopoliticalStress", exactly 5 objects. Each text field max 30 words.
-Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissionMechanism (how it hits ${industry}), severity (High/Medium/Low), severityRationale (1 sentence), itBudgetSignal (IT spend category that moves).`;
+Return JSON — key "geopoliticalStress", 6-8 objects. Cover the most material stress events for ${industry} in ${geography}.
+Must include (where active/relevant): US-China trade war & semiconductor restrictions, Russia-Ukraine war (energy + supply chain), Middle East conflict & Hormuz shipping, post-pandemic supply chain realignment, climate-related regulatory stress. Add ${geography}-specific events.
+Fields:
+- stressEvent: specific named event
+- status: Active | Escalating | Monitoring | Resolved
+- transmissionMechanism: exactly how this event propagates into ${industry} operations and costs (2-3 sentences)
+- severity: High | Medium | Low
+- severityRationale: 1-2 sentences explaining severity rating for ${industry}
+- itBudgetSignal: specific IT spend category that will increase/decrease as a result`;
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  const raw1 = await vucaCall(systemPrompt, call1, 3500, 100_000, 'call1-vuca');
-  const raw2 = await vucaCall(systemPrompt, call2, 3500, 100_000, 'call2-spend');
-  const raw3 = await vucaCall(systemPrompt, call3, 1800, 60_000,  'call3-geo');
+  const raw1 = await vucaCall(systemPrompt, call1, 4200, 110_000, 'call1-vuca');
+  const raw2 = await vucaCall(systemPrompt, call2, 5000, 130_000, 'call2-spend');
+  const raw3 = await vucaCall(systemPrompt, call3, 2500, 80_000,  'call3-geo');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {}, p3: any = {};
