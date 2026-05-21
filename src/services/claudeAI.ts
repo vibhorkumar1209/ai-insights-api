@@ -3502,9 +3502,13 @@ Fields:
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  const raw1 = await vucaCall(systemPrompt, call1, 5200, 95_000, 'call1-vuca');
-  const raw2 = await vucaCall(systemPrompt, call2, 6500, 95_000, 'call2-spend');
-  const raw3 = await vucaCall(systemPrompt, call3, 3200, 60_000, 'call3-geo');
+  // Run all 3 synthesis calls in parallel — they are async network waits, not CPU work.
+  // Parallel reduces total wall-clock time from ~3-4 min sequential → ~1-2 min.
+  const [raw1, raw2, raw3] = await Promise.all([
+    vucaCall(systemPrompt, call1, 6500, 95_000, 'call1-vuca'),
+    vucaCall(systemPrompt, call2, 6500, 95_000, 'call2-spend'),
+    vucaCall(systemPrompt, call3, 3200, 60_000, 'call3-geo'),
+  ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {}, p3: any = {};
