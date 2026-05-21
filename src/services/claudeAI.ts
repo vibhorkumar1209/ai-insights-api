@@ -3498,7 +3498,7 @@ Fields:
 - transmissionMechanism: how this propagates into ${industry} operations (2 sentences max)
 - severity: High | Medium | Low
 - severityRationale: 1 sentence
-- itBudgetSignal: 2 bullets (each starting "• ") format: "• [▲/▼/►] [+/−X–Y%] [category]; [action] [initiative]"
+- itBudgetSignal: 2 bullets (each starting "• ") format: "• [up/down/right arrow] [+/-X-Y%] [category]; [action] [initiative]"`;
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
