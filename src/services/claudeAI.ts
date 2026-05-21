@@ -3445,7 +3445,7 @@ Fields:
 - impact: "H" | "M" | "L"
 - impactedTechSpendCategory: SPECIFIC named tech category matching ${companyContext!.name}'s actual portfolio (e.g. "Supply Chain Visibility", "OT/ICS Cybersecurity"). Name their real products if known.
 - roleInOrganization: How ${companyContext!.name}'s specific product/solution fills this category — name actual products.
-- recommendation: Concrete sales pitch for ${companyContext!.name} — what to pitch, to whom (CIO/CISO/COO), 30/60/90-day signal.`
+- recommendation: Concrete sales pitch for ${companyContext!.name} — what to pitch, to whom (CIO/CISO/COO), key signal. Keep under 40 words.`
     : `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 
 Context: ${ctx}
@@ -3461,7 +3461,7 @@ Fields:
 - impact: "H" | "M" | "L"
 - impactedTechSpendCategory: specific named IT spend category impacted across the ${industry} industry (e.g. "Supply Chain Visibility Platforms", "Predictive Maintenance AI", "Regulatory Compliance Automation")
 - roleInOrganization: typical organizational role/function that owns this spend category in ${industry} companies (e.g. "CIO + Head of Supply Chain", "CISO + OT Security Lead") — describe the function, not a specific company
-- recommendation: strategic recommendation for any IT vendor selling in this space — what capabilities to lead with, which buyer persona to target, key 30/60/90-day market signal to watch`;
+- recommendation: strategic recommendation for any IT vendor selling in this space — what capabilities to lead with, which buyer persona to target, key market signal to watch. Keep under 40 words.`;
 
   // ── Call 3: Geopolitical Stress Overlay (always separate to avoid truncation) ──
   const call3 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
@@ -3477,7 +3477,7 @@ Fields: stressEvent, status (Active/Resolved/Escalating/Monitoring), transmissio
     .catch((e) => { console.error('[vuca] call1 error:', e.message); return ''; });
   console.log(`[vuca] call1 done len=${raw1.length} preview="${raw1.slice(0, 80)}"`);
 
-  const raw2 = await claudeCreate(systemPrompt, call2, 4000, 110_000, FAST_MODEL)
+  const raw2 = await claudeCreate(systemPrompt, call2, 4500, 120_000, FAST_MODEL)
     .catch((e) => { console.error('[vuca] call2 error:', e.message); return ''; });
   console.log(`[vuca] call2 done len=${raw2.length} preview="${raw2.slice(0, 80)}"`);
 
