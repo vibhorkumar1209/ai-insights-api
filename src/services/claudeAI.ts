@@ -3494,9 +3494,9 @@ Fields:
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  const raw1 = await vucaCall(systemPrompt, call1, 4200, 110_000, 'call1-vuca');
-  const raw2 = await vucaCall(systemPrompt, call2, 5000, 130_000, 'call2-spend');
-  const raw3 = await vucaCall(systemPrompt, call3, 2500, 80_000,  'call3-geo');
+  const raw1 = await vucaCall(systemPrompt, call1, 4200, 85_000, 'call1-vuca');
+  const raw2 = await vucaCall(systemPrompt, call2, 5000, 95_000, 'call2-spend');
+  const raw3 = await vucaCall(systemPrompt, call3, 2500, 55_000, 'call3-geo');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {}, p3: any = {};

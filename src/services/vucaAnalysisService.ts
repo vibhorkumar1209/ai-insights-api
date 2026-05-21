@@ -99,26 +99,28 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
     });
     emit(jobId, 'progress', current);
 
-    const BATCH_TIMEOUT = 50_000;
-    const researchHB = startHeartbeat(jobId, 6, clientMode ? 38 : 48, 'Searching for market intelligence…');
+    // 40s per batch — resolving withTimeout always moves forward even if Parallel.AI rejects or hangs
+    const BATCH_TIMEOUT = 40_000;
+    const researchHB = startHeartbeat(jobId, 6, clientMode ? 35 : 45, 'Searching for market intelligence…');
     let combinedResearch = '';
 
     try {
+      // 2 focused queries instead of 3 — saves one full batch timeout on slow days
       const industryQueries = [
-        `${industry} ${geography} market volatility disruption risks 2024 2025 McKinsey BCG Deloitte analysis`,
-        `${industry} ${geography} geopolitical uncertainty tariffs regulation digital transformation 2025`,
-        `${industry} ${geography} IT spend technology investment trends forecast 2025 2026 Gartner IDC Forrester`,
+        `${industry} ${geography} VUCA risks volatility uncertainty geopolitical disruption supply chain wars tariffs 2024 2025`,
+        `${industry} ${geography} IT spend technology investment digital transformation forecast 2025 2026 Gartner IDC Forrester McKinsey`,
       ];
 
       for (let i = 0; i < industryQueries.length; i++) {
         current = update(jobId, {
-          progress: 8 + i * 10,
-          currentStep: `Web search ${i + 1}/${clientMode ? 4 : 3}: ${['volatility & risks', 'geopolitical & regulatory', 'IT spend & technology'][i]}…`,
+          progress: 10 + i * 15,
+          currentStep: `Web search ${i + 1}/2: ${['VUCA risk intelligence', 'IT spend & technology trends'][i]}…`,
         });
         emit(jobId, 'progress', current);
 
         const t0 = Date.now();
-        const text = await withTimeout(runResearchQuery(industryQueries[i]), BATCH_TIMEOUT, '');
+        // .catch(() => '') ensures a Parallel.AI rejection never propagates through withTimeout
+        const text = await withTimeout(runResearchQuery(industryQueries[i]).catch(() => ''), BATCH_TIMEOUT, '');
         console.log(`[vuca] industry batch ${i + 1} done in ${Date.now() - t0}ms, len=${text.length}`);
         if (text) combinedResearch += `\n\n=== INDUSTRY BATCH ${i + 1} ===\n${text.slice(0, 7000)}`;
       }
@@ -129,20 +131,18 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
     // ── Step 1b: Company research (client mode only) ──────────────────────────
     let companyProfile = '';
     if (clientMode && companyName && companyDomain) {
-      current = update(jobId, { progress: 40, currentStep: `Researching ${companyName} products & solutions…` });
+      current = update(jobId, { progress: 42, currentStep: `Researching ${companyName} products & solutions…` });
       emit(jobId, 'progress', current);
 
-      const companyHB = startHeartbeat(jobId, 41, 50, `Analysing ${companyName} portfolio…`);
+      const companyHB = startHeartbeat(jobId, 43, 50, `Analysing ${companyName} portfolio…`);
       try {
-        // Query 1: company products from their website
+        // Sequential (not parallel) — Render 0.1 vCPU can't handle two concurrent fetches well
         const q1 = `site:${companyDomain} products solutions services technology offerings`;
-        const q2 = `"${companyName}" ${companyDomain} IT products software services portfolio customers case studies 2024 2025`;
+        const q2 = `"${companyName}" IT products software services portfolio customers case studies 2024 2025`;
 
         const t0 = Date.now();
-        const [r1, r2] = await Promise.all([
-          withTimeout(runResearchQuery(q1), BATCH_TIMEOUT, ''),
-          withTimeout(runResearchQuery(q2), BATCH_TIMEOUT, ''),
-        ]);
+        const r1 = await withTimeout(runResearchQuery(q1).catch(() => ''), BATCH_TIMEOUT, '');
+        const r2 = await withTimeout(runResearchQuery(q2).catch(() => ''), BATCH_TIMEOUT, '');
         console.log(`[vuca] company research done in ${Date.now() - t0}ms, r1=${r1.length}, r2=${r2.length}`);
 
         companyProfile = [
@@ -151,7 +151,7 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
         ].filter(Boolean).join('\n\n');
 
         if (companyProfile) {
-          update(jobId, { companyProfile: companyProfile.slice(0, 500) }); // store summary
+          update(jobId, { companyProfile: companyProfile.slice(0, 500) });
         }
       } finally {
         clearInterval(companyHB);
