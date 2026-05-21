@@ -1032,6 +1032,13 @@ export interface ConsultingIntelligenceJob {
 
 // ── VUCA × 4W1H Analysis ──────────────────────────────────────────────────────
 
+export interface VucaDriverEffectRow {
+  vucaDimension: 'VOLATILE' | 'UNCERTAIN' | 'COMPLEX' | 'AMBIGUOUS';
+  driver: string;     // Primary force causing this VUCA condition
+  effects: string;    // Bullet-separated effects on the industry
+  demand: string;     // Bullet-separated demand/opportunity implications
+}
+
 export interface VucaRow {
   vucaDimension: 'VOLATILE' | 'UNCERTAIN' | 'COMPLEX' | 'AMBIGUOUS';
   lens: string;
@@ -1086,6 +1093,7 @@ export interface VucaAnalysisJob {
   companyProfile?: string;           // scraped/researched summary of what company sells
   clientMode?: boolean;              // true when company context was provided
   // Table data
+  vucaDriverEffects?: VucaDriverEffectRow[];  // summary table shown above 4W1H
   vuca4w1hMatrix?: VucaRow[];
   itSpendImpact?: ITSpendRow[];                          // generic mode
   itSpendSummaryTotal?: { netDelta: string; dominantDirection: string };

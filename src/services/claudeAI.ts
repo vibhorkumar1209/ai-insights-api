@@ -20,7 +20,7 @@ import {
   ContentGenerationInput,
   SalesPlay2Input, SalesPlay2WinTheme, SalesPlay2Opportunity, SalesPlay2Competitor,
   TLFirmInsight, TLMetric, TLInsight, TLTheme, TLChartSpec, ConsultingIntelligenceJob,
-  VucaRow, ITSpendRow, GeoStressRow, ClientITImpactRow, VucaAnalysisJob,
+  VucaRow, VucaDriverEffectRow, ITSpendRow, GeoStressRow, ClientITImpactRow, VucaAnalysisJob,
 } from '@ai-insights/types';
 
 // Returns true when a research string contains no real data
@@ -3411,7 +3411,7 @@ export async function runVucaSynthesis(
   analysisDate: string,
   researchText: string,
   companyContext?: { name: string; domain: string; profile: string },
-): Promise<Pick<VucaAnalysisJob, 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'clientITImpact' | 'geopoliticalStress'>> {
+): Promise<Pick<VucaAnalysisJob, 'vucaDriverEffects' | 'vuca4w1hMatrix' | 'itSpendImpact' | 'itSpendSummaryTotal' | 'clientITImpact' | 'geopoliticalStress'>> {
 
   // Trim context per call — shorter prompt = faster Haiku response on Render 0.1 vCPU
   const ctx = researchText.slice(0, 5000);
@@ -3428,8 +3428,17 @@ export async function runVucaSynthesis(
 
 Context: ${ctx}
 
-Return JSON — key "vuca4w1hMatrix", exactly 4 objects (one per VUCA dimension).
-Ensure each dimension covers the most material real-world stress factors for ${industry} — including (where relevant): armed conflicts & wars, supply chain disruptions, pandemic/health crises, energy price shocks, trade wars & tariffs, currency volatility, regulatory upheaval, climate events.
+Return JSON with exactly 2 keys:
+
+"vucaDriverEffects": exactly 4 objects (one per VUCA dimension) — a summary table.
+Fields per object:
+- vucaDimension: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
+- driver: 1 sentence naming the primary force causing this VUCA condition (e.g. "US-China decoupling driving semiconductor export controls and supply chain fragmentation")
+- effects: 3-4 bullet points (each starting with "• ") describing key disruption effects on the ${industry} industry
+- demand: 3-4 bullet points (each starting with "• ") describing what new IT/technology demand this VUCA condition creates
+
+"vuca4w1hMatrix": exactly 4 objects (one per VUCA dimension).
+Ensure coverage of: armed conflicts & wars, supply chain disruptions, pandemic/health crises, energy price shocks, trade wars & tariffs, currency volatility, regulatory upheaval, climate events — whichever are most material for ${industry}.
 Fields per object:
 - vucaDimension: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
 - lens: 5-8 word descriptor of the dominant stress theme
@@ -3437,9 +3446,9 @@ Fields per object:
 - why: 2-3 causal links explaining root cause and mechanism
 - where: named countries, corridors, or jurisdictions (epicentre vs ripple zones)
 - when: 3-phase timeline — Acute (current), Structural Reset (6-18 months), Recovery (18-36 months) with approximate dates
-- how: 3 concrete operational actions with 30/60/90-day signals${clientMode ? ` specific to ${companyContext!.name}'s portfolio` : ''}
+- how: Answer "What does this situation mean for ${clientMode ? companyContext!.name : 'organisations in ' + industry} and what must they do to adapt?" — 3 concrete adaptation actions with 30/60/90-day signals${clientMode ? `, specific to ${companyContext!.name}'s products/solutions` : ''}
 
-{"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
+{"vucaDriverEffects":[{"vucaDimension":"VOLATILE","driver":"","effects":"","demand":""},{"vucaDimension":"UNCERTAIN","driver":"","effects":"","demand":""},{"vucaDimension":"COMPLEX","driver":"","effects":"","demand":""},{"vucaDimension":"AMBIGUOUS","driver":"","effects":"","demand":""}],"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
 
   // ── Call 2: IT Spend Impact ───────────────────────────────────────────────
   const call2 = clientMode
@@ -3458,15 +3467,15 @@ Fields:
 - vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
 - estImpactOnTechSpending: quantified shift with range (e.g. "+20-30% | +$1.5-2.5B globally")
 - impact: "H" | "M" | "L"
-- impactedTechSpendCategory: specific named tech category matching ${companyContext!.name}'s portfolio — name actual products/solutions if known
-- roleInOrganization: how ${companyContext!.name}'s product/solution addresses this category — be specific, name real products
-- recommendation: concrete pitch for ${companyContext!.name} — what to position, to whom (CIO/CISO/COO/CFO), and the 30/60/90-day buying signal`
+- impactedTechSpendCategory: 2-4 bullet points (each starting "• ") listing specific named tech categories from ${companyContext!.name}'s portfolio impacted by this stress event
+- roleInOrganization: job designation(s) who approve/own this tech spend at the client's customers (e.g. "CIO + VP Supply Chain", "CISO + Head of OT Security") — title only, comma-separated if multiple
+- recommendation: 2-3 bullet points (each starting "• "), one per tech category — pitch angle for ${companyContext!.name}, target designation, and the 30/60/90-day buying signal`
     : `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
 Context: ${ctx}
 
 Identify VUCA-driven stress events impacting IT spending in the ${industry} industry.
 Cover the full range of stress factors: armed conflicts & wars, supply chain crises, pandemic/health risks, energy shocks, trade tariffs & sanctions, regulatory mandates, cyber threats, climate disruption.
-One row per impacted tech spend category (multiple rows per stress event allowed).
+One row per stress event — list ALL impacted tech categories as bullets within that row.
 
 Return JSON — key "clientITImpact", 10-14 objects covering all 4 VUCA dimensions.
 Fields:
@@ -3474,9 +3483,9 @@ Fields:
 - vucaDriver: VOLATILE | UNCERTAIN | COMPLEX | AMBIGUOUS
 - estImpactOnTechSpending: quantified shift for the ${industry} industry (e.g. "+15-25% | +$2-3B globally")
 - impact: "H" | "M" | "L"
-- impactedTechSpendCategory: specific named IT category impacted (e.g. "Supply Chain Visibility Platforms", "Predictive Maintenance AI", "Regulatory Compliance Automation")
-- roleInOrganization: typical buyer role/function in ${industry} companies that owns this spend (e.g. "CIO + Head of Supply Chain", "CISO + OT Security Lead")
-- recommendation: strategic positioning for any IT vendor in this space — capability to lead with, buyer persona, key buying signal`;
+- impactedTechSpendCategory: 2-4 bullet points (each starting "• ") listing specific IT spend categories impacted (e.g. "• Supply Chain Visibility Platforms\n• Predictive Maintenance AI\n• Regulatory Compliance Automation")
+- roleInOrganization: job designation(s) responsible for this tech spend in ${industry} companies (e.g. "CIO + VP Supply Chain", "CISO + OT Security Lead") — title/designation only
+- recommendation: 2-3 bullet points (each starting "• ") — one per tech category above — capability to lead with, buyer persona to target, key market signal`;
 
   // ── Call 3: Geopolitical Stress Overlay ──────────────────────────────────
   const call3 = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
@@ -3490,13 +3499,13 @@ Fields:
 - transmissionMechanism: exactly how this event propagates into ${industry} operations and costs (2-3 sentences)
 - severity: High | Medium | Low
 - severityRationale: 1-2 sentences explaining severity rating for ${industry}
-- itBudgetSignal: specific IT spend category that will increase/decrease as a result`;
+- itBudgetSignal: 2-3 bullets (each starting "• ") in this exact format per bullet: "[▲/▼/►] [+/−X–Y%] [category]; [► REALLOCATE toward / ▲ increase / ▼ cut] [specific initiative or technology]". Example: "• ▲ +12–15% contingency reserves for supply chain digitalisation; ► REALLOCATE toward near-shoring visibility platforms\n• ▼ −5–8% discretionary BI/analytics spend as budgets tighten"`;
 
   console.log(`[vuca] synthesis start — industry="${industry}", geo="${geography}", clientMode=${clientMode}, ctxLen=${researchText.length}`);
 
-  const raw1 = await vucaCall(systemPrompt, call1, 4200, 85_000, 'call1-vuca');
+  const raw1 = await vucaCall(systemPrompt, call1, 5200, 95_000, 'call1-vuca');
   const raw2 = await vucaCall(systemPrompt, call2, 5000, 95_000, 'call2-spend');
-  const raw3 = await vucaCall(systemPrompt, call3, 2500, 55_000, 'call3-geo');
+  const raw3 = await vucaCall(systemPrompt, call3, 2800, 60_000, 'call3-geo');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let p1: any = {}, p2: any = {}, p3: any = {};
@@ -3505,6 +3514,7 @@ Fields:
   try { p3 = parseJsonRobust(raw3); } catch (e) { console.error('[vuca] call3 parse fail (len=%d): %s | %s', raw3.length, String(e), raw3.slice(0, 400)); }
 
   return {
+    vucaDriverEffects: (p1.vucaDriverEffects || []) as VucaDriverEffectRow[],
     vuca4w1hMatrix: (p1.vuca4w1hMatrix || []) as VucaRow[],
     itSpendImpact: [],
     itSpendSummaryTotal: undefined,
