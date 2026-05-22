@@ -3396,7 +3396,7 @@ async function vucaCall(
   system: string, user: string, maxTokens: number, timeoutMs: number, label: string
 ): Promise<string> {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const raw = await claudeCreate(system, user, maxTokens, timeoutMs, FAST_MODEL)
+    const raw = await claudeCreate(system, user, maxTokens, timeoutMs, SYNTHESIS_MODEL)
       .catch((e: Error) => { console.error(`[vuca] ${label} attempt ${attempt} error: ${e.message}`); return ''; });
     console.log(`[vuca] ${label} attempt ${attempt} len=${raw.length} preview="${raw.slice(0, 80)}"`);
     if (raw.length > 80) return raw;
@@ -3507,11 +3507,13 @@ Fields:
 
   // All 4 calls fire in parallel — async network waits, no CPU contention on Render 0.1 vCPU.
   // call1a and call1b are split so each focuses on one table (prevents token truncation).
+  // Stagger start by 1s to avoid simultaneous rate-limit spikes on Sonnet
+  const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   const [rawA, rawB, raw2, raw3] = await Promise.all([
     vucaCall(systemPrompt, call1a, 3000, 90_000, 'call1a-drivers'),
-    vucaCall(systemPrompt, call1b, 5000, 95_000, 'call1b-matrix'),
-    vucaCall(systemPrompt, call2,  6500, 95_000, 'call2-spend'),
-    vucaCall(systemPrompt, call3,  3200, 60_000, 'call3-geo'),
+    delay(1000).then(() => vucaCall(systemPrompt, call1b, 5000, 95_000, 'call1b-matrix')),
+    delay(2000).then(() => vucaCall(systemPrompt, call2,  6500, 95_000, 'call2-spend')),
+    delay(3000).then(() => vucaCall(systemPrompt, call3,  3200, 60_000, 'call3-geo')),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
