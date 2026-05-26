@@ -3448,10 +3448,10 @@ Fields:
 - what: named situation with quantified stat (2 sentences)
 - why: 2-3 causal links — root cause and mechanism
 - where: named countries/corridors (epicentre vs ripple zones)
-- when: 3-phase timeline — Acute (now), Structural Reset (6-18 months), Recovery (18-36 months)
+- when: FLAT STRING only — format: "▸ Acute: [1 sentence] | ▸ Structural Reset (6-18 mo): [1 sentence] | ▸ Recovery (18-36 mo): [1 sentence]". MUST be a string, NOT a JSON object.
 - how: "What does this mean for ${clientMode ? companyContext!.name : 'organisations in ' + industry} and what must they do to adapt?" — 2-3 concrete actions with 30/60/90-day signals
 
-{"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"","how":""}]}`;
+{"vuca4w1hMatrix":[{"vucaDimension":"VOLATILE","lens":"","what":"","why":"","where":"","when":"▸ Acute: ... | ▸ Structural Reset (6-18 mo): ... | ▸ Recovery (18-36 mo): ...","how":""},{"vucaDimension":"UNCERTAIN","lens":"","what":"","why":"","where":"","when":"▸ Acute: ... | ▸ Structural Reset (6-18 mo): ... | ▸ Recovery (18-36 mo): ...","how":""},{"vucaDimension":"COMPLEX","lens":"","what":"","why":"","where":"","when":"▸ Acute: ... | ▸ Structural Reset (6-18 mo): ... | ▸ Recovery (18-36 mo): ...","how":""},{"vucaDimension":"AMBIGUOUS","lens":"","what":"","why":"","where":"","when":"▸ Acute: ... | ▸ Structural Reset (6-18 mo): ... | ▸ Recovery (18-36 mo): ...","how":""}]}`;
 
   // ── Call 2: IT Spend Impact ───────────────────────────────────────────────
   const call2 = clientMode
