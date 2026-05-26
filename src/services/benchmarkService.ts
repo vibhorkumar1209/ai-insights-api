@@ -92,13 +92,17 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
 
     step(`Gathering intelligence on ${totalCompanies} companies...`, 20);
 
-    // Research companies sequentially to avoid peak-RAM spike
+    // Research companies with max 2 concurrent to balance speed vs RAM
     const companyResearch: Record<string, string> = {};
+    const CONCURRENCY = 2;
 
-    for (const company of allCompanies) {
-      const research = await researchSingle(company, input);
-      companyResearch[company] = research;
-      researched++;
+    for (let i = 0; i < allCompanies.length; i += CONCURRENCY) {
+      const batch = allCompanies.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(batch.map((c) => researchSingle(c, input)));
+      batch.forEach((company, idx) => {
+        companyResearch[company] = results[idx];
+        researched++;
+      });
       const progress = 20 + Math.floor((researched / totalCompanies) * 40);
       step(`Researched ${researched}/${totalCompanies} companies...`, progress);
     }

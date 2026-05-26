@@ -279,7 +279,7 @@ export async function synthesizeBenchmarkingTable(
   input: BenchmarkInput,
   companyResearch: Record<string, string>
 ): Promise<BenchmarkDimension[]> {
-  const safeResearch = truncateResearch(companyResearch);
+  const safeResearch = truncateResearch(companyResearch, 12000);
   const peerNames = input.selectedCompetitors.join(', ');
 
   const missingResearch = Object.entries(safeResearch)
@@ -316,12 +316,19 @@ ${input.focusAreas ? `- IMPORTANT: Ensure at least one dimension directly addres
 - Each dimension name should be concise (3-6 words).
 - Return EXACTLY 5 dimension objects in the array.`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 5000,  // Benchmarking table: 5 dimensions × detailed analysis with research data
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
+  const timeoutMs = 90_000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Benchmarking table synthesis timed out after 90s')), timeoutMs)
+  );
+  const message = await Promise.race([
+    client.messages.create({
+      model: SYNTHESIS_MODEL,
+      max_tokens: 2500,
+      messages: [{ role: 'user', content: userPrompt }],
+      system: systemPrompt,
+    }),
+    timeoutPromise,
+  ]);
 
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
@@ -332,7 +339,8 @@ ${input.focusAreas ? `- IMPORTANT: Ensure at least one dimension directly addres
 function parseBenchmarkingTable(raw: string): BenchmarkDimension[] {
   const items = safeParseJsonArray(raw);
   if (!items || items.length === 0) {
-    throw new Error('Claude did not return valid JSON for benchmarking table');
+    console.warn('parseBenchmarkingTable: no valid JSON rows found, returning empty array');
+    return [];
   }
   return (items as BenchmarkDimension[]).filter((row) => row.dimension && row.targetCompany && row.peers);
 }
@@ -392,12 +400,19 @@ ${dimensions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 
 Return EXACTLY ${dimensions.length} objects, one per dimension above.`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 4500,  // Gap analysis: 5 dimensions × detailed comparisons with bullet points
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
+  const timeoutMs = 75_000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Gap analysis synthesis timed out after 75s')), timeoutMs)
+  );
+  const message = await Promise.race([
+    client.messages.create({
+      model: FAST_MODEL,
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: userPrompt }],
+      system: systemPrompt,
+    }),
+    timeoutPromise,
+  ]);
 
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Claude response type');
@@ -408,7 +423,8 @@ Return EXACTLY ${dimensions.length} objects, one per dimension above.`;
 function parseGapAnalysis(raw: string): GapAnalysisRow[] {
   const items = safeParseJsonArray(raw);
   if (!items || items.length === 0) {
-    throw new Error('Claude did not return valid JSON for gap analysis');
+    console.warn('parseGapAnalysis: no valid JSON rows found, returning empty array');
+    return [];
   }
   return (items as GapAnalysisRow[]).filter((row) => row.dimension && row.gapLevel);
 }
