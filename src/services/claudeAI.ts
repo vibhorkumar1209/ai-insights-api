@@ -263,9 +263,10 @@ Include:
 - Key competitive strengths
 - Approximate scale (revenue, employees, geography)
 
-Write in professional business language, third person. No headers, bullet points, or markdown.`,
+Write in professional business language, third person. No headers, bullet points, or markdown.
+If you cannot find sufficient verifiable information, respond only with: "No business description can be ascertained."`,
     }],
-    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you are unsure about specific details, focus on what is verifiable. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
+    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
   });
 
   const content = message.content[0];
