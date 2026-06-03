@@ -274,6 +274,49 @@ If you cannot find sufficient verifiable information, respond only with: "No bus
   return content.text.trim();
 }
 
+// ── Vendor Relationship Knowledge Check ──────────────────────────────────────
+
+/**
+ * Ask Claude to recall from training knowledge whether the vendor has any
+ * known deployments, partnerships, or contracts at the target company.
+ * Returns a structured summary or empty string if nothing is known.
+ */
+export async function checkVendorRelationshipFromKnowledge(
+  targetCompany: string,
+  vendorName: string,
+  solutionPortfolio?: string
+): Promise<string> {
+  const portfolioHint = solutionPortfolio
+    ? ` Their known solution portfolio includes: ${solutionPortfolio}.`
+    : '';
+
+  const message = await client.messages.create({
+    model: FAST_MODEL,
+    max_tokens: 600,
+    messages: [{
+      role: 'user',
+      content: `Based on your training knowledge, does "${vendorName}" have any confirmed deployments, partnerships, contracts, or case studies with "${targetCompany}"?${portfolioHint}
+
+List ONLY what you are confident about from your training data:
+- Specific solutions/products deployed
+- When the relationship started (if known)
+- Scope or scale (if known)
+- Any public case studies or joint announcements
+
+If you have NO knowledge of a relationship between these two companies, respond with exactly: "NO_KNOWN_RELATIONSHIP"
+
+Do NOT guess or speculate. Only report confirmed knowledge.`,
+    }],
+    system: `You are a B2B technology sales intelligence expert with broad knowledge of enterprise software vendor-client relationships. Be precise and factual. If uncertain, say so or return NO_KNOWN_RELATIONSHIP.`,
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') return '';
+  const text = content.text.trim();
+  if (text === 'NO_KNOWN_RELATIONSHIP' || text.toLowerCase().includes('no known relationship') || text.trim().length < 30) return '';
+  return text;
+}
+
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
 
 export async function synthesizeBenchmarkingTable(

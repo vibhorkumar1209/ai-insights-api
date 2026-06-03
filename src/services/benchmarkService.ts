@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { BenchmarkInput, BenchmarkResult } from '@ai-insights/types';
 import { discoverCompetitors, researchAllCompanies, researchVendorRelationship } from './parallelAI';
-import { synthesizeBenchmarkingTable, synthesizeGapAnalysis } from './claudeAI';
+import { synthesizeBenchmarkingTable, synthesizeGapAnalysis, checkVendorRelationshipFromKnowledge } from './claudeAI';
 
 // In-memory job store (replace with Redis for production multi-instance)
 const jobs = new Map<string, BenchmarkResult>();
@@ -107,15 +107,39 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
       step(`Researched ${researched}/${totalCompanies} companies...`, progress);
     }
 
-    // Research existing vendor→target relationship in parallel with final company research
+    // Research existing vendor→target relationship using two parallel sources:
+    // 1. Parallel.AI web search (finds press releases, case studies, news)
+    // 2. Claude training knowledge (finds known deployments not publicly indexed)
     step('Checking existing vendor relationship...', 60);
     let vendorRelationshipContext = '';
     try {
-      vendorRelationshipContext = await researchVendorRelationship(
-        input.targetCompany,
-        input.userOrganization,
-        input.industryContext
-      );
+      const [webResearch, claudeKnowledge] = await Promise.allSettled([
+        researchVendorRelationship(
+          input.targetCompany,
+          input.userOrganization,
+          input.industryContext
+        ),
+        checkVendorRelationshipFromKnowledge(
+          input.targetCompany,
+          input.userOrganization,
+          input.solutionPortfolio
+        ),
+      ]);
+
+      const webResult = webResearch.status === 'fulfilled' ? webResearch.value : '';
+      const claudeResult = claudeKnowledge.status === 'fulfilled' ? claudeKnowledge.value : '';
+
+      // Merge both sources — label each so Claude can weigh them appropriately
+      const parts: string[] = [];
+      if (webResult && webResult.length > 50) parts.push(`[Web Research]\n${webResult}`);
+      if (claudeResult && claudeResult.length > 30) parts.push(`[Training Knowledge]\n${claudeResult}`);
+      vendorRelationshipContext = parts.join('\n\n');
+
+      if (vendorRelationshipContext) {
+        console.log(`Vendor relationship found for ${input.userOrganization} @ ${input.targetCompany}: ${vendorRelationshipContext.slice(0, 200)}`);
+      } else {
+        console.log(`No known vendor relationship between ${input.userOrganization} and ${input.targetCompany}`);
+      }
     } catch (err) {
       console.warn('Vendor relationship research failed, continuing without it:', err);
     }
