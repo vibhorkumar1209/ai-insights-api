@@ -450,6 +450,79 @@ Cite every claim with a source. State "Not publicly disclosed" for any unavailab
   return runResearch(query, 'base');
 }
 
+// ── Apify Google Search — vendor ↔ target relationship ───────────────────────
+
+const APIFY_BASE = 'https://api.apify.com/v2';
+const APIFY_SEARCH_ACTOR = 'apify~google-search-scraper';
+const APIFY_TIMEOUT_MS = 45_000;
+
+interface ApifySearchResult {
+  title: string;
+  url: string;
+  description: string;
+}
+
+async function runApifyGoogleSearch(queries: string[]): Promise<ApifySearchResult[]> {
+  const apiKey = process.env.APIFY_API_KEY;
+  if (!apiKey) {
+    console.warn('APIFY_API_KEY not set — skipping Apify vendor relationship search');
+    return [];
+  }
+
+  // Build Apify actor input — one run with multiple queries
+  const actorInput = {
+    queries: queries.join('\n'),
+    resultsPerPage: 5,
+    maxPagesPerQuery: 1,
+    languageCode: 'en',
+    mobileResults: false,
+    includeUnfilteredResults: false,
+  };
+
+  // Start actor run
+  const startRes = await fetchWithTimeout(
+    `${APIFY_BASE}/acts/${APIFY_SEARCH_ACTOR}/run-sync-get-dataset-items?token=${apiKey}&memory=256`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(actorInput),
+    },
+    APIFY_TIMEOUT_MS
+  );
+
+  if (!startRes.ok) {
+    const errText = await startRes.text().catch(() => '');
+    console.warn(`Apify search failed: ${startRes.status} — ${errText.slice(0, 200)}`);
+    return [];
+  }
+
+  const bodyText = await readBodyLimited(startRes, 200_000, 20_000);
+  let items: unknown[];
+  try {
+    items = JSON.parse(bodyText);
+    if (!Array.isArray(items)) return [];
+  } catch {
+    return [];
+  }
+
+  // Flatten organic results from all queries
+  const results: ApifySearchResult[] = [];
+  for (const item of items) {
+    const organic = (item as Record<string, unknown>).organicResults;
+    if (!Array.isArray(organic)) continue;
+    for (const r of organic as Record<string, unknown>[]) {
+      if (r.title && r.url) {
+        results.push({
+          title: String(r.title),
+          url: String(r.url),
+          description: String(r.description || r.snippet || ''),
+        });
+      }
+    }
+  }
+  return results;
+}
+
 // ── Vendor ↔ Target existing relationship research ───────────────────────────
 
 export async function researchVendorRelationship(
@@ -457,23 +530,34 @@ export async function researchVendorRelationship(
   vendorName: string,
   industryContext?: string
 ): Promise<string> {
-  const sectorLine = industryContext ? ` in the ${industryContext} sector` : '';
-  const query = `
-Research the existing relationship between "${targetCompany}" and "${vendorName}"${sectorLine}.
+  // Run 3 targeted Google searches via Apify to find confirmed vendor deployments
+  const queries = [
+    `"${vendorName}" "${targetCompany}" implementation deployment`,
+    `"${vendorName}" "${targetCompany}" case study partnership`,
+    `"${vendorName}" "${targetCompany}" solution customer`,
+  ];
 
-Specifically identify:
-1. Any confirmed deployments or implementations of ${vendorName} products/solutions at ${targetCompany}
-2. Named contract announcements, press releases, or case studies mentioning both companies
-3. Which specific ${vendorName} solutions/modules are live or in use at ${targetCompany}
-4. Partnership scope: project size, duration, go-live dates if available
-5. Any public testimonials, conference presentations, or joint marketing between the two
-6. Any ongoing or planned expansions of the relationship
+  let results: ApifySearchResult[] = [];
+  try {
+    results = await runApifyGoogleSearch(queries);
+  } catch (err) {
+    console.warn('Apify vendor relationship search failed:', err);
+  }
 
-If ${vendorName} has NO known relationship with ${targetCompany}, clearly state that.
-Cite every finding with a source (press release, case study URL, news article, conference).
-`.trim();
+  if (results.length === 0) {
+    // Fallback to Parallel.AI if Apify unavailable or returned nothing
+    const sectorLine = industryContext ? ` in the ${industryContext} sector` : '';
+    const fallbackQuery = `"${vendorName}" "${targetCompany}" existing deployment implementation partnership case study${sectorLine}`.trim();
+    return runResearch(fallbackQuery, 'base');
+  }
 
-  return runResearch(query, 'base');
+  // Format results into a compact context string for Claude
+  const lines = results
+    .slice(0, 10)
+    .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description}`)
+    .join('\n');
+
+  return `Apify Google Search results for "${vendorName}" + "${targetCompany}":\n\n${lines}`;
 }
 
 // ── Parallel company research ────────────────────────────────────────────────
