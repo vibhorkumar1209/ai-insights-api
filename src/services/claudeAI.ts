@@ -278,7 +278,8 @@ If you cannot find sufficient verifiable information, respond only with: "No bus
 
 export async function synthesizeBenchmarkingTable(
   input: BenchmarkInput,
-  companyResearch: Record<string, string>
+  companyResearch: Record<string, string>,
+  vendorRelationshipContext?: string
 ): Promise<BenchmarkDimension[]> {
   const safeResearch = truncateResearch(companyResearch, 12000);
   const peerNames = input.selectedCompetitors.join(', ');
@@ -292,11 +293,13 @@ export async function synthesizeBenchmarkingTable(
 - Where research data is missing or sparse for a company, draw on your training knowledge — label it "(est.)" or "(based on public sources)".
 - Never leave a cell empty — always provide a meaningful best-known answer.
 - FORMATTING: Each value field MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**SAP S/4HANA** deployed across 12 regions • **AI-powered** demand forecasting in pilot • Cloud migration **60% complete**"
+- EXISTING VENDOR DEPLOYMENTS: If the vendor relationship context shows that ${input.userOrganization} solutions are ALREADY deployed at ${input.targetCompany}, you MUST reflect this in the targetCompany's value/notes for the relevant dimensions — prefix with "✓ EXISTING ${input.userOrganization} DEPLOYMENT:" and describe the specific solution in use.
 - Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.
 - ${RECENCY_DIRECTIVE}
 - ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Synthesize the following research into a peer benchmarking table comparing "${input.targetCompany}" against: ${peerNames}.
+${vendorRelationshipContext && !isEmptyResearch(vendorRelationshipContext) ? `\nEXISTING VENDOR RELATIONSHIP — ${input.userOrganization} at ${input.targetCompany}:\n${vendorRelationshipContext.slice(0, 2000)}\n⚠️ CRITICAL: Where ${input.userOrganization} solutions are already deployed at ${input.targetCompany}, mark those in the targetCompany value with "✓ EXISTING ${input.userOrganization} DEPLOYMENT:" prefix.\n` : ''}
 
 Selling org: "${input.userOrganization}"${input.industryContext ? ` | Industry: ${input.industryContext}` : ' | Industry: (determine from target company and competitors)'}${input.focusAreas ? ` | Focus: ${input.focusAreas}` : ''}
 ${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — use training knowledge.` : ''}
@@ -351,7 +354,8 @@ function parseBenchmarkingTable(raw: string): BenchmarkDimension[] {
 export async function synthesizeGapAnalysis(
   input: BenchmarkInput,
   companyResearch: Record<string, string>,
-  benchmarkingTable: BenchmarkDimension[]
+  benchmarkingTable: BenchmarkDimension[],
+  vendorRelationshipContext?: string
 ): Promise<GapAnalysisRow[]> {
   // Keep per-company research short — the table is the primary source
   const safeResearch = truncateResearch(companyResearch, 15000);
@@ -378,7 +382,7 @@ Rules:
 Selling org: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}
 ${input.industryContext ? `Industry: ${input.industryContext}` : 'Industry: (determine from target company and benchmarking table)'}
 ${missingResearch.length > 0 ? `NOTE: No live research for ${missingResearch.join(', ')} — rely on benchmarking table + training knowledge.` : ''}
-
+${vendorRelationshipContext && !isEmptyResearch(vendorRelationshipContext) ? `\nEXISTING VENDOR RELATIONSHIP — ${input.userOrganization} already deployed at ${input.targetCompany}:\n${vendorRelationshipContext.slice(0, 2000)}\n⚠️ CRITICAL INSTRUCTION: For each dimension where ${input.userOrganization} solutions are ALREADY deployed or live at ${input.targetCompany}, the solutionFit field MUST begin with "✓ EXISTING DEPLOYMENT — [specific solution name] already live at ${input.targetCompany}." then continue with expansion opportunity. Adjust gapLevel to GREEN or AMBER (not RED) for dimensions where ${input.userOrganization} is already delivering.\n` : ''}
 BENCHMARKING TABLE (compact):
 ${JSON.stringify(benchmarkingTable)}
 
@@ -393,8 +397,8 @@ Return a JSON array with EXACTLY this shape (one object per dimension):
 Fields:
 - dimension: The benchmarking dimension name (use EXACTLY the same dimension names from Table 1)
 - peersBestPractice: What the leading peers are doing in this dimension — cite specific vendors, systems, percentages
-- gapLevel: "RED" (critical gap), "AMBER" (partial gap), or "GREEN" (strength/parity) — assess ${input.targetCompany}'s position vs peers
-- solutionFit: How ${input.userOrganization}'s specific solutions/products address this gap — be concrete, name specific offerings
+- gapLevel: "RED" (critical gap), "AMBER" (partial gap / expansion opportunity), or "GREEN" (${input.userOrganization} already deployed / strong fit) — if ${input.userOrganization} is ALREADY live at ${input.targetCompany} for this dimension, set GREEN
+- solutionFit: How ${input.userOrganization}'s specific solutions/products address this gap — be concrete, name specific offerings. If already deployed, start with "✓ EXISTING DEPLOYMENT —" and then describe expansion opportunity
 
 DIMENSIONS TO COVER (one array element each, derived from Table 1):
 ${dimensions.map((d, i) => `${i + 1}. ${d}`).join('\n')}

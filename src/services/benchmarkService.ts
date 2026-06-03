@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { BenchmarkInput, BenchmarkResult } from '@ai-insights/types';
-import { discoverCompetitors, researchAllCompanies } from './parallelAI';
+import { discoverCompetitors, researchAllCompanies, researchVendorRelationship } from './parallelAI';
 import { synthesizeBenchmarkingTable, synthesizeGapAnalysis } from './claudeAI';
 
 // In-memory job store (replace with Redis for production multi-instance)
@@ -107,20 +107,35 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
       step(`Researched ${researched}/${totalCompanies} companies...`, progress);
     }
 
-    step('Synthesizing benchmarking table...', 65);
+    // Research existing vendor→target relationship in parallel with final company research
+    step('Checking existing vendor relationship...', 60);
+    let vendorRelationshipContext = '';
+    try {
+      vendorRelationshipContext = await researchVendorRelationship(
+        input.targetCompany,
+        input.userOrganization,
+        input.industryContext
+      );
+    } catch (err) {
+      console.warn('Vendor relationship research failed, continuing without it:', err);
+    }
+
+    step('Synthesizing benchmarking table...', 68);
     updateJob(jobId, { status: 'synthesizing' });
     const benchmarkingTable = await synthesizeBenchmarkingTable(
       { ...input, selectedCompetitors: selectedPeers },
-      companyResearch
+      companyResearch,
+      vendorRelationshipContext
     );
     updateJob(jobId, { benchmarkingTable });
-    emit(jobId, 'progress', { benchmarkingTable, progress: 80 });
+    emit(jobId, 'progress', { benchmarkingTable, progress: 82 });
 
-    step('Building gap analysis...', 80);
+    step('Building gap analysis...', 82);
     const gapAnalysis = await synthesizeGapAnalysis(
       { ...input, selectedCompetitors: selectedPeers },
       companyResearch,
-      benchmarkingTable
+      benchmarkingTable,
+      vendorRelationshipContext
     );
     // Free research data from memory after synthesis
     for (const key of Object.keys(companyResearch)) delete companyResearch[key];

@@ -450,6 +450,32 @@ Cite every claim with a source. State "Not publicly disclosed" for any unavailab
   return runResearch(query, 'base');
 }
 
+// ── Vendor ↔ Target existing relationship research ───────────────────────────
+
+export async function researchVendorRelationship(
+  targetCompany: string,
+  vendorName: string,
+  industryContext?: string
+): Promise<string> {
+  const sectorLine = industryContext ? ` in the ${industryContext} sector` : '';
+  const query = `
+Research the existing relationship between "${targetCompany}" and "${vendorName}"${sectorLine}.
+
+Specifically identify:
+1. Any confirmed deployments or implementations of ${vendorName} products/solutions at ${targetCompany}
+2. Named contract announcements, press releases, or case studies mentioning both companies
+3. Which specific ${vendorName} solutions/modules are live or in use at ${targetCompany}
+4. Partnership scope: project size, duration, go-live dates if available
+5. Any public testimonials, conference presentations, or joint marketing between the two
+6. Any ongoing or planned expansions of the relationship
+
+If ${vendorName} has NO known relationship with ${targetCompany}, clearly state that.
+Cite every finding with a source (press release, case study URL, news article, conference).
+`.trim();
+
+  return runResearch(query, 'base');
+}
+
 // ── Parallel company research ────────────────────────────────────────────────
 
 export async function researchAllCompanies(
