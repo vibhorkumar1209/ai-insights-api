@@ -227,40 +227,60 @@ function nameMatchScore(query: string, resultName: string): number {
   return qWords.length > 0 ? matchedWords.length / qWords.length : 0;
 }
 
+const FMP_MAJOR_EXCHANGES = [
+  'NASDAQ', 'NYSE', 'AMEX', 'LSE', 'NSE', 'BSE', 'TSX', 'XETRA', 'TSE', 'HKEX', 'ASX',
+  // LATAM
+  'B3', 'BOVESPA', 'BMV', 'BVC', 'BOLSA DE SANTIAGO', 'BCBA', 'BVL',
+];
+
+function scoreFMPResult(companyName: string, r: FMPSearchResult): { nameSc: number; score: number } {
+  const nameSc = nameMatchScore(companyName, r.name);
+  const exchIdx = FMP_MAJOR_EXCHANGES.findIndex((e) => r.exchange.includes(e) || r.exchangeFullName?.includes(e));
+  const exchSc = exchIdx >= 0 ? (FMP_MAJOR_EXCHANGES.length - exchIdx) / (FMP_MAJOR_EXCHANGES.length * 2) : 0;
+  return { nameSc, score: nameSc * 8.5 + exchSc };
+}
+
+function pickBestFMPResult(companyName: string, results: FMPSearchResult[]): string | null {
+  const scored = results.map((r) => ({ r, ...scoreFMPResult(companyName, r) }));
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  if (best.nameSc < 0.35) {
+    console.warn('[FMP] Best match has low name similarity:', best.r.name, 'for query:', companyName);
+    return null;
+  }
+  console.log('[FMP] Ticker identified:', best.r.symbol, `(${best.r.name})`, 'score:', best.score.toFixed(2), 'for:', companyName);
+  return best.r.symbol;
+}
+
 export async function fmpSearchTicker(companyName: string): Promise<string | null> {
   try {
+    // Primary search: full company name
     const results = await fmpFetch<FMPSearchResult[]>(
       `/search-name?query=${encodeURIComponent(companyName)}&limit=20`
     );
-    if (!results || results.length === 0) return null;
 
-    // Score each result: name similarity is primary signal.
-    // Exchange preference is a tiebreaker only — strong name match wins regardless of exchange.
-    const MAJOR_EXCHANGES = [
-      // Global majors
-      'NASDAQ', 'NYSE', 'AMEX', 'LSE', 'NSE', 'BSE', 'TSX', 'XETRA', 'TSE', 'HKEX', 'ASX',
-      // LATAM
-      'B3', 'BOVESPA', 'BMV', 'BVC', 'BOLSA DE SANTIAGO', 'BCBA', 'BVL',
-    ];
-    const scored = results.map((r) => {
-      const nameSc = nameMatchScore(companyName, r.name);
-      const exchIdx = MAJOR_EXCHANGES.findIndex((e) => r.exchange.includes(e) || r.exchangeFullName?.includes(e));
-      // Exchange is a small tiebreaker (max 0.5), name match dominates (max 8.5)
-      const exchSc = exchIdx >= 0 ? (MAJOR_EXCHANGES.length - exchIdx) / (MAJOR_EXCHANGES.length * 2) : 0;
-      return { r, nameSc, score: nameSc * 8.5 + exchSc };
-    });
-
-    scored.sort((a, b) => b.score - a.score);
-    const best = scored[0];
-
-    // Reject if name similarity is too low (< 0.35) — likely a wrong company
-    if (best.nameSc < 0.35) {
-      console.warn('[FMP] Best match has low name similarity:', best.r.name, 'for query:', companyName);
-      return null;
+    if (results && results.length > 0) {
+      const ticker = pickBestFMPResult(companyName, results);
+      if (ticker) return ticker;
     }
 
-    console.log('[FMP] Ticker identified:', best.r.symbol, `(${best.r.name})`, 'score:', best.score.toFixed(2), 'for:', companyName);
-    return best.r.symbol;
+    // Secondary search: try each word longer than 4 chars individually
+    // Handles cases like "Grupo Sura" → FMP only indexes under "Suramericana"
+    const words = companyName.trim().split(/\s+/).filter((w) => w.length > 4);
+    for (const word of words) {
+      if (word.toLowerCase() === companyName.toLowerCase()) continue; // avoid repeat
+      const wordResults = await fmpFetch<FMPSearchResult[]>(
+        `/search-name?query=${encodeURIComponent(word)}&limit=20`
+      );
+      if (!wordResults || wordResults.length === 0) continue;
+      const ticker = pickBestFMPResult(companyName, wordResults);
+      if (ticker) {
+        console.log('[FMP] Ticker found via word fallback search ("' + word + '"):', ticker);
+        return ticker;
+      }
+    }
+
+    return null;
   } catch (err) {
     console.warn('[FMP] Ticker search failed:', err);
     return null;
