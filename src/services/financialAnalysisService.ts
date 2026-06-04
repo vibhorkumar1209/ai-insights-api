@@ -7,7 +7,7 @@ import {
   fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
 } from './fmpFinance';
 import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
-import { synthesizeFinancialInsights, synthesizePrivateCompany } from './claudeAI';
+import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -130,21 +130,37 @@ export async function runFinancialAnalysis(
         resolvedTicker = domainTicker;
         resolvedExchange = yahooTicker?.exchange || '';
         console.log('[financialAnalysis] Using domain-resolved ticker:', domainTicker);
-      } else if (yahooTicker?.ticker) {
+      } else if (yahooTicker?.ticker && fmpTicker) {
+        // Both found — prefer FMP when they agree, Yahoo when they differ (Yahoo handles brand names better)
         resolvedTicker = yahooTicker.ticker;
         resolvedExchange = yahooTicker.exchange;
-        if (fmpTicker && fmpTicker !== yahooTicker.ticker) {
+        if (fmpTicker !== yahooTicker.ticker) {
           console.log('[financialAnalysis] FMP suggested', fmpTicker, 'but Yahoo resolved', yahooTicker.ticker, '— using Yahoo');
         }
       } else if (fmpTicker) {
+        // FMP found something but Yahoo didn't — trust FMP
         resolvedTicker = fmpTicker;
         resolvedExchange = '';
         console.log('[financialAnalysis] Using FMP-only ticker:', fmpTicker);
+      } else if (yahooTicker?.ticker) {
+        // Yahoo found something but FMP didn't — treat Yahoo result as uncertain;
+        // skip it here and let Claude lookup run instead for better accuracy
+        console.log('[financialAnalysis] Yahoo returned', yahooTicker.ticker, 'but FMP found nothing — deferring to Claude lookup');
       }
 
-      const tickerResult = resolvedTicker ? { ticker: resolvedTicker, exchange: resolvedExchange || '' } : null;
+      let tickerResult = resolvedTicker ? { ticker: resolvedTicker, exchange: resolvedExchange || '' } : null;
       console.log('[financialAnalysis] ticker detection result:', tickerResult);
 
+      // Last resort: if neither FMP nor Yahoo found a ticker, ask Claude
+      // This handles cases like "Grupo Sura" where brand names diverge from legal names
+      if (!tickerResult) {
+        console.log('[financialAnalysis] No ticker found via FMP/Yahoo — trying Claude lookup');
+        const claudeTicker = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
+        if (claudeTicker) {
+          tickerResult = claudeTicker;
+          console.log('[financialAnalysis] Claude resolved ticker:', claudeTicker.ticker, 'on', claudeTicker.exchange);
+        }
+      }
 
       if (input.isPublic === true) {
         // User forced public — accept even if ticker not found

@@ -3553,3 +3553,41 @@ Fields:
     geopoliticalStress: (p3.geopoliticalStress || []) as GeoStressRow[],
   };
 }
+
+// ── Claude ticker lookup (last-resort fallback) ───────────────────────────────
+
+/**
+ * Ask Claude to identify the stock ticker for a company when FMP/Yahoo fail.
+ * Returns { ticker, exchange } or null if Claude can't identify it confidently.
+ */
+export async function claudeLookupTicker(
+  companyName: string,
+  domain?: string
+): Promise<{ ticker: string; exchange: string } | null> {
+  const domainHint = domain ? ` (website: ${domain})` : '';
+  try {
+    const message = await client.messages.create({
+      model: FAST_MODEL,
+      max_tokens: 100,
+      messages: [{
+        role: 'user',
+        content: `What is the primary stock exchange ticker symbol for "${companyName}"${domainHint}?
+
+Reply with ONLY a JSON object: {"ticker":"SYMBOL","exchange":"EXCHANGE_NAME"}
+Use the most liquid listing (prefer the home exchange over OTC/ADR if both exist).
+If you are not confident, reply: {"ticker":null,"exchange":null}`,
+      }],
+      system: 'You are a financial data expert. Return only the JSON object, no explanation.',
+    });
+    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
+    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+    if (parsed.ticker && typeof parsed.ticker === 'string' && parsed.ticker !== 'null') {
+      console.log('[claudeAI] Ticker lookup:', parsed.ticker, 'on', parsed.exchange, 'for:', companyName);
+      return { ticker: parsed.ticker as string, exchange: (parsed.exchange as string) || '' };
+    }
+    return null;
+  } catch (err) {
+    console.warn('[claudeAI] Ticker lookup failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
