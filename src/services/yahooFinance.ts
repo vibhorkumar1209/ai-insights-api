@@ -50,6 +50,13 @@ const SUFFIX_TO_EXCHANGE: Record<string, string> = {
   T:   'TYO',   // Tokyo Stock Exchange
   SS:  'SHA',   // Shanghai A-shares
   SZ:  'SHE',   // Shenzhen A-shares
+  // LATAM
+  SA:  'BVMF',  // Brazil — B3 (formerly Bovespa)
+  MX:  'BMV',   // Mexico — Bolsa Mexicana de Valores
+  CL:  'BVC',   // Colombia — Bolsa de Valores de Colombia
+  SN:  'SNSE',  // Chile — Bolsa de Santiago
+  BA:  'BCBA',  // Argentina — Bolsa de Comercio de Buenos Aires
+  LM:  'BVL',   // Peru — Bolsa de Valores de Lima
 };
 
 // Map Yahoo exchange code → Google Finance exchange (for tickers with no dot-suffix)

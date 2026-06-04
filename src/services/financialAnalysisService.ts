@@ -247,8 +247,10 @@ async function runPublicPath(
       }
     }
 
-    // FMP is considered successful if we got at least income statement data
-    if (incomeData) {
+    // FMP is considered successful only if income data has meaningful revenue figures
+    // (not just a null-free but all-zero response, which can happen for LATAM companies)
+    const hasMeaningfulFMPData = !!incomeData && incomeData.revenueHistory.some(r => r.revenue && r.revenue !== 0);
+    if (hasMeaningfulFMPData) {
       usedFMP = true;
       console.log('[financialAnalysis] FMP data retrieved successfully');
       apiData = {
@@ -264,7 +266,7 @@ async function runPublicPath(
         geoRevenue:      geoRevenue,
       };
     } else {
-      console.warn('[financialAnalysis] FMP income statement empty — falling back to Yahoo Finance');
+      console.warn('[financialAnalysis] FMP returned no meaningful revenue data for', ticker, '— falling back to Google Finance scraper');
     }
 
     // ── Fallback: Yahoo Finance ────────────────────────────────────────────────
