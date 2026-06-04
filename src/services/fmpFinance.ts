@@ -184,6 +184,13 @@ const EXCHANGE_EXTENSIONS = [
   // China
   { country: 'China', exchange: 'Shanghai Stock Exchange', extension: '.SS', example: '600519.SS' },
   { country: 'China', exchange: 'Shenzhen Stock Exchange', extension: '.SZ', example: '000001.SZ' },
+  // LATAM
+  { country: 'Brazil', exchange: 'B3 (Bovespa)', extension: '.SA', example: 'PETR4.SA' },
+  { country: 'Mexico', exchange: 'Bolsa Mexicana de Valores (BMV)', extension: '.MX', example: 'AMXL.MX' },
+  { country: 'Colombia', exchange: 'Bolsa de Valores de Colombia (BVC)', extension: '.CL', example: 'ECOPETROL.CL' },
+  { country: 'Chile', exchange: 'Bolsa de Santiago', extension: '.SN', example: 'FALABELLA.SN' },
+  { country: 'Argentina', exchange: 'Bolsa de Comercio de Buenos Aires (BCBA)', extension: '.BA', example: 'YPF.BA' },
+  { country: 'Peru', exchange: 'Bolsa de Valores de Lima (BVL)', extension: '.LM', example: 'BVN.LM' },
 ];
 
 // ── Ticker search via FMP ─────────────────────────────────────────────────────
@@ -229,7 +236,12 @@ export async function fmpSearchTicker(companyName: string): Promise<string | nul
 
     // Score each result: name similarity is primary signal.
     // Exchange preference is a tiebreaker only — strong name match wins regardless of exchange.
-    const MAJOR_EXCHANGES = ['NASDAQ', 'NYSE', 'AMEX', 'LSE', 'NSE', 'BSE', 'TSX', 'XETRA', 'TSE', 'HKEX', 'ASX'];
+    const MAJOR_EXCHANGES = [
+      // Global majors
+      'NASDAQ', 'NYSE', 'AMEX', 'LSE', 'NSE', 'BSE', 'TSX', 'XETRA', 'TSE', 'HKEX', 'ASX',
+      // LATAM
+      'B3', 'BOVESPA', 'BMV', 'BVC', 'BOLSA DE SANTIAGO', 'BCBA', 'BVL',
+    ];
     const scored = results.map((r) => {
       const nameSc = nameMatchScore(companyName, r.name);
       const exchIdx = MAJOR_EXCHANGES.findIndex((e) => r.exchange.includes(e) || r.exchangeFullName?.includes(e));
