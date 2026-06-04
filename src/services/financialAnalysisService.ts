@@ -119,7 +119,8 @@ export async function runFinancialAnalysis(
 
       const fmpRaw = fmpResult.status === 'fulfilled' ? fmpResult.value : null;
       const yahooTicker = yahooResult.status === 'fulfilled' ? yahooResult.value : null;
-      const fmpTicker = (fmpRaw && /^[A-Z0-9.]{1,8}$/.test(fmpRaw)) ? fmpRaw : null;
+      // Allow up to 20 chars to cover long LATAM tickers e.g. GRUPOSURA.CL, ECOPETROL.CL, FALABELLA.SN
+      const fmpTicker = (fmpRaw && /^[A-Z0-9.]{1,20}$/.test(fmpRaw)) ? fmpRaw : null;
 
       // Priority: domain lookup > Yahoo (good at brand names) > FMP name search
       let resolvedTicker: string | undefined;
