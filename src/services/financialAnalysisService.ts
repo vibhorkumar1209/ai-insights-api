@@ -130,22 +130,19 @@ export async function runFinancialAnalysis(
         resolvedTicker = domainTicker;
         resolvedExchange = yahooTicker?.exchange || '';
         console.log('[financialAnalysis] Using domain-resolved ticker:', domainTicker);
-      } else if (yahooTicker?.ticker && fmpTicker) {
-        // Both found — prefer FMP when they agree, Yahoo when they differ (Yahoo handles brand names better)
+      } else if (yahooTicker?.ticker) {
+        // Yahoo result wins — it handles brand names and non-US exchanges well
         resolvedTicker = yahooTicker.ticker;
         resolvedExchange = yahooTicker.exchange;
-        if (fmpTicker !== yahooTicker.ticker) {
+        if (fmpTicker && fmpTicker !== yahooTicker.ticker) {
           console.log('[financialAnalysis] FMP suggested', fmpTicker, 'but Yahoo resolved', yahooTicker.ticker, '— using Yahoo');
+        } else if (!fmpTicker) {
+          console.log('[financialAnalysis] FMP found nothing — using Yahoo ticker:', yahooTicker.ticker);
         }
       } else if (fmpTicker) {
-        // FMP found something but Yahoo didn't — trust FMP
         resolvedTicker = fmpTicker;
         resolvedExchange = '';
         console.log('[financialAnalysis] Using FMP-only ticker:', fmpTicker);
-      } else if (yahooTicker?.ticker) {
-        // Yahoo found something but FMP didn't — treat Yahoo result as uncertain;
-        // skip it here and let Claude lookup run instead for better accuracy
-        console.log('[financialAnalysis] Yahoo returned', yahooTicker.ticker, 'but FMP found nothing — deferring to Claude lookup');
       }
 
       let tickerResult = resolvedTicker ? { ticker: resolvedTicker, exchange: resolvedExchange || '' } : null;
