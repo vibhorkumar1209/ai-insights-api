@@ -101,13 +101,46 @@ export async function runFinancialAnalysis(
       isPublic = false;
     } else {
       // ── Domain-first lookup (most precise) ──────────────────────────────────
-      // When the user provides a company website, use FMP's domain lookup as the
-      // primary signal — it directly maps tcs.com → TCS.NS, removing all ambiguity.
+      // Priority when domain provided: FMP domain API → Claude (domain context) → Yahoo
+      // FMP domain API is fast but only covers well-indexed companies (mostly US/EU).
+      // Claude fallback handles LATAM/niche domains FMP doesn't have mapped.
       let domainTicker: string | null = null;
       if (input.companyDomain) {
         domainTicker = await fmpSearchByDomain(input.companyDomain).catch(() => null);
         if (domainTicker) {
           console.log('[financialAnalysis] Domain lookup resolved ticker:', domainTicker, 'from', input.companyDomain);
+        } else {
+          // FMP doesn't have this domain — ask Claude which knows brand→ticker mappings.
+          // Claude returns tickers in priority order (OTC/ADR first for data availability).
+          // Try each in sequence until FMP confirms one has income data.
+          console.log('[financialAnalysis] FMP domain lookup failed for', input.companyDomain, '— trying Claude');
+          const claudeResult = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
+          const candidates: string[] = [];
+          if (claudeResult?.ticker) candidates.push(claudeResult.ticker);
+          // Also include any additional tickers Claude returned
+          const extra = (claudeResult as { allTickers?: Array<{ticker: string}> } | null)?.allTickers || [];
+          for (const t of extra) {
+            if (t.ticker && !candidates.includes(t.ticker)) candidates.push(t.ticker);
+          }
+          for (const candidate of candidates) {
+            try {
+              const incomeCheck = await fmpFetchIncomeStatement(candidate, 1);
+              if (incomeCheck && incomeCheck.revenueHistory.some(r => r.revenue && r.revenue !== 0)) {
+                domainTicker = candidate;
+                console.log('[financialAnalysis] Claude ticker', candidate, 'confirmed with FMP data');
+                break;
+              } else {
+                console.log('[financialAnalysis] Claude ticker', candidate, 'has no FMP income data — trying next');
+              }
+            } catch {
+              console.log('[financialAnalysis] FMP check failed for Claude ticker', candidate);
+            }
+          }
+          // If no candidate has FMP data, still use Claude's first suggestion so we treat as public
+          if (!domainTicker && candidates.length > 0) {
+            domainTicker = candidates[0];
+            console.log('[financialAnalysis] No FMP data found for any Claude ticker — using', domainTicker, 'anyway');
+          }
         }
       }
 

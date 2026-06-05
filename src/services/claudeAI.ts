@@ -3568,22 +3568,29 @@ export async function claudeLookupTicker(
   try {
     const message = await client.messages.create({
       model: FAST_MODEL,
-      max_tokens: 100,
+      max_tokens: 200,
       messages: [{
         role: 'user',
-        content: `What is the primary stock exchange ticker symbol for "${companyName}"${domainHint}?
+        content: `What are the stock ticker symbols for "${companyName}"${domainHint}?
 
-Reply with ONLY a JSON object: {"ticker":"SYMBOL","exchange":"EXCHANGE_NAME"}
-Use the most liquid listing (prefer the home exchange over OTC/ADR if both exist).
-If you are not confident, reply: {"ticker":null,"exchange":null}`,
+Reply with ONLY a JSON object listing up to 3 tickers in priority order:
+{"tickers":[{"ticker":"SYMBOL","exchange":"EXCHANGE_NAME"},...]}"
+
+Priority order:
+1. US OTC or ADR listing (e.g. GIVSY, GIVPY) — best for financial data availability
+2. Home exchange listing (e.g. BVC, B3, BMV)
+3. Any other listing
+
+If you are not confident about any ticker, reply: {"tickers":[]}`,
       }],
       system: 'You are a financial data expert. Return only the JSON object, no explanation.',
     });
     const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
     const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
-    if (parsed.ticker && typeof parsed.ticker === 'string' && parsed.ticker !== 'null') {
-      console.log('[claudeAI] Ticker lookup:', parsed.ticker, 'on', parsed.exchange, 'for:', companyName);
-      return { ticker: parsed.ticker as string, exchange: (parsed.exchange as string) || '' };
+    const tickers: Array<{ ticker: string; exchange: string }> = parsed.tickers || [];
+    if (tickers.length > 0 && tickers[0].ticker) {
+      console.log('[claudeAI] Ticker lookup results for', companyName, ':', JSON.stringify(tickers));
+      return { ticker: tickers[0].ticker, exchange: tickers[0].exchange || '', allTickers: tickers } as { ticker: string; exchange: string };
     }
     return null;
   } catch (err) {
