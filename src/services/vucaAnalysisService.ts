@@ -105,25 +105,22 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
     let combinedResearch = '';
 
     try {
-      // 2 focused queries instead of 3 — saves one full batch timeout on slow days
       const industryQueries = [
         `${industry} ${geography} VUCA risks volatility uncertainty geopolitical disruption supply chain wars tariffs 2024 2025`,
         `${industry} ${geography} IT spend technology investment digital transformation forecast 2025 2026 Gartner IDC Forrester McKinsey`,
       ];
 
-      for (let i = 0; i < industryQueries.length; i++) {
-        current = update(jobId, {
-          progress: 10 + i * 15,
-          currentStep: `Web search ${i + 1}/2: ${['VUCA risk intelligence', 'IT spend & technology trends'][i]}…`,
-        });
-        emit(jobId, 'progress', current);
+      current = update(jobId, { progress: 10, currentStep: 'Running VUCA & IT spend queries in parallel…' });
+      emit(jobId, 'progress', current);
 
-        const t0 = Date.now();
-        // .catch(() => '') ensures a Parallel.AI rejection never propagates through withTimeout
-        const text = await withTimeout(runResearchQuery(industryQueries[i]).catch(() => ''), BATCH_TIMEOUT, '');
-        console.log(`[vuca] industry batch ${i + 1} done in ${Date.now() - t0}ms, len=${text.length}`);
+      const t0 = Date.now();
+      const industryResults = await Promise.all(
+        industryQueries.map((q) => withTimeout(runResearchQuery(q).catch(() => ''), BATCH_TIMEOUT, ''))
+      );
+      console.log(`[vuca] industry batches done in ${Date.now() - t0}ms`);
+      industryResults.forEach((text, i) => {
         if (text) combinedResearch += `\n\n=== INDUSTRY BATCH ${i + 1} ===\n${text.slice(0, 7000)}`;
-      }
+      });
     } finally {
       clearInterval(researchHB);
     }
@@ -136,13 +133,14 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
 
       const companyHB = startHeartbeat(jobId, 43, 50, `Analysing ${companyName} portfolio…`);
       try {
-        // Sequential (not parallel) — Render 0.1 vCPU can't handle two concurrent fetches well
         const q1 = `site:${companyDomain} products solutions services technology offerings`;
         const q2 = `"${companyName}" IT products software services portfolio customers case studies 2024 2025`;
 
         const t0 = Date.now();
-        const r1 = await withTimeout(runResearchQuery(q1).catch(() => ''), BATCH_TIMEOUT, '');
-        const r2 = await withTimeout(runResearchQuery(q2).catch(() => ''), BATCH_TIMEOUT, '');
+        const [r1, r2] = await Promise.all([
+          withTimeout(runResearchQuery(q1).catch(() => ''), BATCH_TIMEOUT, ''),
+          withTimeout(runResearchQuery(q2).catch(() => ''), BATCH_TIMEOUT, ''),
+        ]);
         console.log(`[vuca] company research done in ${Date.now() - t0}ms, r1=${r1.length}, r2=${r2.length}`);
 
         companyProfile = [

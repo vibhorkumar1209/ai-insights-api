@@ -91,8 +91,6 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     const researchHB = startHeartbeat(jobId, 11, 64, 'Researching thought leadership…');
     let researchBatches: Array<{ label: string; rawText: string }> = [];
     try {
-      // Run sequentially — 4 parallel calls overwhelm Render free tier (0.1 vCPU)
-      // General topic+geo searches — synthesis will filter & attribute to consulting firms
       const batchDefs = [
         { label: 'reports', query: `"${topic}" ${geography} research report analysis 2024 2025 site:mckinsey.com OR site:bcg.com OR site:bain.com OR site:deloitte.com OR site:pwc.com OR site:ey.com OR site:accenture.com OR site:kpmg.com` },
         { label: 'analysts', query: `"${topic}" ${geography} forecast outlook trends 2024 2025 site:gartner.com OR site:forrester.com OR site:idc.com OR site:everestgrp.com OR site:hbr.org OR site:weforum.org` },
@@ -100,21 +98,18 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
         { label: 'trends', query: `"${topic}" ${geography} trends challenges opportunities recommendations industry 2025` },
       ];
 
-      for (let i = 0; i < batchDefs.length; i++) {
-        const { label, query } = batchDefs[i];
-        const progress = 12 + i * 12;
-        current = update(jobId, { progress, currentStep: `Researching batch ${i + 1}/4: ${label}…` });
-        emit(jobId, 'progress', current);
-        try {
-          const { runResearchQuery } = await import('./parallelAI.js');
-          const rawText = await runResearchQuery(query);
-          researchBatches.push({ label, rawText: rawText.slice(0, 12000) });
-        } catch {
-          researchBatches.push({ label, rawText: `No data retrieved for ${label} batch.` });
-        }
-        current = update(jobId, { progress: progress + 8, currentStep: `Batch ${i + 1}/4 complete` });
-        emit(jobId, 'progress', current);
-      }
+      current = update(jobId, { progress: 14, currentStep: 'Running 4 research queries in parallel…' });
+      emit(jobId, 'progress', current);
+
+      const { runResearchQuery } = await import('./parallelAI.js');
+      const settled = await Promise.allSettled(batchDefs.map(({ query }) => runResearchQuery(query)));
+      researchBatches = settled.map((r, i) => ({
+        label: batchDefs[i].label,
+        rawText: r.status === 'fulfilled' ? r.value.slice(0, 12000) : `No data retrieved for ${batchDefs[i].label} batch.`,
+      }));
+
+      current = update(jobId, { progress: 60, currentStep: 'All 4 research batches complete' });
+      emit(jobId, 'progress', current);
     } finally {
       clearInterval(researchHB);
     }

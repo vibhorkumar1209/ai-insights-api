@@ -4,8 +4,8 @@ import { Competitor } from '@ai-insights/types';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 75000;  // 75 seconds — fail fast; consulting uses 4 parallel calls
-const MAX_RETRIES = 0;          // no retry — saves memory on Render free tier
+const TASK_TIMEOUT_MS = 90000;  // 90 seconds — Render Pro has more headroom
+const MAX_RETRIES = 1;          // 1 retry — Render Pro can afford it
 
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────
 // AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
@@ -569,10 +569,16 @@ export async function researchAllCompanies(
 ): Promise<Record<string, string>> {
   const results: Record<string, string> = {};
 
-  // Sequential (not parallel) to stay within Render free 512MB RAM limit
-  for (const company of companies.slice(0, 5)) {
-    results[company] = await researchCompany(company, targetCompany, industryContext);
-  }
+  const entries = await Promise.all(
+    companies.slice(0, 5).map(async (company) => {
+      const text = await researchCompany(company, targetCompany, industryContext).catch((e) => {
+        console.warn(`[parallelAI] researchAllCompanies failed for ${company}:`, e.message);
+        return `Research unavailable for ${company}`;
+      });
+      return [company, text] as const;
+    })
+  );
+  for (const [company, text] of entries) results[company] = text;
   return results;
 }
 
@@ -943,19 +949,18 @@ export async function researchIndustryReport(
   queries: string[],
   onQueryDone?: (completedIdx: number, total: number) => void
 ): Promise<string[]> {
-  // 2 queries max, sequential — keeps peak RSS well under 512 MB
-  const limited = queries.slice(0, 2);
-  const results: string[] = [];
-  for (const [idx, query] of limited.entries()) {
-    try {
-      results.push(await runResearch(query, 'base'));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Research failed';
-      console.warn(`[parallelAI] Industry report query ${idx + 1} failed: ${msg}`);
-      results.push(`Research unavailable for query ${idx + 1}: ${msg}`);
+  const limited = queries.slice(0, 4);
+  const settled = await Promise.allSettled(limited.map((q) => runResearch(q, 'base')));
+  const results = settled.map((r, idx) => {
+    if (r.status === 'fulfilled') {
+      onQueryDone?.(idx + 1, limited.length);
+      return r.value;
     }
+    const msg = r.reason instanceof Error ? r.reason.message : 'Research failed';
+    console.warn(`[parallelAI] Industry report query ${idx + 1} failed: ${msg}`);
     onQueryDone?.(idx + 1, limited.length);
-  }
+    return `Research unavailable for query ${idx + 1}: ${msg}`;
+  });
   return results;
 }
 
