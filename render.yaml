@@ -3,7 +3,7 @@ services:
     name: ai-insights-api
     runtime: node
     buildCommand: bash build.sh
-    startCommand: node --max-old-space-size=300 dist/app.js
+    startCommand: node --max-old-space-size=1536 dist/app.js
     envVars:
       - key: NODE_ENV
         value: production

@@ -1,10 +1,10 @@
 import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 
-// Reject new AI jobs when heap exceeds 350MB — prevents OOM crash
+// Reject new AI jobs when heap exceeds threshold — prevents OOM crash
 export function memoryGuard(_req: Request, res: Response, next: NextFunction) {
   const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
-  if (heapMB > 250) {
+  if (heapMB > 1200) {
     console.warn(`[memoryGuard] heap ${heapMB.toFixed(0)}MB — rejecting request`);
     res.status(503).json({ error: 'Server busy, please retry in 30 seconds.', retryAfter: 30 });
     return;
