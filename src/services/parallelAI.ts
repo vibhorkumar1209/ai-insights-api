@@ -774,6 +774,44 @@ Cite all sources with dates. State "Not publicly disclosed" where data is unavai
   }
 }
 
+// ── Business Segments Research ───────────────────────────────────────────────
+
+export async function researchBusinessSegments(
+  companyName: string,
+  domain?: string
+): Promise<string> {
+  const domainNote = domain ? ` (website: ${domain})` : '';
+  const query = `
+Research the business segments and corporate structure of "${companyName}"${domainNote}.
+
+Report on the following using annual reports, 10-K filings, investor presentations, and press releases:
+
+1. BUSINESS SEGMENTS
+   - Official segment names as reported in annual filings
+   - Revenue contribution per segment (% of total or absolute)
+   - What each segment sells, to whom, and in which geographies
+   - Source (e.g., "10-K 2024", "Investor Day 2025")
+
+2. RECENT STRATEGIC EVOLUTION
+   - Major acquisitions, divestitures, or new business launches (last 5 years)
+   - Any segment reorganisations, rebrands, or portfolio reshaping
+   - Strategic pivots or business model changes
+
+3. COMPETITIVE POSITION PER SEGMENT
+   - Key competitors for each major segment
+   - Any segment where the company is a market leader or follower
+
+Cite every claim with a source and year. State "Not publicly disclosed" where data is unavailable.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
 // ── Sales Play Context Research ────────────────────────────────────────────────
 // Comprehensive competitive intelligence gathering for a sales play.
 // Covers: target account landscape, competitor weaknesses, your company's strengths.

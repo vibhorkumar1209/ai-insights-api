@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { BusinessSegmentsResult } from '@ai-insights/types';
-import { researchCompany } from './parallelAI';
+import { researchBusinessSegments } from './parallelAI';
 import { synthesizeBusinessSegments } from './claudeAI';
 
 // In-memory job store
@@ -74,7 +74,7 @@ export async function runBusinessSegmentsAnalysis(
 
     let research = '';
     try {
-      research = await researchCompany(companyName, companyDomain);
+      research = await researchBusinessSegments(companyName, companyDomain);
     } catch (err) {
       console.warn('[businessSegments] Research failed:', err);
     }
