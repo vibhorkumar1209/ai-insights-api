@@ -5,7 +5,7 @@ import { researchIndustryReport } from '../services/parallelAI';
 const router = Router();
 const client = new Anthropic();
 
-const SYNTHESIS_MODEL = 'claude-opus-4-1-20250805';
+const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
 
 router.post('/tailored-pitch', async (req: Request, res: Response) => {
   const {
