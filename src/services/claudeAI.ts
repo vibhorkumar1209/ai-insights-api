@@ -3205,22 +3205,37 @@ Output JSON:
   ]
 }`;
 
-  // Non-streaming call — the SDK's MessageStream class was hitting a
-  // deterministic ERR_STREAM_PREMATURE_CLOSE on Render for this prompt size.
-  // No live partial-text UX depends on streaming here, so plain create()
-  // sidesteps that code path entirely.
+  // Raw fetch instead of the @anthropic-ai/sdk client — the SDK (pinned at
+  // 0.28.0) hits a deterministic "Premature close" while fetching
+  // api.anthropic.com/v1/messages for this prompt, reproducing identically
+  // whether streamed or not. Bypassing the SDK's bundled HTTP client for
+  // just this call sidesteps the bug without a risky app-wide SDK upgrade.
   async function runOnce(): Promise<string> {
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), 120000);
     try {
-      const message = await client.messages.create({
-        model: SYNTHESIS_MODEL,
-        max_tokens: 4000,
-        temperature: 0.1,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }, { signal: controller.signal });
-      const text = message.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: SYNTHESIS_MODEL,
+          max_tokens: 4000,
+          temperature: 0.1,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Anthropic API ${res.status}: ${errText.slice(0, 300)}`);
+      }
+      const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+      const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text || '').join('');
       onChunk?.(text);
       return text;
     } finally {
