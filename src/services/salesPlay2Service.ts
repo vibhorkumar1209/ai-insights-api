@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SalesPlay2Input, SalesPlay2Result } from '@ai-insights/types';
-import { researchSalesPlayContext } from './parallelAI';
+import { researchSalesPlayContext, researchVendorRelationship } from './parallelAI';
 import { synthesizeSalesPlay2 } from './claudeAI';
 
 const jobs = new Map<string, SalesPlay2Result>();
@@ -82,11 +82,29 @@ export async function runSalesPlay2(jobId: string, input: SalesPlay2Input): Prom
       console.warn('[salesPlay2] Research failed, proceeding with training knowledge:', err);
     }
 
+    // Step 1b: Incumbency check — does each named competitor already have a presence at the target account?
+    const competitorList = input.competitorName.split(',').map((c) => c.trim()).filter(Boolean);
+    job = update(jobId, { progress: 35, currentStep: `Checking incumbent vendor status at ${input.targetAccount}…` });
+    emit(jobId, 'progress', job);
+
+    let incumbencyResearch = '';
+    try {
+      const entries = await Promise.all(
+        competitorList.map(async (name) => {
+          const text = await researchVendorRelationship(input.targetAccount, name, input.targetIndustry).catch(() => '');
+          return `=== ${name} ===\n${text}`;
+        })
+      );
+      incumbencyResearch = entries.join('\n\n');
+    } catch (err) {
+      console.warn('[salesPlay2] Incumbency research failed:', err);
+    }
+
     job = update(jobId, { progress: 50, status: 'synthesizing', currentStep: 'Synthesising win themes, opportunities and competitive positioning…' });
     emit(jobId, 'progress', job);
 
     // Step 2: Synthesise
-    const result = await synthesizeSalesPlay2(input, research, (accumulated) => {
+    const result = await synthesizeSalesPlay2(input, research, competitorList, incumbencyResearch, (accumulated) => {
       const synthProgress = Math.min(95, 50 + Math.floor((accumulated.length / 5000) * 45));
       const j = update(jobId, { progress: synthProgress });
       emit(jobId, 'progress', j);

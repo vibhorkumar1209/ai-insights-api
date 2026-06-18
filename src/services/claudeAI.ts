@@ -3158,27 +3158,32 @@ Output ONLY valid JSON (no markdown fences):
 export async function synthesizeSalesPlay2(
   input: SalesPlay2Input,
   research: string,
+  competitorList: string[],
+  incumbencyResearch: string,
   onChunk?: (accumulated: string) => void
 ): Promise<{ winThemes: SalesPlay2WinTheme[]; opportunities: SalesPlay2Opportunity[]; competitors: SalesPlay2Competitor[] }> {
   const hasResearch = !isEmptyResearch(research);
+  const hasIncumbencyResearch = !isEmptyResearch(incumbencyResearch);
+  const competitors = competitorList.length ? competitorList : [input.competitorName];
 
   const systemPrompt = `You are an elite B2B sales strategist. Output ONLY valid JSON. No markdown fences. ${WRITING_DIRECTIVE}`;
 
-  const userPrompt = `Generate a Sales Play II for ${input.yourCompany} targeting ${input.targetAccount} in the ${input.targetIndustry} industry. Primary competitor to displace: ${input.competitorName}.
+  const userPrompt = `Generate a Sales Play II for ${input.yourCompany} targeting ${input.targetAccount} in the ${input.targetIndustry} industry. Competitors to displace: ${competitors.join(', ')}.
 ${input.strategicPriorities?.length ? `\nTarget Account Strategic Priorities:\n${input.strategicPriorities.join('\n')}` : ''}
 ${input.solutionAreas ? `\nOur Solution Areas: ${input.solutionAreas}` : ''}
 ${input.competitorWeaknesses ? `\nKnown Competitor Weaknesses: ${input.competitorWeaknesses}` : ''}
 ${hasResearch ? `\nRESEARCH:\n${research.slice(0, 15000)}` : '\n[No live research — use training knowledge]'}
+${hasIncumbencyResearch ? `\nVENDOR INCUMBENCY CHECK (web search results for "competitor + ${input.targetAccount}" — use this to determine if a competitor already has a deployment/relationship there):\n${incumbencyResearch.slice(0, 10000)}` : ''}
 
 Generate:
-1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency
+1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency. Each theme must have a short "focusArea" label (2-4 words, e.g. "Cloud Migration", "Cybersecurity Modernization"). Win Themes and triggers must be about ${input.targetAccount}'s own business context (priorities, pain points, initiatives) — do NOT mention any competitor by name in the theme or trigger text.
 2. Opportunity Mapping — 4-5 opportunity areas showing how ${input.yourCompany} solves real problems with realistic deal sizes
-3. Competitive Positioning — Analysis of ${input.competitorName} (and up to 2 other major competitors if relevant) with specific strengths, weaknesses, and how ${input.yourCompany} differentiates
+3. Competitive Positioning — generate ONE entry for EACH of these competitors, in this exact order: ${competitors.join(', ')}. For each, give specific strengths, weaknesses, and how ${input.yourCompany} differentiates. If the VENDOR INCUMBENCY CHECK above shows credible evidence (a case study, partnership announcement, deployment, or customer reference) that this competitor already serves ${input.targetAccount}, set "incumbencyNote" to a short factual note (e.g. "Existing vendor since 2021 — confirmed via case study") citing what was found. If no such evidence exists, omit "incumbencyNote" entirely (do not guess or fabricate).
 
 Output JSON:
 {
   "winThemes": [
-    { "theme": "...", "trigger": "..." }
+    { "theme": "...", "focusArea": "...", "trigger": "..." }
   ],
   "opportunities": [
     {
@@ -3194,7 +3199,8 @@ Output JSON:
       "name": "...",
       "strengths": "...",
       "weaknesses": "...",
-      "differentiationStrategy": "..."
+      "differentiationStrategy": "...",
+      "incumbencyNote": "... (omit this field entirely if no evidence)"
     }
   ]
 }`;

@@ -903,6 +903,7 @@ export interface ContentGenerationResult {
 
 export interface SalesPlay2WinTheme {
   theme: string;
+  focusArea: string;
   trigger: string;
 }
 
@@ -919,6 +920,8 @@ export interface SalesPlay2Competitor {
   strengths: string;
   weaknesses: string;
   differentiationStrategy: string;
+  /** Set when research confirms this competitor is an existing/incumbent vendor at the target account. */
+  incumbencyNote?: string;
 }
 
 export interface SalesPlay2Input {
