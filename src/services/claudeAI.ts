@@ -3172,8 +3172,8 @@ export async function synthesizeSalesPlay2(
 ${input.strategicPriorities?.length ? `\nTarget Account Strategic Priorities:\n${input.strategicPriorities.join('\n')}` : ''}
 ${input.solutionAreas ? `\nOur Solution Areas: ${input.solutionAreas}` : ''}
 ${input.competitorWeaknesses ? `\nKnown Competitor Weaknesses: ${input.competitorWeaknesses}` : ''}
-${hasResearch ? `\nRESEARCH:\n${research.slice(0, 15000)}` : '\n[No live research — use training knowledge]'}
-${hasIncumbencyResearch ? `\nVENDOR INCUMBENCY CHECK (web search results for "competitor + ${input.targetAccount}" — use this to determine if a competitor already has a deployment/relationship there):\n${incumbencyResearch.slice(0, 10000)}` : ''}
+${hasResearch ? `\nRESEARCH:\n${research.slice(0, 12000)}` : '\n[No live research — use training knowledge]'}
+${hasIncumbencyResearch ? `\nVENDOR INCUMBENCY CHECK (web search results for "competitor + ${input.targetAccount}" — use this to determine if a competitor already has a deployment/relationship there):\n${incumbencyResearch.slice(0, 4000)}` : ''}
 
 Generate:
 1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency. Each theme must have a short "focusArea" label (2-4 words, e.g. "Cloud Migration", "Cybersecurity Modernization"). Win Themes and triggers must be about ${input.targetAccount}'s own business context (priorities, pain points, initiatives) — do NOT mention any competitor by name in the theme or trigger text.
@@ -3205,17 +3205,28 @@ Output JSON:
   ]
 }`;
 
-  let fullText = '';
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 4000,
-    temperature: 0.1,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-  const timeoutHandle = setTimeout(() => stream.abort(), 120000);
-  stream.on('text', (chunk) => { fullText += chunk; onChunk?.(fullText); });
-  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  async function runOnce(): Promise<string> {
+    let text = '';
+    const stream = client.messages.stream({
+      model: SYNTHESIS_MODEL,
+      max_tokens: 4000,
+      temperature: 0.1,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+    const timeoutHandle = setTimeout(() => stream.abort(), 120000);
+    stream.on('text', (chunk) => { text += chunk; onChunk?.(text); });
+    await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+    return text;
+  }
+
+  let fullText: string;
+  try {
+    fullText = await runOnce();
+  } catch (err) {
+    console.warn('[synthesizeSalesPlay2] stream failed, retrying once:', err instanceof Error ? err.message : err);
+    fullText = await runOnce();
+  }
 
   const match = fullText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim().match(/\{[\s\S]*\}/);
   if (!match) throw new Error('SalesPlay2: no JSON in response');
