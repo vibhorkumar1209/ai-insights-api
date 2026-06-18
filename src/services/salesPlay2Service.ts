@@ -122,8 +122,13 @@ export async function runSalesPlay2(jobId: string, input: SalesPlay2Input): Prom
     });
     emit(jobId, 'result', job);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Analysis failed';
-    console.error(`[salesPlay2] job ${jobId} failed:`, message);
+    const baseMessage = err instanceof Error ? err.message : 'Analysis failed';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cause = err instanceof Error ? (err as any).cause : undefined;
+    const stackLine = err instanceof Error ? err.stack?.split('\n').slice(0, 3).join(' | ') : undefined;
+    console.error(`[salesPlay2] job ${jobId} failed:`, err);
+    const message = [baseMessage, cause ? `cause: ${cause.code || cause.message || cause}` : '', stackLine]
+      .filter(Boolean).join(' :: ');
     const job = update(jobId, { status: 'error', error: message });
     emit(jobId, 'error', job);
   }
