@@ -450,77 +450,62 @@ Cite every claim with a source. State "Not publicly disclosed" for any unavailab
   return runResearch(query, 'base');
 }
 
-// ── Apify Google Search — vendor ↔ target relationship ───────────────────────
+// ── Gemini Google Search grounding — vendor ↔ target relationship ────────────
 
-const APIFY_BASE = 'https://api.apify.com/v2';
-const APIFY_SEARCH_ACTOR = 'apify~google-search-scraper';
-const APIFY_TIMEOUT_MS = 45_000;
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_SEARCH_MODEL = 'gemini-2.5-flash';
+const GEMINI_TIMEOUT_MS = 45_000;
 
-interface ApifySearchResult {
+interface GeminiGroundingSource {
   title: string;
-  url: string;
-  description: string;
+  uri: string;
 }
 
-async function runApifyGoogleSearch(queries: string[]): Promise<ApifySearchResult[]> {
-  const apiKey = process.env.APIFY_API_KEY;
+async function runGeminiGroundedSearch(prompt: string): Promise<{ text: string; sources: GeminiGroundingSource[] }> {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn('APIFY_API_KEY not set — skipping Apify vendor relationship search');
-    return [];
+    console.warn('GEMINI_API_KEY not set — skipping Gemini grounded search');
+    return { text: '', sources: [] };
   }
 
-  // Build Apify actor input — one run with multiple queries
-  const actorInput = {
-    queries: queries.join('\n'),
-    resultsPerPage: 5,
-    maxPagesPerQuery: 1,
-    languageCode: 'en',
-    mobileResults: false,
-    includeUnfilteredResults: false,
-  };
-
-  // Start actor run
-  const startRes = await fetchWithTimeout(
-    `${APIFY_BASE}/acts/${APIFY_SEARCH_ACTOR}/run-sync-get-dataset-items?token=${apiKey}&memory=256`,
+  const res = await fetchWithTimeout(
+    `${GEMINI_BASE}/models/${GEMINI_SEARCH_MODEL}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(actorInput),
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ google_search: {} }],
+      }),
     },
-    APIFY_TIMEOUT_MS
+    GEMINI_TIMEOUT_MS
   );
 
-  if (!startRes.ok) {
-    const errText = await startRes.text().catch(() => '');
-    console.warn(`Apify search failed: ${startRes.status} — ${errText.slice(0, 200)}`);
-    return [];
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.warn(`Gemini search failed: ${res.status} — ${errText.slice(0, 200)}`);
+    return { text: '', sources: [] };
   }
 
-  const bodyText = await readBodyLimited(startRes, 200_000, 20_000);
-  let items: unknown[];
+  const bodyText = await readBodyLimited(res, 300_000, 20_000);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any;
   try {
-    items = JSON.parse(bodyText);
-    if (!Array.isArray(items)) return [];
+    data = JSON.parse(bodyText);
   } catch {
-    return [];
+    return { text: '', sources: [] };
   }
 
-  // Flatten organic results from all queries
-  const results: ApifySearchResult[] = [];
-  for (const item of items) {
-    const organic = (item as Record<string, unknown>).organicResults;
-    if (!Array.isArray(organic)) continue;
-    for (const r of organic as Record<string, unknown>[]) {
-      if (r.title && r.url) {
-        results.push({
-          title: String(r.title),
-          url: String(r.url),
-          description: String(r.description || r.snippet || ''),
-        });
-      }
-    }
-  }
-  return results;
+  const candidate = data?.candidates?.[0];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const text = ((candidate?.content?.parts || []) as any[]).map((p) => p.text || '').join('').trim();
+  const chunks = candidate?.groundingMetadata?.groundingChunks || [];
+  const sources: GeminiGroundingSource[] = (chunks as Record<string, unknown>[])
+    .map((c) => c.web as Record<string, unknown> | undefined)
+    .filter((w): w is Record<string, unknown> => !!w?.uri)
+    .map((w) => ({ title: String(w.title || w.uri), uri: String(w.uri) }));
+
+  return { text, sources };
 }
 
 // ── Vendor ↔ Target existing relationship research ───────────────────────────
@@ -530,34 +515,31 @@ export async function researchVendorRelationship(
   vendorName: string,
   industryContext?: string
 ): Promise<string> {
-  // Run 3 targeted Google searches via Apify to find confirmed vendor deployments
-  const queries = [
-    `"${vendorName}" "${targetCompany}" implementation deployment`,
-    `"${vendorName}" "${targetCompany}" case study partnership`,
-    `"${vendorName}" "${targetCompany}" solution customer`,
-  ];
+  const sectorLine = industryContext ? ` in the ${industryContext} sector` : '';
 
-  let results: ApifySearchResult[] = [];
+  const prompt = `Using Google Search, determine whether "${vendorName}" already has an existing business relationship, deployment, or implementation at "${targetCompany}"${sectorLine}.
+
+Look for case studies, partnership announcements, press releases, customer references, or deployment evidence.
+
+Summarize what you find in 3-5 sentences, citing specifics (dates, project names, sources) where available. If you find no evidence of an existing relationship, say so explicitly — do not guess or fabricate.`;
+
   try {
-    results = await runApifyGoogleSearch(queries);
+    const { text, sources } = await runGeminiGroundedSearch(prompt);
+    if (!text) {
+      // Fallback to Parallel.AI if Gemini unavailable or returned nothing
+      const fallbackQuery = `"${vendorName}" "${targetCompany}" existing deployment implementation partnership case study${sectorLine}`.trim();
+      return runResearch(fallbackQuery, 'base');
+    }
+    const sourceLines = sources
+      .slice(0, 8)
+      .map((s, i) => `${i + 1}. ${s.title}\n   ${s.uri}`)
+      .join('\n');
+    return `Gemini Google Search grounding for "${vendorName}" + "${targetCompany}":\n\n${text}${sourceLines ? `\n\nSOURCES:\n${sourceLines}` : ''}`;
   } catch (err) {
-    console.warn('Apify vendor relationship search failed:', err);
-  }
-
-  if (results.length === 0) {
-    // Fallback to Parallel.AI if Apify unavailable or returned nothing
-    const sectorLine = industryContext ? ` in the ${industryContext} sector` : '';
+    console.warn('Gemini vendor relationship search failed:', err);
     const fallbackQuery = `"${vendorName}" "${targetCompany}" existing deployment implementation partnership case study${sectorLine}`.trim();
     return runResearch(fallbackQuery, 'base');
   }
-
-  // Format results into a compact context string for Claude
-  const lines = results
-    .slice(0, 10)
-    .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description}`)
-    .join('\n');
-
-  return `Apify Google Search results for "${vendorName}" + "${targetCompany}":\n\n${lines}`;
 }
 
 // ── Parallel company research ────────────────────────────────────────────────
