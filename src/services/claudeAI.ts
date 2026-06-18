@@ -3205,26 +3205,34 @@ Output JSON:
   ]
 }`;
 
+  // Non-streaming call — the SDK's MessageStream class was hitting a
+  // deterministic ERR_STREAM_PREMATURE_CLOSE on Render for this prompt size.
+  // No live partial-text UX depends on streaming here, so plain create()
+  // sidesteps that code path entirely.
   async function runOnce(): Promise<string> {
-    let text = '';
-    const stream = client.messages.stream({
-      model: SYNTHESIS_MODEL,
-      max_tokens: 4000,
-      temperature: 0.1,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
-    const timeoutHandle = setTimeout(() => stream.abort(), 120000);
-    stream.on('text', (chunk) => { text += chunk; onChunk?.(text); });
-    await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
-    return text;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), 120000);
+    try {
+      const message = await client.messages.create({
+        model: SYNTHESIS_MODEL,
+        max_tokens: 4000,
+        temperature: 0.1,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }, { signal: controller.signal });
+      const text = message.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
+      onChunk?.(text);
+      return text;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   }
 
   let fullText: string;
   try {
     fullText = await runOnce();
   } catch (err) {
-    console.warn('[synthesizeSalesPlay2] stream failed, retrying once:', err instanceof Error ? err.message : err);
+    console.warn('[synthesizeSalesPlay2] call failed, retrying once:', err instanceof Error ? err.message : err);
     fullText = await runOnce();
   }
 
