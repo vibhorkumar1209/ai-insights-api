@@ -508,6 +508,57 @@ async function runGeminiGroundedSearch(prompt: string): Promise<{ text: string; 
   return { text, sources };
 }
 
+// ── Gemini url_context — fetch a company's own webpage directly ──────────────
+
+async function fetchCompanyWebpage(domain: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn('GEMINI_API_KEY not set — skipping company webpage fetch');
+    return '';
+  }
+
+  const url = domain.startsWith('http') ? domain : `https://${domain}`;
+  const prompt = `Fetch the page at ${url} (and its "About Us" / "Who We Are" page if linked from it) and summarize, in your own words, what the company does: its products/services, business lines, target customers, and scale. Use only what is actually on the page — do not add outside knowledge.`;
+
+  try {
+    const res = await fetchWithTimeout(
+      `${GEMINI_BASE}/models/${GEMINI_SEARCH_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          tools: [{ url_context: {} }],
+        }),
+      },
+      GEMINI_TIMEOUT_MS
+    );
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn(`Gemini url_context fetch failed: ${res.status} — ${errText.slice(0, 200)}`);
+      return '';
+    }
+
+    const bodyText = await readBodyLimited(res, 300_000, 20_000);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
+    try {
+      data = JSON.parse(bodyText);
+    } catch {
+      return '';
+    }
+
+    const candidate = data?.candidates?.[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const text = ((candidate?.content?.parts || []) as any[]).map((p) => p.text || '').join('').trim();
+    return text;
+  } catch (err) {
+    console.warn('Gemini url_context fetch threw:', err);
+    return '';
+  }
+}
+
 // ── Vendor ↔ Target existing relationship research ───────────────────────────
 
 export async function researchVendorRelationship(
@@ -817,12 +868,25 @@ Report on the following, citing the source and year for each fact:
 Do NOT include marketing taglines, mission statements, or "purpose" slogans (e.g. avoid phrasing like "build trust in society" or "solve important problems") — only verifiable operating facts. State "Not publicly disclosed" for anything unavailable. Cite every numeric claim with a source and year.
 `.trim();
 
-  try {
-    return await runResearch(query, 'base');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Research failed';
-    return `Research unavailable for ${companyName}: ${msg}`;
+  const [parallelResult, webpageResult] = await Promise.allSettled([
+    runResearch(query, 'base'),
+    domain ? fetchCompanyWebpage(domain) : Promise.resolve(''),
+  ]);
+
+  const parallelText = parallelResult.status === 'fulfilled' ? parallelResult.value : '';
+  const webpageText = webpageResult.status === 'fulfilled' ? webpageResult.value : '';
+
+  if (!parallelText && !webpageText) {
+    const reason = parallelResult.status === 'rejected'
+      ? (parallelResult.reason instanceof Error ? parallelResult.reason.message : 'Research failed')
+      : 'No data found';
+    return `Research unavailable for ${companyName}: ${reason}`;
   }
+
+  return [
+    webpageText ? `=== Company's own website (${domain}) ===\n${webpageText}` : '',
+    parallelText ? `=== Web research ===\n${parallelText}` : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 // ── Sales Play Context Research ────────────────────────────────────────────────
