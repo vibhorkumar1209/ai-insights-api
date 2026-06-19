@@ -3,11 +3,13 @@ services:
     name: ai-insights-api
     runtime: node
     buildCommand: bash build.sh
-    startCommand: node --max-old-space-size=1536 dist/app.js
+    startCommand: node --max-old-space-size=400 dist/app.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 4000
+      - key: NODE_VERSION
+        value: 20.18.1
     healthCheckPath: /health
     autoDeploy: true
