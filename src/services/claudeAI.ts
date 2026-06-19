@@ -239,12 +239,7 @@ export async function discoverCompetitorsFast(
     ? `in the ${industryContext} industry`
     : '(determine the primary industry/sector first)';
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 4096,
-    messages: [{
-      role: 'user',
-      content: `Identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
+  const userPrompt = `Identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
 
 For each competitor return a JSON object with these fields:
 - name: Company name (exact legal or commonly known name)
@@ -257,15 +252,13 @@ For each competitor return a JSON object with these fields:
 Return ONLY a JSON array. No markdown fences, no explanation.
 [{"name":"...","description":"...","headquarters":"...","estimatedRevenue":"...","employees":"...","relevanceScore":8}]
 
-Only include direct competitors — companies competing for the same customers, contracts, or market segments as ${targetCompany}. Prioritize companies with publicly available technology/digital strategy information. IMPORTANT: Only include companies that are currently active and operating. Do NOT include companies that have shut down, filed for bankruptcy, been liquidated, or permanently exited the market.`,
-    }],
-    system: `You are a senior B2B sales intelligence analyst. Return ONLY valid JSON arrays. No commentary. ${RECENCY_DIRECTIVE}`,
-  });
+Only include direct competitors — companies competing for the same customers, contracts, or market segments as ${targetCompany}. Prioritize companies with publicly available technology/digital strategy information. IMPORTANT: Only include companies that are currently active and operating. Do NOT include companies that have shut down, filed for bankruptcy, been liquidated, or permanently exited the market.`;
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+  const systemPrompt = `You are a senior B2B sales intelligence analyst. Return ONLY valid JSON arrays. No commentary. ${RECENCY_DIRECTIVE}`;
 
-  const jsonMatch = content.text.match(/\[[\s\S]*\]/);
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 4096, SYNTHESIS_MODEL);
+
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error('Claude did not return valid JSON for competitors');
 
   const parsed = JSON.parse(jsonMatch[0]);
@@ -1256,16 +1249,8 @@ Return a JSON object with EXACTLY this structure:
   }
 }`;
 
-  let fullText = '';
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-  const timeoutHandle = setTimeout(() => stream.abort(), 120000);
-  stream.on('text', (chunk) => { fullText += chunk; onChunk?.(fullText); });
-  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  const fullText = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
+  onChunk?.(fullText);
 
   return parsePrivateCompany(fullText);
 }
@@ -2590,20 +2575,12 @@ Requirements:
 - Each description should reference revenues, customer types, or strategic purpose
 - Strategic Evolution: 5-6 bullets explaining business model shifts`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 2000,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected response type');
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 2000, SYNTHESIS_MODEL);
 
   let parsed;
   try {
-    const match = content.text.match(/\{[\s\S]*\}/);
-    parsed = JSON.parse(match ? match[0] : content.text);
+    const match = text.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(match ? match[0] : text);
   } catch {
     throw new Error('Failed to parse business segments JSON');
   }
@@ -2663,20 +2640,12 @@ Requirements:
 - Narratives should be 2-4 sentences, crisp, with clear strategic intent
 - Strategic Evolution: 5-6 bullets explaining business model evolution, inflection points, revenue driver shifts`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 2500,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected response type');
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 2500, SYNTHESIS_MODEL);
 
   let parsed;
   try {
-    const match = content.text.match(/\{[\s\S]*\}/);
-    parsed = JSON.parse(match ? match[0] : content.text);
+    const match = text.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(match ? match[0] : text);
   } catch {
     throw new Error('Failed to parse business timeline JSON');
   }
