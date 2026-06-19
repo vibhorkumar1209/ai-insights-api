@@ -36,7 +36,8 @@ function isRetryable(err: unknown): boolean {
   const status = errObj.status ?? errObj.statusCode;
   if (typeof status === 'number' && RETRYABLE_STATUSES.has(status)) return true;
   const msg = String(errObj.message || err).toLowerCase();
-  return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('timeout');
+  return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('timeout')
+    || msg.includes('premature close') || msg.includes('econnreset') || msg.includes('socket hang up');
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -90,6 +91,47 @@ const client = new Proxy({} as Anthropic, {
     return (initializeClient() as any)[prop];
   },
 });
+
+// Raw fetch to the Anthropic Messages REST API, bypassing the SDK's bundled
+// HTTP client entirely. The SDK (pinned at 0.28.0) hits a deterministic
+// "Premature close" on Render for some prompts — reproduces identically
+// across retries through the SDK client, streamed or not. Use this for any
+// call site that hits that error; retries once internally.
+async function claudeCreateDirect(
+  system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000
+): Promise<string> {
+  async function runOnce(): Promise<string> {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Anthropic API ${res.status}: ${errText.slice(0, 300)}`);
+      }
+      const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+      return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text || '').join('');
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
+  try {
+    return await runOnce();
+  } catch (err) {
+    console.warn('[claudeCreateDirect] call failed, retrying once:', err instanceof Error ? err.message : err);
+    return await runOnce();
+  }
+}
 
 // Token budget optimization
 const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations come via other means
@@ -252,12 +294,7 @@ export async function generateBusinessDescription(
   const domainHint = domain ? ` (website: ${domain})` : '';
   const hasResearch = !!research && !isEmptyResearch(research);
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 1024,
-    messages: [{
-      role: 'user',
-      content: `Write a concise business description of "${companyName}"${domainHint} in 100-150 words.
+  const userPrompt = `Write a concise business description of "${companyName}"${domainHint} in 100-150 words.
 
 ${hasResearch ? `RESEARCH (use this as your primary source — it is more current than your training knowledge):\n${research!.slice(0, 12000)}` : '[No live research available — use training knowledge, but be conservative about specific numbers that may be outdated.]'}
 
@@ -268,14 +305,12 @@ Include:
 - Approximate scale (revenue, employees, number of countries) — only state figures found in the research above; if unavailable, omit rather than guess
 
 Write in professional business language, third person. No headers, bullet points, or markdown. Do NOT use the company's marketing tagline, mission statement, or purpose slogan (e.g. avoid phrasing like "build trust in society" or "solve important problems") as descriptive content — only factual, operating information.
-If you cannot find sufficient verifiable information, respond only with: "No business description can be ascertained."`,
-    }],
-    system: `You are a business intelligence analyst. Write factual, concise company descriptions grounded in the research provided. Never substitute a company's marketing slogan or mission statement for actual business facts. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
-  });
+If you cannot find sufficient verifiable information, respond only with: "No business description can be ascertained."`;
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-  return content.text.trim();
+  const systemPrompt = `You are a business intelligence analyst. Write factual, concise company descriptions grounded in the research provided. Never substitute a company's marketing slogan or mission statement for actual business facts. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
+
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 1024, SYNTHESIS_MODEL);
+  return text.trim();
 }
 
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
