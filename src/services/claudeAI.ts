@@ -2429,30 +2429,61 @@ export async function synthesizeBusinessTimeline(
   strategicEvolution: StrategicEvolutionBullet[];
 }> {
   const hasResearch = !isEmptyResearch(research);
+  const currentYear = new Date().getFullYear();
 
-  const systemPrompt = `You are a senior McKinsey strategy consultant reconstructing a company's strategic evolution.
+  const systemPrompt = `You are a corporate research analyst building a verifiable milestone timeline for "${companyName}".
 Rules:
-- Create a chronological timeline grouped into meaningful strategic phases (not year-by-year)
-- Include ONLY high-impact events: acquisitions, divestitures, launches, pivots, regulatory milestones, partnerships
-- Each block should represent a strategic phase (e.g., expansion, transformation, consolidation)
-- Narratives must be 2-4 lines of flowing text combining related events
-- Every narrative should clearly signal strategic intent
-- Use executive tone: crisp, insightful, no fluff
 - Output ONLY valid JSON. No markdown fences.
+- Every milestone must be a real, named, verifiable event. Never invent or generalize.
 - ${RECENCY_DIRECTIVE}
 - ${WRITING_DIRECTIVE}`;
 
-  const userPrompt = `Reconstruct "${companyName}"'s business timeline as a strategic narrative.
+  const userPrompt = `Create a timeline of 7-10 verifiable milestones for "${companyName}", from its founding year to ${currentYear}, following the rules below.
 
 ${hasResearch ? `RESEARCH (10-K, annual reports, press releases, investor presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}. Label as "(est.)" where appropriate.]`}
+
+MILESTONE SELECTION RULES:
+1. Include only one milestone per year.
+2. Do not specify month or day — year only.
+3. One milestone must be from the current year (${currentYear}) — mandatory.
+4. The current-year milestone must be a specific, verifiable event such as a new launch, partnership, acquisition, award, leadership change, or investment, clearly named and dated, sourced from the company's official press release, news release, news, events, or investor relations page. Do not use general statements or financial updates.
+5. If "${companyName}" was founded between 1700 and 1999: include only TWO milestones from before 2000. One of those two must be the founding year itself, naming the company's original founding name. The remaining 5-8 milestones must be from 2000 to ${currentYear}, spaced chronologically (do not cluster).
+6. If a valid milestone cannot be found for a year, skip that year and choose the next closest eligible year instead.
+
+MILESTONE FORMAT (mandatory):
+Each milestone's narrative must be a single 15-30 word sentence in past tense describing a real, named, and verifiable event.
+
+ACCEPTED CATEGORIES (every milestone must fall into one of these):
+- Mergers & Acquisitions (name both entities)
+- Partnerships / Joint Ventures (name both companies)
+- Product/Service Launches (name the specific offering)
+- Major Client Wins or Strategic Contracts (name both parties)
+- Industry Awards (name the award and the company)
+- C-Level Leadership Changes (name the individual and the company)
+- Technology Investments (name the specific platform/tool)
+- Organizational/Strategic Shifts (e.g., named field/operating model change)
+- Business Expansions (name the geography or facility)
+
+EXCLUDED — do not use any milestone that is:
+- A generic or vague phrase (e.g. "expanded operations", "launched new products")
+- A CSR/DEI/HR program or donation
+- A financial update (earnings, funding round, dividend)
+- A mission statement or non-specific strategy claim
+- Unverifiable or lacking a named entity/event
+
+SOURCE PRIORITY (cite in the "source" field):
+1. Company website, newsroom, investor relations, SEC filings
+2. PR Newswire, Business Wire, GlobeNewswire
+3. Reputable secondary sources (Reuters, Bloomberg, WSJ, industry journals)
+Do NOT cite Wikipedia, Crunchbase, blogs, or media speculation as a source.
 
 Return a JSON object:
 {
   "timelineBlocks": [
     {
-      "period": "YYYY–YYYY or YYYY–Present",
-      "narrative": "2–4 line flowing narrative combining key events and signaling strategic intent",
-      "source": "Source attribution (e.g., '10-K filings', 'Press releases 2023–2024')"
+      "period": "YYYY (single year only, no ranges)",
+      "narrative": "15-30 word past-tense sentence describing the one verifiable milestone for that year",
+      "source": "Source attribution per the priority list above (e.g., 'Company press release, 2023', 'Reuters, 2021')"
     }
   ],
   "strategicEvolution": [
@@ -2463,11 +2494,8 @@ Return a JSON object:
 }
 
 Requirements:
-- Timeline blocks should represent strategic phases, NOT years
-- Each narrative must combine related events into a flowing paragraph (NOT bullet points)
-- Include only high-impact events: acquisitions, divestitures, new business launches, strategic pivots
-- Narratives should be 2-4 sentences, crisp, with clear strategic intent
-- Strategic Evolution: 5-6 bullets explaining business model evolution, inflection points, revenue driver shifts`;
+- Return 7-10 timelineBlocks, one per year, in chronological order.
+- Strategic Evolution: 5-6 bullets explaining business model evolution, inflection points, revenue driver shifts, derived from the milestones above.`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, 2500, SYNTHESIS_MODEL);
 
