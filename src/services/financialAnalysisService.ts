@@ -146,12 +146,20 @@ export async function runFinancialAnalysis(
 
       // Run FMP name search and Yahoo in parallel for cross-validation
       const [fmpResult, yahooResult] = await Promise.allSettled([
-        fmpSearchTicker(input.companyName).catch(() => null),
-        detectTicker(input.companyName, input.companyDomain).catch(() => null),
+        fmpSearchTicker(input.companyName),
+        detectTicker(input.companyName, input.companyDomain),
       ]);
+
+      if (fmpResult.status === 'rejected') {
+        console.error('[financialAnalysis] DEBUG fmpSearchTicker threw:', fmpResult.reason);
+      }
+      if (yahooResult.status === 'rejected') {
+        console.error('[financialAnalysis] DEBUG detectTicker threw:', yahooResult.reason);
+      }
 
       const fmpRaw = fmpResult.status === 'fulfilled' ? fmpResult.value : null;
       const yahooTicker = yahooResult.status === 'fulfilled' ? yahooResult.value : null;
+      console.log('[financialAnalysis] DEBUG fmpRaw:', fmpRaw, '| yahooTicker:', JSON.stringify(yahooTicker));
       // Allow up to 20 chars to cover long LATAM tickers e.g. GRUPOSURA.CL, ECOPETROL.CL, FALABELLA.SN
       const fmpTicker = (fmpRaw && /^[A-Z0-9.]{1,20}$/.test(fmpRaw)) ? fmpRaw : null;
 
