@@ -2366,29 +2366,35 @@ export async function synthesizeBusinessSegments(
 }> {
   const hasResearch = !isEmptyResearch(research);
 
-  const systemPrompt = `You are a senior McKinsey strategy consultant conducting a business structure analysis.
+  const systemPrompt = `You are a market research professional summarizing the reportable business segments of "${companyName}" based on its latest annual report.
 Rules:
-- Identify CURRENT business segments from filings (10-K, annual reports, investor presentations)
-- Each segment description must be analytical, not marketing-focused
-- Descriptions must explain strategic role in the overall business model
+- Identify the company's CURRENT reportable business segments exactly as named in its latest annual report/10-K
 - Use official segment names where available
 - Every segment must be distinct and non-overlapping
-- Strategic evolution must be derived from business model changes over time
+- If the company operates under a single reportable segment, present that one segment with the same level of detail
 - Output ONLY valid JSON. No markdown fences.
 - ${RECENCY_DIRECTIVE}
 - ${WRITING_DIRECTIVE}`;
 
-  const userPrompt = `Analyze "${companyName}" and identify their current business segments.
+  const userPrompt = `Summarize the reportable business segments of "${companyName}" based on its latest annual report.
 
 ${hasResearch ? `RESEARCH (10-K, annual reports, earnings calls, presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}. Label as "(est.)" where appropriate.]`}
+
+For EACH reportable segment, write an 80-90 word segment overview in paragraph format covering:
+- Products and services offered
+- Types of customers catered to
+- Geographic regions served
+- The primary role or value delivered through the segment (what it offers, supports, enables, or helps with; tools or platforms used)
+
+If "${companyName}" operates under a single reportable segment, capture all of the above under that one segment rather than forcing multiple segments.
 
 Return a JSON object:
 {
   "segments": [
     {
-      "name": "Official segment name",
-      "description": "2-3 line analytical description: what the segment does, key offerings, strategic role in business model",
-      "source": "Source attribution (e.g., '10-K 2024', 'Investor Presentation Q4 2025')"
+      "name": "Official segment name (exactly as reported in the latest annual report)",
+      "description": "80-90 word paragraph covering products/services, customer types, geographic regions, and primary role/value delivered",
+      "source": "Source attribution (e.g., '10-K 2024', 'Annual Report FY2024')"
     }
   ],
   "strategicEvolution": [
@@ -2399,9 +2405,9 @@ Return a JSON object:
 }
 
 Requirements:
-- List 4-7 segments (the actual number for ${companyName})
-- Segment names should match official filings
-- Each description should reference revenues, customer types, or strategic purpose
+- List every reportable segment from the latest annual report (or the single segment, if that is how the company reports)
+- Segment names should match official filings exactly
+- Each segment description must be 80-90 words, in paragraph form (not bullet points)
 - Strategic Evolution: 5-6 bullets explaining business model shifts`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, 2000, SYNTHESIS_MODEL);
