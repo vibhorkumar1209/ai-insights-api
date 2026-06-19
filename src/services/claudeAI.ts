@@ -98,7 +98,7 @@ const client = new Proxy({} as Anthropic, {
 // across retries through the SDK client, streamed or not. Use this for any
 // call site that hits that error; retries once internally.
 async function claudeCreateDirect(
-  system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000
+  system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000, temperature?: number
 ): Promise<string> {
   async function runOnce(): Promise<string> {
     const controller = new AbortController();
@@ -111,7 +111,10 @@ async function claudeCreateDirect(
           'x-api-key': process.env.ANTHROPIC_API_KEY || '',
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+        body: JSON.stringify({
+          model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }],
+          ...(temperature !== undefined ? { temperature } : {}),
+        }),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -352,24 +355,8 @@ ${input.focusAreas ? `- IMPORTANT: Ensure at least one dimension directly addres
 - Each dimension name should be concise (3-6 words).
 - Return EXACTLY 5 dimension objects in the array.`;
 
-  const timeoutMs = 90_000;
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Benchmarking table synthesis timed out after 90s')), timeoutMs)
-  );
-  const message = await Promise.race([
-    client.messages.create({
-      model: SYNTHESIS_MODEL,
-      max_tokens: 2500,
-      messages: [{ role: 'user', content: userPrompt }],
-      system: systemPrompt,
-    }),
-    timeoutPromise,
-  ]);
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  return parseBenchmarkingTable(content.text);
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 2500, SYNTHESIS_MODEL, 90_000);
+  return parseBenchmarkingTable(text);
 }
 
 function parseBenchmarkingTable(raw: string): BenchmarkDimension[] {
@@ -437,24 +424,8 @@ ${dimensions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 
 Return EXACTLY ${dimensions.length} objects, one per dimension above.`;
 
-  const timeoutMs = 75_000;
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Gap analysis synthesis timed out after 75s')), timeoutMs)
-  );
-  const message = await Promise.race([
-    client.messages.create({
-      model: FAST_MODEL,
-      max_tokens: 2000,
-      messages: [{ role: 'user', content: userPrompt }],
-      system: systemPrompt,
-    }),
-    timeoutPromise,
-  ]);
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  return parseGapAnalysis(content.text);
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 2000, FAST_MODEL, 75_000);
+  return parseGapAnalysis(text);
 }
 
 function parseGapAnalysis(raw: string): GapAnalysisRow[] {
@@ -518,17 +489,8 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
   }
 ]`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  return parseThemes(content.text);
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
+  return parseThemes(text);
 }
 
 function parseThemes(raw: string): ThemeRow[] {
@@ -601,17 +563,8 @@ For EACH dimension:
 - "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.
 - "source": Source of the information. ONLY include verified, legitimate sources (e.g., "SEC EDGAR filings", "Company investor relations", "Earnings call transcripts", "Press releases from company website"). Do NOT invent or guess URLs. If the source is general market knowledge, write "Market intelligence and business analysis".`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  return parseChallengesGrowth(content.text);
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
+  return parseChallengesGrowth(text);
 }
 
 function parseChallengesGrowth(raw: string): ChallengesGrowthRow[] {
@@ -1077,34 +1030,19 @@ Extraction rules:
   * CRITICAL currency rule: ALL revenue values in segmentRevenue and geoRevenue MUST use ${yahooData.currency || 'USD'} — never default to "$" if the reporting currency is not USD. E.g. for INR use "₹2.45T", for EUR use "€12.3B", for JPY use "¥850B".
 - For insights: draw on BOTH the Finance API data above, FMP data (if available), and your training knowledge — be specific, cite figures from known sources. NEVER create synthetic analysis or made-up insights.`;
 
-  // Stream with retry — keeps SSE alive, avoids 90s blocking timeout
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      let fullText = '';
-      const stream = client.messages.stream({
-        model: SYNTHESIS_MODEL,
-        max_tokens: 4000,
-        temperature: 0.1,
-        messages: [{ role: 'user', content: userPrompt }],
-        system: systemPrompt,
-      });
-      const timeoutHandle = setTimeout(() => stream.abort(), 120000);
-      stream.on('text', (chunk) => { fullText += chunk; onChunk?.(fullText); });
-      await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
-
-      const result = parseFinancialInsights(fullText);
-      console.log('[synthesizeFinancialInsights] Successfully synthesized insights');
-      return result;
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.warn(`[synthesizeFinancialInsights] Attempt ${attempt}/2 failed:`, errMsg);
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
-    }
+  // claudeCreateDirect already retries once internally on transport failure
+  try {
+    const fullText = await claudeCreateDirect(systemPrompt, userPrompt, 4000, SYNTHESIS_MODEL, 120000, 0.1);
+    onChunk?.(fullText);
+    const result = parseFinancialInsights(fullText);
+    console.log('[synthesizeFinancialInsights] Successfully synthesized insights');
+    return result;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[synthesizeFinancialInsights] Synthesis failed:', errMsg);
+    console.warn(`[synthesizeFinancialInsights] Returning fallback data with extracted arrays for ${input.companyName}`);
+    return createFallbackInsights(input.companyName, yahooData);
   }
-
-  // Failed both attempts — return fallback data with extracted financial arrays
-  console.warn(`[synthesizeFinancialInsights] Returning fallback data with extracted arrays for ${input.companyName}`);
-  return createFallbackInsights(input.companyName, yahooData);
 }
 
 function parseFinancialInsights(raw: string): FinancialInsightsPayload {
@@ -1367,26 +1305,9 @@ Return JSON:
 
 Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siPartners 2-3; caseStudies EXACTLY 3; objectionRebuttals EXACTLY 3.`;
 
-  let fullText = '';
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 8192,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const timeoutHandle = setTimeout(() => stream.abort(), 90000);
-
-  stream.on('text', (chunk) => {
-    fullText += chunk;
-    onChunk?.(fullText);
-  });
-
-  const finalMsg = await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
-  console.log(`[salesPlay] streaming done length=${fullText.length} stop_reason=${finalMsg.stop_reason}`);
-  if (finalMsg.stop_reason === 'max_tokens') {
-    console.warn('[salesPlay] Output truncated — consider reducing prompt');
-  }
+  const fullText = await claudeCreateDirect(systemPrompt, userPrompt, 8192, SYNTHESIS_MODEL, 90000);
+  onChunk?.(fullText);
+  console.log(`[salesPlay] synthesis done length=${fullText.length}`);
 
   return parseSalesPlay(fullText);
 }
@@ -1485,37 +1406,11 @@ IMPORTANT:
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
 - The "source" field must ONLY include verified, legitimate sources. Do NOT invent URLs. Examples: "Company investor relations website", "Q2 FY2025 Earnings call transcript", "LinkedIn", "Industry conference keynote". If the source cannot be verified, write "Business intelligence and market analysis".`;
 
-  // Add 90-second timeout for key buyers synthesis (Claude can be slow)
   console.log('[claudeAI] Starting key buyers synthesis with 90s timeout');
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => {
-      console.error('[claudeAI] Key buyers synthesis timeout triggered after 90s');
-      reject(new Error('Key buyers synthesis timeout (90s)'));
-    }, 90000);
-    // Prevent the timer from keeping the process alive
-    timer.unref?.();
-  });
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL, 90000);
+  console.log('[claudeAI] Key buyers synthesis completed');
 
-  const message = await Promise.race([
-    client.messages.create({
-      model: SYNTHESIS_MODEL,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      messages: [{ role: 'user', content: userPrompt }],
-      system: systemPrompt,
-    }).then(result => {
-      console.log('[claudeAI] Key buyers synthesis completed');
-      return result;
-    }).catch(err => {
-      console.error('[claudeAI] Key buyers synthesis failed:', err instanceof Error ? err.message : err);
-      throw err;
-    }),
-    timeoutPromise,
-  ]);
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  return parseKeyBuyers(content.text);
+  return parseKeyBuyers(text);
 }
 
 function parseKeyBuyers(raw: string): KeyBuyerRow[] {
@@ -1621,22 +1516,9 @@ ${exampleInstruction}
 - Each example must name specific companies, countries, or initiatives
 - "impact" is a single sentence — concise and specific to ${input.industrySegment}${isGlobal ? '' : ` in ${geography}`}`;
 
-  let fullText = '';
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const timeoutHandle = setTimeout(() => stream.abort(), 120000);
-  stream.on('text', (chunk) => {
-    fullText += chunk;
-    onChunk?.(fullText);
-  });
-
-  const finalMsg = await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
-  console.log(`[industryTrends] streaming done length=${fullText.length} stop_reason=${finalMsg.stop_reason}`);
+  const fullText = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
+  onChunk?.(fullText);
+  console.log(`[industryTrends] synthesis done length=${fullText.length}`);
 
   return parseIndustryTrends(fullText);
 }
@@ -1770,18 +1652,9 @@ RULES:
 - Output must be VALID JSON with proper commas, no trailing commas.
 `.trim();
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 3000,  // accommodate 6-10 segments with 3-6 sub-segments each + 15-20 competitors
-    temperature: 0.0,  // fully deterministic JSON generation
-    system: `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  const raw = content.text;
+  const raw = await claudeCreateDirect(systemPromptScope, userPrompt, 3000, SYNTHESIS_MODEL, 120000, 0.0);
 
   let parsed: ScopeWizardResult | null = null;
 
@@ -1897,18 +1770,8 @@ RULES:
 - VOLUME DATA: For industries where units/volume makes sense (vehicles, devices, tonnes, liters, units sold, etc.), you MUST include currentVolume and projectedVolume. Use the most appropriate unit (million units, thousand tonnes, etc.). Only omit if the industry is purely a service/intangible market where volume doesn't apply.
 `.trim();
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 4096,
-    temperature: 0,
-    system: `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  const raw = content.text;
+  const systemPromptSizing = `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
+  const raw = await claudeCreateDirect(systemPromptSizing, userPrompt, 4096, SYNTHESIS_MODEL, 120000, 0);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in market sizing response');
 
@@ -2011,18 +1874,8 @@ RULES:
 - Every figure must be traceable to a section already drafted — do not invent new data
 `.trim();
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 8192,
-    temperature: 0.2,
-    system: `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  const raw = content.text;
+  const systemPromptExec = `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
+  const raw = await claudeCreateDirect(systemPromptExec, userPrompt, 8192, SYNTHESIS_MODEL, 120000, 0.2);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in executive summary response');
 
@@ -2196,19 +2049,9 @@ CRITICAL RULES:
   const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'competition_analysis'].includes(id));
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: maxTokens,
-    temperature: 0.1,  // deterministic JSON output
-    system: `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
-
-  const raw = content.text;
-  console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}, stop_reason: ${message.stop_reason}`);
+  const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
+  const raw = await claudeCreateDirect(systemPromptDraft, userPrompt, maxTokens, SYNTHESIS_MODEL, 120000, 0.1);
+  console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}`);
 
   // Parse NDJSON format (newline-delimited JSON, more resilient to truncation)
   let parsed: unknown[] | null = null;
@@ -2380,14 +2223,7 @@ Return a JSON array of exactly ${input.numberOfTopics} objects with these keys:
 
 Sort by verdict (strong buy first), then by white_space_score descending.`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const raw = (message.content[0] as { type: string; text: string }).text;
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
   const items = safeParseJsonArray(raw);
   if (!items || items.length === 0) throw new Error('No valid niche topics parsed');
   return (items as NicheTopicRow[]).filter((r) => r.topic_title && r.type && r.estimated_cagr && r.verdict);
@@ -2480,14 +2316,7 @@ RULES:
 - All strings must be properly JSON-escaped (no unescaped quotes or newlines).
 - Return ONLY the JSON object itself, nothing else. No markdown code fences.`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 5000,  // Marketing Strategy: frameworkSummary + N dimensions (3-7) + 6 recommendations
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const raw = (message.content[0] as { type: string; text: string }).text;
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 5000, SYNTHESIS_MODEL);
 
   // Remove markdown code fences
   let jsonStr = raw
@@ -2684,22 +2513,8 @@ Output format (strict JSON, no markdown):
   ]
 }`;
 
-  let fullText = '';
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const timeoutHandle = setTimeout(() => stream.abort(), 60000);
-
-  stream.on('text', (chunk) => {
-    fullText += chunk;
-    onChunk?.(fullText);
-  });
-
-  await stream.finalMessage().finally(() => clearTimeout(timeoutHandle));
+  const fullText = await claudeCreateDirect(systemPrompt, userPrompt, 4096, SYNTHESIS_MODEL, 60000);
+  onChunk?.(fullText);
   console.log(`[synthesizeTechHeatMap] done length=${fullText.length}`);
 
   // Parse
@@ -2831,18 +2646,10 @@ ${requirementsText}- adoptionStage: integer 1-5 only
 
 CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Start with { and end with }`;
 
-  const message = await client.messages.create({
-    model: SYNTHESIS_MODEL,
-    max_tokens: 12000,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+  const heatMapText = await claudeCreateDirect(systemPrompt, userPrompt, 12000, SYNTHESIS_MODEL);
 
   try {
-    let rawText = content.text.trim();
+    let rawText = heatMapText.trim();
 
     // Remove markdown code fences if present (multiple patterns)
     rawText = rawText
@@ -2951,9 +2758,9 @@ CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Sta
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[synthesizeHeatMap] Parse error:', errorMsg);
-    console.error('[synthesizeHeatMap] Response length:', content.text.length);
-    console.error('[synthesizeHeatMap] First 200 chars:', JSON.stringify(content.text.slice(0, 200)));
-    console.error('[synthesizeHeatMap] Last 200 chars:', JSON.stringify(content.text.slice(-200)));
+    console.error('[synthesizeHeatMap] Response length:', heatMapText.length);
+    console.error('[synthesizeHeatMap] First 200 chars:', JSON.stringify(heatMapText.slice(0, 200)));
+    console.error('[synthesizeHeatMap] Last 200 chars:', JSON.stringify(heatMapText.slice(-200)));
     throw new Error(`Failed to parse heat map data: ${errorMsg}`);
   }
 }
@@ -2963,13 +2770,7 @@ CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Sta
 export async function discoverTopPlayersByIndustryQuick(
   industry: string
 ): Promise<Array<{ name: string; headquarters: string; estimatedRevenue: string; relevanceScore: number }>> {
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages: [
-      {
-        role: 'user',
-        content: `Identify the top 10 key players (major companies by revenue/market share) in the "${industry}" industry as of 2025.
+  const text = await claudeCreateDirect('', `Identify the top 10 key players (major companies by revenue/market share) in the "${industry}" industry as of 2025.
 
 Return ONLY a valid JSON array with exactly 10 companies. No other text. Each item must have: name, headquarters, estimatedRevenue, relevanceScore (1-10).
 
@@ -2977,33 +2778,20 @@ Example format:
 [
   {"name":"Company A","headquarters":"City, Country","estimatedRevenue":"$100B","relevanceScore":10},
   {"name":"Company B","headquarters":"City, Country","estimatedRevenue":"$80B","relevanceScore":9}
-]`,
-      },
-    ],
-  });
+]`, 1024, 'claude-sonnet-4-6');
 
-  const content = response.content[0];
-  if (content.type === 'text') {
-    try {
-      return JSON.parse(content.text);
-    } catch {
-      console.error('[discoverTopPlayers] Parse error:', content.text);
-      return [];
-    }
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.error('[discoverTopPlayers] Parse error:', text);
+    return [];
   }
-  return [];
 }
 
 export async function discoverEmergingTechsQuick(
   industry: string
 ): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages: [
-      {
-        role: 'user',
-        content: `List the top 10 emerging and strategic technologies in the "${industry}" industry as of 2025.
+  const text = await claudeCreateDirect('', `List the top 10 emerging and strategic technologies in the "${industry}" industry as of 2025.
 
 Return ONLY a valid JSON array with exactly 10 technologies. No other text. Each must have: name, category, maturityLevel ("emerging", "growth", or "mainstream").
 
@@ -3011,51 +2799,31 @@ Example:
 [
   {"name":"AI/ML","category":"Artificial Intelligence","maturityLevel":"growth"},
   {"name":"Blockchain","category":"Distributed Ledger","maturityLevel":"emerging"}
-]`,
-      },
-    ],
-  });
+]`, 1024, 'claude-sonnet-4-6');
 
-  const content = response.content[0];
-  if (content.type === 'text') {
-    try {
-      return JSON.parse(content.text);
-    } catch {
-      console.error('[discoverEmergingTechs] Parse error:', content.text);
-      return [];
-    }
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.error('[discoverEmergingTechs] Parse error:', text);
+    return [];
   }
-  return [];
 }
 
 export async function discoverIndustrySegmentsQuick(
   industry: string
 ): Promise<string[]> {
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
-    messages: [
-      {
-        role: 'user',
-        content: `List the top 10 segments or subsectors within the "${industry}" industry.
+  const text = await claudeCreateDirect('', `List the top 10 segments or subsectors within the "${industry}" industry.
 
 Return ONLY a JSON array of 10 segment names as strings. No other text.
 
-Example: ["Segment A","Segment B","Segment C",...]`,
-      },
-    ],
-  });
+Example: ["Segment A","Segment B","Segment C",...]`, 512, 'claude-sonnet-4-6');
 
-  const content = response.content[0];
-  if (content.type === 'text') {
-    try {
-      return JSON.parse(content.text);
-    } catch {
-      console.error('[discoverSegments] Parse error:', content.text);
-      return [];
-    }
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.error('[discoverSegments] Parse error:', text);
+    return [];
   }
-  return [];
 }
 
 // ── Content Generation (Industry Blog & Thought Leadership) ──────────────────
@@ -3125,21 +2893,13 @@ Output ONLY valid JSON (no markdown fences):
 }`;
   }
 
-  let accumulated = '';
-
-  const stream = client.messages.stream({
-    model: SYNTHESIS_MODEL,
-    max_tokens: input.wordCount > 1000 ? 6000 : 4000,
-    system: 'You are a senior industry analyst and content strategist. Output ONLY valid JSON. No markdown fences, no text outside the JSON object.',
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  for await (const chunk of stream) {
-    if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-      accumulated += chunk.delta.text;
-      onChunk?.(accumulated);
-    }
-  }
+  const accumulated = await claudeCreateDirect(
+    'You are a senior industry analyst and content strategist. Output ONLY valid JSON. No markdown fences, no text outside the JSON object.',
+    userPrompt,
+    input.wordCount > 1000 ? 6000 : 4000,
+    SYNTHESIS_MODEL
+  );
+  onChunk?.(accumulated);
 
   const cleaned = accumulated.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
@@ -3279,16 +3039,12 @@ export async function extractTopFirmsFromDiscovery(
   discoveryText: string,
   topic: string
 ): Promise<string[]> {
-  const response = await client.messages.create({
-    model: FAST_MODEL,
-    max_tokens: 512,
-    system: 'You extract firm names from research text. Return only a JSON array of strings. No markdown, no explanation.',
-    messages: [{
-      role: 'user',
-      content: `From the research text below, identify up to 10 consulting, advisory, or analyst firms that have verifiably published thought leadership content on "${topic}". Only include firms for which there is clear evidence of a report, white paper, article, or research piece in the text. Return a JSON array of firm names, most evidence-rich first.\n\nRESEARCH TEXT:\n${discoveryText.slice(0, 10000)}`,
-    }],
-  });
-  const raw = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
+  const raw = await claudeCreateDirect(
+    'You extract firm names from research text. Return only a JSON array of strings. No markdown, no explanation.',
+    `From the research text below, identify up to 10 consulting, advisory, or analyst firms that have verifiably published thought leadership content on "${topic}". Only include firms for which there is clear evidence of a report, white paper, article, or research piece in the text. Return a JSON array of firm names, most evidence-rich first.\n\nRESEARCH TEXT:\n${discoveryText.slice(0, 10000)}`,
+    512,
+    FAST_MODEL
+  );
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const match = cleaned.match(/\[[\s\S]*\]/);
   if (!match) return [];
@@ -3298,7 +3054,7 @@ export async function extractTopFirmsFromDiscovery(
   } catch { return []; }
 }
 
-// ── Helper: run a Claude stream with timeout, return raw text ─────────────────
+// ── Helper: run a Claude call with timeout, return raw text (partial-safe) ────
 async function runClaudeStream(
   model: string,
   maxTokens: number,
@@ -3306,17 +3062,7 @@ async function runClaudeStream(
   userContent: string,
   timeoutMs: number,
 ): Promise<string> {
-  const stream = client.messages.stream({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: userContent }],
-  });
-  const handle = setTimeout(() => stream.abort(), timeoutMs);
-  let raw = '';
-  stream.on('text', (c) => { raw += c; });
-  await stream.finalMessage().catch(() => { /* abort/timeout — use partial */ }).finally(() => clearTimeout(handle));
-  return raw;
+  return claudeCreateDirect(system, userContent, maxTokens, model, timeoutMs).catch(() => '');
 }
 
 // ── Helper: parse JSON robustly (handles truncation) ─────────────────────────
@@ -3444,20 +3190,8 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
 
 // ── VUCA × 4W1H Analysis ──────────────────────────────────────────────────────
 
-// messages.create() with Promise.race timeout — more reliable than stream.abort() on Render
 async function claudeCreate(system: string, user: string, maxTokens: number, timeoutMs: number, model = FAST_MODEL): Promise<string> {
-  const promise = client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`claudeCreate timeout after ${timeoutMs}ms`)), timeoutMs)
-  );
-  const response = await Promise.race([promise, timeout]);
-  const block = response.content[0];
-  return block.type === 'text' ? block.text : '';
+  return claudeCreateDirect(system, user, maxTokens, model, timeoutMs);
 }
 
 // ── Retry wrapper: attempt up to 2 times if response is too short ─────────────
@@ -3614,12 +3348,9 @@ export async function claudeLookupTicker(
 ): Promise<{ ticker: string; exchange: string } | null> {
   const domainHint = domain ? ` (website: ${domain})` : '';
   try {
-    const message = await client.messages.create({
-      model: FAST_MODEL,
-      max_tokens: 200,
-      messages: [{
-        role: 'user',
-        content: `What are the stock ticker symbols for "${companyName}"${domainHint}?
+    const text = await claudeCreateDirect(
+      'You are a financial data expert. Return only the JSON object, no explanation.',
+      `What are the stock ticker symbols for "${companyName}"${domainHint}?
 
 Reply with ONLY a JSON object listing up to 3 tickers in priority order:
 {"tickers":[{"ticker":"SYMBOL","exchange":"EXCHANGE_NAME"},...]}"
@@ -3630,11 +3361,10 @@ Priority order:
 3. Any other listing
 
 If you are not confident about any ticker, reply: {"tickers":[]}`,
-      }],
-      system: 'You are a financial data expert. Return only the JSON object, no explanation.',
-    });
-    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
-    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+      200,
+      FAST_MODEL
+    );
+    const parsed = JSON.parse(text.trim().replace(/```json|```/g, '').trim());
     const tickers: Array<{ ticker: string; exchange: string }> = parsed.tickers || [];
     if (tickers.length > 0 && tickers[0].ticker) {
       console.log('[claudeAI] Ticker lookup results for', companyName, ':', JSON.stringify(tickers));
