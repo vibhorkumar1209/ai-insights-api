@@ -437,23 +437,33 @@ function acronymMatchesName(query: string, name: string): boolean {
   return initials === q || (initials.startsWith(q) && q.length >= 2);
 }
 
+// Strip everything except letters/digits so spacing/punctuation variants
+// ("JP Morgan" vs "JPMorgan", "Co." vs "Co") compare equal.
+function normalizeName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function scoreQuote(q: any, companyName: string, domainHint: string): number {
   const fullName = ((q.shortname || q.longname || '') as string);
   const qName    = fullName.toLowerCase();
+  const qNameNorm = normalizeName(fullName);
   const qSym     = ((q.symbol || '') as string).toLowerCase();
   // Base symbol without exchange suffix (e.g. "tcs.ns" → "tcs")
   const qSymBase = qSym.split('.')[0];
   const nameLow  = companyName.toLowerCase();
+  const nameLowFirstWordNorm = normalizeName(nameLow.split(' ')[0]);
   let s = 0;
 
   // US exchange is a small tiebreaker, not a dominant signal
   if (isUSExchangeQuote(q)) s += 8;
 
-  // Exact / prefix / substring name match
-  if (qName === nameLow) s += 40;
-  else if (qName.startsWith(nameLow.split(' ')[0])) s += 15;
-  else if (qName.includes(nameLow.split(' ')[0])) s += 8;
+  // Exact / prefix / substring name match — normalized to ignore spacing
+  // and punctuation differences (e.g. Yahoo's "JP Morgan Chase & Co." vs
+  // query "JPMorgan Chase" would otherwise score zero on a real match).
+  if (qNameNorm === normalizeName(nameLow)) s += 40;
+  else if (qNameNorm.startsWith(nameLowFirstWordNorm)) s += 15;
+  else if (qNameNorm.includes(nameLowFirstWordNorm)) s += 8;
 
   // Acronym match: "TCS" → "Tata Consultancy Services" gets a strong bonus
   if (acronymMatchesName(companyName, fullName)) s += 30;
