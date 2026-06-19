@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { generateBusinessDescription } from '../services/claudeAI';
+import { researchCompanyOverview } from '../services/parallelAI';
 import { aiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -23,9 +24,16 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   }
 
   try {
+    const trimmedDomain = typeof domain === 'string' && domain.trim() ? domain.trim() : undefined;
+    const research = await researchCompanyOverview(companyName.trim(), trimmedDomain).catch((err) => {
+      console.warn('[business-description] Research failed, proceeding with training knowledge:', err);
+      return '';
+    });
+
     const description = await generateBusinessDescription(
       companyName.trim(),
-      typeof domain === 'string' && domain.trim() ? domain.trim() : undefined
+      trimmedDomain,
+      research
     );
 
     return res.json({

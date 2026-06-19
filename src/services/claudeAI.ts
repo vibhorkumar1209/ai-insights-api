@@ -246,9 +246,11 @@ Only include direct competitors — companies competing for the same customers, 
 
 export async function generateBusinessDescription(
   companyName: string,
-  domain?: string
+  domain?: string,
+  research?: string
 ): Promise<string> {
   const domainHint = domain ? ` (website: ${domain})` : '';
+  const hasResearch = !!research && !isEmptyResearch(research);
 
   const message = await client.messages.create({
     model: SYNTHESIS_MODEL,
@@ -257,16 +259,18 @@ export async function generateBusinessDescription(
       role: 'user',
       content: `Write a concise business description of "${companyName}"${domainHint} in 100-150 words.
 
-Include:
-- Core products and services
-- Industry and primary markets
-- Key competitive strengths
-- Approximate scale (revenue, employees, geography)
+${hasResearch ? `RESEARCH (use this as your primary source — it is more current than your training knowledge):\n${research!.slice(0, 12000)}` : '[No live research available — use training knowledge, but be conservative about specific numbers that may be outdated.]'}
 
-Write in professional business language, third person. No headers, bullet points, or markdown.
+Include:
+- Core products and services. If this is a professional/consulting/advisory firm, name EVERY line of business it operates (e.g. do not describe a firm as only doing "advisory and tax" if it also does audit/assurance — check the research for all named service lines).
+- Industry and primary markets
+- Key competitive strengths (concrete, not generic — avoid vague claims like "committed to quality")
+- Approximate scale (revenue, employees, number of countries) — only state figures found in the research above; if unavailable, omit rather than guess
+
+Write in professional business language, third person. No headers, bullet points, or markdown. Do NOT use the company's marketing tagline, mission statement, or purpose slogan (e.g. avoid phrasing like "build trust in society" or "solve important problems") as descriptive content — only factual, operating information.
 If you cannot find sufficient verifiable information, respond only with: "No business description can be ascertained."`,
     }],
-    system: `You are a business intelligence analyst. Write factual, concise company descriptions based on publicly available information. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
+    system: `You are a business intelligence analyst. Write factual, concise company descriptions grounded in the research provided. Never substitute a company's marketing slogan or mission statement for actual business facts. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`,
   });
 
   const content = message.content[0];

@@ -794,6 +794,37 @@ Cite every claim with a source and year. State "Not publicly disclosed" where da
   }
 }
 
+// ── Business Description Research ────────────────────────────────────────────
+
+export async function researchCompanyOverview(
+  companyName: string,
+  domain?: string
+): Promise<string> {
+  const domainNote = domain ? ` (website: ${domain})` : '';
+  const query = `
+Research factual, current company-overview data for "${companyName}"${domainNote}.
+
+Report on the following, citing the source and year for each fact:
+
+1. CORE BUSINESS — what the company actually sells, to whom (industries/customer types), and how it makes money. Name ALL primary lines of business or service lines exactly as the company itself names them (e.g. for a professional services firm, list every line such as audit/assurance, tax, and advisory — do not omit any).
+
+2. INDUSTRY AND MARKETS — primary industry classification and the main countries/regions where it operates or generates revenue.
+
+3. SCALE — most recent disclosed figures: annual revenue, employee/headcount count, number of countries/offices, founding year if notable.
+
+4. COMPETITIVE POSITION — 1-2 named direct competitors and how this company is differentiated from them (avoid vague claims; cite something concrete like market share, ranking, or a named capability).
+
+Do NOT include marketing taglines, mission statements, or "purpose" slogans (e.g. avoid phrasing like "build trust in society" or "solve important problems") — only verifiable operating facts. State "Not publicly disclosed" for anything unavailable. Cite every numeric claim with a source and year.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable for ${companyName}: ${msg}`;
+  }
+}
+
 // ── Sales Play Context Research ────────────────────────────────────────────────
 // Comprehensive competitive intelligence gathering for a sales play.
 // Covers: target account landscape, competitor weaknesses, your company's strengths.
