@@ -2378,7 +2378,7 @@ Rules:
 
   const userPrompt = `Summarize the reportable business segments of "${companyName}" based on its latest annual report.
 
-${hasResearch ? `RESEARCH (10-K, annual reports, earnings calls, presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}. Label as "(est.)" where appropriate.]`}
+${hasResearch ? `RESEARCH (10-K, annual reports, earnings calls, presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}.]`}
 
 For EACH reportable segment, write an 80-90 word segment overview in paragraph format covering:
 - Products and services offered
@@ -2408,7 +2408,8 @@ Requirements:
 - List every reportable segment from the latest annual report (or the single segment, if that is how the company reports)
 - Segment names should match official filings exactly
 - Each segment description must be 80-90 words, in paragraph form (not bullet points)
-- Strategic Evolution: 5-6 bullets explaining business model shifts`;
+- Strategic Evolution: 5-6 bullets explaining business model shifts
+- Do NOT write "(est.)" or any estimate qualifier anywhere in the output. State facts directly and confidently.`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, 2000, SYNTHESIS_MODEL);
 
