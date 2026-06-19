@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { Anthropic } from '@anthropic-ai/sdk';
 import { researchIndustryReport } from '../services/parallelAI';
+import { claudeCreateDirect } from '../services/claudeAI';
 
 const router = Router();
-const client = new Anthropic();
 
 const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
 
@@ -98,19 +97,17 @@ Return ONLY valid JSON with this exact structure:
 
 Ensure all strings are properly escaped. Output valid JSON only.`;
 
-    const message = await client.messages.create({
-      model: SYNTHESIS_MODEL,
-      max_tokens: 2000,
-      temperature: 0.2, // Slightly creative but consistent
-      system: 'You are a strategic sales engineering AI. Generate high-conversion sales outreach that is consultative, specific, and human. Output ONLY valid JSON.',
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = message.content[0];
-    if (content.type !== 'text') throw new Error('Unexpected Claude response type');
+    const text = await claudeCreateDirect(
+      'You are a strategic sales engineering AI. Generate high-conversion sales outreach that is consultative, specific, and human. Output ONLY valid JSON.',
+      prompt,
+      2000,
+      SYNTHESIS_MODEL,
+      120000,
+      0.2 // Slightly creative but consistent
+    );
 
     // Parse JSON response
-    const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON found in response');
 
     const result = JSON.parse(jsonMatch[0]);

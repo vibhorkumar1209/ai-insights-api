@@ -97,7 +97,7 @@ const client = new Proxy({} as Anthropic, {
 // "Premature close" on Render for some prompts — reproduces identically
 // across retries through the SDK client, streamed or not. Use this for any
 // call site that hits that error; retries once internally.
-async function claudeCreateDirect(
+export async function claudeCreateDirect(
   system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000, temperature?: number
 ): Promise<string> {
   async function runOnce(): Promise<string> {
