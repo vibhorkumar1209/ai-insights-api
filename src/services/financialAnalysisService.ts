@@ -352,6 +352,20 @@ async function runPublicPath(
     console.warn('[financialAnalysis] No ticker found — proceeding to Claude synthesis with empty data');
   }
 
+  // ── Ticker validation gate ───────────────────────────────────────────────────
+  // A resolved ticker can still be wrong (e.g. brand-name fuzzy match landing on
+  // an unrelated small-cap with the same letters) or simply have no usable data.
+  // If neither FMP nor the Yahoo fallback produced real revenue figures, this
+  // is not a usable public company match — fall back to the private path
+  // instead of synthesizing a profile out of "undisclosed"/"N/A" everywhere.
+  const hasMeaningfulData = (apiData.revenueHistory?.some((r) => r.revenue && r.revenue !== 0)) ?? false;
+  if (ticker && !hasMeaningfulData && input.isPublic !== true) {
+    console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private company path`);
+    const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined });
+    emit(jobId, 'progress', job0);
+    return runPrivatePath(jobId, input);
+  }
+
   // ── Step 2: Claude synthesis ─────────────────────────────────────────────────
   // When FMP provided BS/CF, pass them through so Claude knows not to extract.
   // Claude uses FMP segment/geo data (if available) + training knowledge
