@@ -259,6 +259,96 @@ export async function fetchAnnualFinancials(searchString: string): Promise<Annua
   return { companyInfo, currency, revenueHistory, marginHistory, plStatement };
 }
 
+// ── Fetch financials directly via yahoo-finance2 quoteSummary ─────────────────
+// Used as fallback for non-US tickers where the Puppeteer scraper returns 400.
+// Returns the same AnnualFinancialsResult shape so the caller needs no changes.
+export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<AnnualFinancialsResult> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r: any = await (yahooFinance as any).quoteSummary(ticker, {
+    modules: ['incomeStatementHistory', 'financialData', 'summaryDetail', 'summaryProfile', 'price'],
+  }, { validateResult: false });
+
+  const priceCurrency: string = (r.price?.currency || 'USD').toUpperCase();
+  const currency = priceCurrency;
+
+  // ── Company info ──────────────────────────────────────────────────────────
+  const sd = r.summaryDetail || {};
+  const sp = r.summaryProfile || {};
+  const px = r.price || {};
+  const companyInfo: CompanyInfo = {
+    name:          px.longName || px.shortName,
+    exchange:      px.exchangeName,
+    marketCap:     sd.marketCap  ? formatWithCurrency(sd.marketCap, currency)  : undefined,
+    peRatio:       sd.trailingPE ? String(sd.trailingPE.toFixed(2))            : undefined,
+    dividendYield: sd.dividendYield ? `${(sd.dividendYield * 100).toFixed(2)}%` : undefined,
+    headquarters:  sp.city && sp.country ? `${sp.city}, ${sp.country}` : undefined,
+    website:       sp.website,
+    employees:     sp.fullTimeEmployees ? String(sp.fullTimeEmployees) : undefined,
+    about:         sp.longBusinessSummary,
+  };
+
+  // ── Annual income ─────────────────────────────────────────────────────────
+  const fd = r.financialData || {};
+  const incRows: any[] = r.incomeStatementHistory?.incomeStatementHistory || [];
+  // Sort oldest→newest
+  incRows.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+
+  const revenueHistory: RevenueDataPoint[] = [];
+  const marginHistory: MarginDataPoint[] = [];
+
+  incRows.forEach((row: any, idx: number) => {
+    const rev = typeof row.totalRevenue === 'number' ? row.totalRevenue : null;
+    const ni  = typeof row.netIncome === 'number' ? row.netIncome : null;
+    if (rev == null) return;
+
+    const prevRev = idx > 0 ? (typeof incRows[idx - 1].totalRevenue === 'number' ? incRows[idx - 1].totalRevenue : null) : null;
+    const yoyNum  = prevRev ? ((rev - prevRev) / Math.abs(prevRev)) * 100 : undefined;
+    const year    = String(new Date(row.endDate).getFullYear());
+
+    revenueHistory.push({
+      year,
+      revenue: rev,
+      revenueFormatted: formatWithCurrency(rev, currency),
+      yoyGrowth: yoyNum != null ? parseFloat(yoyNum.toFixed(1)) : undefined,
+    });
+
+    // Use current-period margins from financialData for the most recent row; derive for older rows
+    const isLastRow = idx === incRows.length - 1;
+    const netMar  = isLastRow && fd.profitMargins  != null ? parseFloat((fd.profitMargins * 100).toFixed(1))  : (ni != null && rev > 0 ? parseFloat(((ni / rev) * 100).toFixed(1)) : 0);
+    const opMar   = isLastRow && fd.operatingMargins != null ? parseFloat((fd.operatingMargins * 100).toFixed(1)) : 0;
+
+    marginHistory.push({ year, netMargin: netMar, operatingMargin: opMar });
+  });
+
+  // ── P&L rows (current year, using financialData for margins) ─────────────
+  const lastRow = incRows[incRows.length - 1];
+  const prevRow = incRows.length > 1 ? incRows[incRows.length - 2] : null;
+  const plStatement: FinancialStatementRow[] = [];
+  if (lastRow) {
+    const rev   = lastRow.totalRevenue as number | null;
+    const ni    = lastRow.netIncome    as number | null;
+    const pRev  = prevRow?.totalRevenue as number | null ?? null;
+    const pNi   = prevRow?.netIncome   as number | null ?? null;
+    const ebitda = typeof fd.ebitda === 'number' ? fd.ebitda : null;
+    const opMar  = typeof fd.operatingMargins === 'number' ? fd.operatingMargins : null;
+    const opInc  = opMar != null && rev != null ? opMar * rev : null;
+    const netMar = typeof fd.profitMargins === 'number' ? fd.profitMargins : null;
+
+    plStatement.push(
+      { label: 'INCOME SUMMARY', value: '', isSection: true },
+      { label: 'Revenue',          value: formatWithCurrency(rev, currency), previousValue: formatWithCurrency(pRev, currency), yoy: calcYoy(rev, pRev), isBold: true },
+      ...(opInc != null ? [{ label: 'Operating Income', value: formatWithCurrency(opInc, currency), isBold: true }] : []),
+      ...(opMar != null ? [{ label: 'Operating Margin', value: `${(opMar * 100).toFixed(1)}%` }] : []),
+      ...(ebitda != null ? [{ label: 'EBITDA', value: formatWithCurrency(ebitda, currency) }] : []),
+      { label: 'NET RESULTS', value: '', isSection: true },
+      { label: 'Net Income', value: formatWithCurrency(ni, currency), previousValue: formatWithCurrency(pNi, currency), yoy: calcYoy(ni, pNi), isBold: true },
+      ...(netMar != null ? [{ label: 'Net Profit Margin', value: `${(netMar * 100).toFixed(1)}%` }] : []),
+    );
+  }
+
+  return { companyInfo, currency, revenueHistory, marginHistory, plStatement };
+}
+
 // ── Fetch quarterly data ───────────────────────────────────────────────────────
 
 export async function fetchQuarterlyFinancials(searchString: string): Promise<QuarterlyDataPoint[]> {

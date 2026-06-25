@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
-import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials } from './yahooFinance';
+import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials } from './yahooFinance';
 import {
   fmpSearchTicker, fmpSearchByDomain, fmpFetchProfile, fmpFetchIncomeStatement,
   fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
@@ -331,31 +331,54 @@ async function runPublicPath(
 
     // ── Fallback: Yahoo Finance ────────────────────────────────────────────────
     if (!usedFMP) {
-      const searchString = buildSearchString(ticker, exchange || '');
-      console.log('[financialAnalysis] Yahoo Finance fallback, search string:', searchString);
-
-      const [annualResult, quarterlyResult] = await Promise.allSettled([
-        fetchAnnualFinancials(searchString),
-        fetchQuarterlyFinancials(searchString),
-      ]);
-
-      if (annualResult.status === 'fulfilled') {
-        const a = annualResult.value;
-        apiData = {
-          companyInfo:    a.companyInfo,
-          currency:       a.currency,
-          revenueHistory: a.revenueHistory,
-          marginHistory:  a.marginHistory,
-          plStatement:    a.plStatement,
-        };
-      } else {
-        console.error('[financialAnalysis] Yahoo Finance annual fetch failed:', annualResult.reason);
+      // First try: yahoo-finance2 quoteSummary (works for all tickers including non-US)
+      let quoteSummaryDone = false;
+      try {
+        console.log('[financialAnalysis] Trying yahoo-finance2 quoteSummary for:', ticker);
+        const qs = await fetchYahooQuoteSummaryFinancials(ticker);
+        if (qs.revenueHistory.length > 0) {
+          apiData = {
+            companyInfo:    qs.companyInfo,
+            currency:       qs.currency,
+            revenueHistory: qs.revenueHistory,
+            marginHistory:  qs.marginHistory,
+            plStatement:    qs.plStatement,
+          };
+          quoteSummaryDone = true;
+          console.log('[financialAnalysis] yahoo-finance2 quoteSummary succeeded:', qs.revenueHistory.length, 'years');
+        }
+      } catch (err) {
+        console.warn('[financialAnalysis] yahoo-finance2 quoteSummary failed:', err instanceof Error ? err.message : err);
       }
 
-      if (quarterlyResult.status === 'fulfilled') {
-        apiData.quarterlyHistory = quarterlyResult.value;
-      } else {
-        console.error('[financialAnalysis] Yahoo Finance quarterly fetch failed:', quarterlyResult.reason);
+      // Second try: Puppeteer scraper (works for US/some non-US via Google Finance codes)
+      if (!quoteSummaryDone) {
+        const searchString = buildSearchString(ticker, exchange || '');
+        console.log('[financialAnalysis] Puppeteer scraper fallback, search string:', searchString);
+
+        const [annualResult, quarterlyResult] = await Promise.allSettled([
+          fetchAnnualFinancials(searchString),
+          fetchQuarterlyFinancials(searchString),
+        ]);
+
+        if (annualResult.status === 'fulfilled') {
+          const a = annualResult.value;
+          apiData = {
+            companyInfo:    a.companyInfo,
+            currency:       a.currency,
+            revenueHistory: a.revenueHistory,
+            marginHistory:  a.marginHistory,
+            plStatement:    a.plStatement,
+          };
+        } else {
+          console.error('[financialAnalysis] Puppeteer annual fetch failed:', annualResult.reason);
+        }
+
+        if (quarterlyResult.status === 'fulfilled') {
+          apiData.quarterlyHistory = quarterlyResult.value;
+        } else {
+          console.error('[financialAnalysis] Puppeteer quarterly fetch failed:', quarterlyResult.reason);
+        }
       }
     }
 
