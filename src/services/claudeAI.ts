@@ -2826,20 +2826,28 @@ Example format:
 export async function discoverEmergingTechsQuick(
   industry: string
 ): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
-  const text = await claudeCreateDirect('', `List the top 10 emerging and strategic technologies in the "${industry}" industry as of 2025.
+  const systemPrompt = `You are a technology analyst. You MUST always respond with a valid JSON array — never prose, never "no technologies found", never refusals. If the industry is niche or regional, use your knowledge of that sector's technology landscape and return the most relevant technologies. Output ONLY the raw JSON array, no markdown fences, no other text.`;
 
-Return ONLY a valid JSON array with exactly 10 technologies. No other text. Each must have: name, category, maturityLevel ("emerging", "growth", or "mainstream").
+  const text = await claudeCreateDirect(systemPrompt, `List the top 10 emerging and strategic technologies used by companies in the "${industry}" sector as of 2025. Include technologies relevant to this specific industry and geography (if regional). Each entry must have: name, category, maturityLevel ("emerging", "growth", or "mainstream").
 
-Example:
+Return ONLY a valid JSON array:
 [
   {"name":"AI/ML","category":"Artificial Intelligence","maturityLevel":"growth"},
   {"name":"Blockchain","category":"Distributed Ledger","maturityLevel":"emerging"}
 ]`, 1024, 'claude-sonnet-4-6');
 
   try {
-    return JSON.parse(text);
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    throw new Error('empty array');
   } catch {
-    console.error('[discoverEmergingTechs] Parse error:', text);
+    // Try extracting a JSON array anywhere in the response
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      try { return JSON.parse(match[0]); } catch { /* fall through */ }
+    }
+    console.error('[discoverEmergingTechs] Parse error, raw text:', text.slice(0, 200));
     return [];
   }
 }
