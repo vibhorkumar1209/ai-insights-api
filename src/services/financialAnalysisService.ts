@@ -320,6 +320,12 @@ async function runPublicPath(
         geoRevenue:      geoRevenue,
       };
     } else {
+      // Even if income data is unavailable (e.g. non-US exchange requires FMP premium),
+      // still store the profile so the validation gate knows this is a real listed company.
+      if (profileData?.companyInfo) {
+        apiData.companyInfo = profileData.companyInfo;
+        apiData.currency    = profileData.currency || 'USD';
+      }
       console.warn('[financialAnalysis] FMP returned no meaningful revenue data for', ticker, '— falling back to Google Finance scraper');
     }
 
@@ -366,8 +372,12 @@ async function runPublicPath(
   // If neither FMP nor the Yahoo fallback produced real revenue figures, this
   // is not a usable public company match — fall back to the private path
   // instead of synthesizing a profile out of "undisclosed"/"N/A" everywhere.
-  const hasMeaningfulData = (apiData.revenueHistory?.some((r) => r.revenue && r.revenue !== 0)) ?? false;
-  if (ticker && !hasMeaningfulData && input.isPublic !== true) {
+  // EXCEPTION: if the FMP profile confirms the company by name, the ticker is correct
+  // but income data may be behind a paywall (e.g. non-US exchanges require FMP premium).
+  // In that case, stay on the public path and let Claude synthesize from training knowledge.
+  const hasMeaningfulData   = (apiData.revenueHistory?.some((r) => r.revenue && r.revenue !== 0)) ?? false;
+  const profileConfirmsName = !!apiData.companyInfo?.name;
+  if (ticker && !hasMeaningfulData && !profileConfirmsName && input.isPublic !== true) {
     console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private company path`);
     const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined });
     emit(jobId, 'progress', job0);
