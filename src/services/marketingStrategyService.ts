@@ -82,7 +82,11 @@ export async function runMarketingStrategy(
     const research = await researchMarketingStrategy(
       input.industryOrSegment,
       input.framework,
-      input.productContext
+      input.productContext,
+      input.companyName,
+      input.companyDomain,
+      input.focusTech,
+      input.otherContext
     );
 
     // Step 2: Synthesize with Claude

@@ -20,7 +20,7 @@ const router = Router();
 
 /** POST /api/marketing-strategy — start analysis */
 router.post('/', aiLimiter, (req: Request, res: Response): void => {
-  const { industryOrSegment, framework, productContext, additionalContext } = req.body;
+  const { industryOrSegment, framework, productContext, additionalContext, companyName, companyDomain, focusTech, otherContext } = req.body;
 
   if (!industryOrSegment || typeof industryOrSegment !== 'string' || !industryOrSegment.trim()) {
     res.status(400).json({ error: 'industryOrSegment is required' });
@@ -36,10 +36,12 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   runMarketingStrategy(jobId, {
     industryOrSegment: industryOrSegment.trim().slice(0, 300),
     framework,
-    productContext: typeof productContext === 'string' && productContext.trim()
-      ? productContext.trim().slice(0, 5000) : undefined,
-    additionalContext: typeof additionalContext === 'string' && additionalContext.trim()
-      ? additionalContext.trim().slice(0, 5000) : undefined,
+    productContext:    typeof productContext    === 'string' && productContext.trim()    ? productContext.trim().slice(0, 5000)    : undefined,
+    additionalContext: typeof additionalContext === 'string' && additionalContext.trim() ? additionalContext.trim().slice(0, 5000) : undefined,
+    companyName:       typeof companyName       === 'string' && companyName.trim()       ? companyName.trim().slice(0, 200)       : undefined,
+    companyDomain:     typeof companyDomain     === 'string' && companyDomain.trim()     ? companyDomain.trim().slice(0, 200)     : undefined,
+    focusTech:         typeof focusTech         === 'string' && focusTech.trim()         ? focusTech.trim().slice(0, 500)         : undefined,
+    otherContext:      typeof otherContext       === 'string' && otherContext.trim()      ? otherContext.trim().slice(0, 2000)     : undefined,
   }).catch((err) => console.error('[marketingStrategy] Unhandled error:', err));
 
   res.status(202).json({ jobId });

@@ -752,6 +752,10 @@ export interface MarketingStrategyInput {
   framework: StrategyFramework;
   productContext?: string;
   additionalContext?: string;
+  companyName?: string;
+  companyDomain?: string;
+  focusTech?: string;
+  otherContext?: string;
 }
 
 export interface StrategyDimensionRow {

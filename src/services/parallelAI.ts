@@ -1162,7 +1162,11 @@ Cite research platform coverage gaps, analyst reports, and industry data whereve
 export async function researchMarketingStrategy(
   industryOrSegment: string,
   framework: string,
-  productContext?: string
+  productContext?: string,
+  companyName?: string,
+  companyDomain?: string,
+  focusTech?: string,
+  otherContext?: string
 ): Promise<string> {
   const productLine = productContext
     ? `\nPRODUCT/SERVICE CONTEXT:\n${productContext.slice(0, 3000)}`
@@ -1186,17 +1190,29 @@ export async function researchMarketingStrategy(
 
   const frameworkInstruction = frameworkInstructions[framework] || `Analyse the ${industryOrSegment} industry using the ${framework} framework. Provide comprehensive analysis with specific data points, examples, and strategic implications.`;
 
+  const companyLine   = companyName   ? `\nCOMPANY: ${companyName}` : '';
+  const domainLine    = companyDomain ? `\nCOMPANY WEBSITE: ${companyDomain}` : '';
+  const techLine      = focusTech     ? `\nFOCUS TECHNOLOGY: ${focusTech}` : '';
+  const otherLine     = otherContext  ? `\nADDITIONAL CONTEXT: ${otherContext.slice(0, 2000)}` : '';
+  const companyFocus  = companyName
+    ? `Focus the analysis specifically on how ${companyName} can apply this framework, using the company's known positioning and offerings.`
+    : '';
+  const techFocus     = focusTech
+    ? `Give particular emphasis to ${focusTech} technology and its strategic implications within each dimension.`
+    : '';
+
   const query = `
-You are a seasoned McKinsey senior partner conducting a strategic analysis for a Fortune 500 client.${productLine}
+You are a seasoned McKinsey senior partner conducting a strategic analysis for a Fortune 500 client.${productLine}${companyLine}${domainLine}${techLine}${otherLine}
 
 INDUSTRY: ${industryOrSegment}
 FRAMEWORK: ${framework}
+${companyFocus ? `\n${companyFocus}` : ''}${techFocus ? `\n${techFocus}` : ''}
 
 ${frameworkInstruction}
 
 FOR EVERY ELEMENT/DIMENSION:
 - Provide specific data points, percentages, and market figures
-- Name real companies and examples
+- Name real companies and examples${companyName ? ` — include ${companyName} where relevant` : ''}
 - Cite analyst reports and industry sources (Gartner, McKinsey, BCG, Bain, Forrester, IDC)
 - Rate strategic importance/priority: High/Medium/Low
 - Include strategic implications and actionable recommendations

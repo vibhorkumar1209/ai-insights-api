@@ -2280,8 +2280,14 @@ Rules:
     }`).join(',\n    ');
 
   const userPrompt = `TASK: Conduct a comprehensive ${input.framework} analysis for the "${input.industryOrSegment}" industry.
-${input.productContext ? `\nPRODUCT CONTEXT: ${input.productContext.slice(0, 2000)}` : ''}
-${input.additionalContext ? `\nADDITIONAL CONTEXT: ${input.additionalContext.slice(0, 1500)}` : ''}
+${input.companyName    ? `\nCOMPANY: ${input.companyName}` : ''}
+${input.companyDomain  ? `COMPANY WEBSITE: ${input.companyDomain}` : ''}
+${input.focusTech      ? `FOCUS TECHNOLOGY: ${input.focusTech}` : ''}
+${input.productContext ? `PRODUCT CONTEXT: ${input.productContext.slice(0, 2000)}` : ''}
+${input.additionalContext ? `ADDITIONAL CONTEXT: ${input.additionalContext.slice(0, 1500)}` : ''}
+${input.otherContext   ? `OTHER CONTEXT: ${input.otherContext.slice(0, 1500)}` : ''}
+${input.companyName    ? `\nIMPORTANT: Tailor every dimension specifically to ${input.companyName}'s situation, referencing the company by name where appropriate.` : ''}
+${input.focusTech      ? `IMPORTANT: Emphasise ${input.focusTech} technology throughout the analysis, specifically within each dimension.` : ''}
 
 RESEARCH DATA:
 ${research.slice(0, 45000)}
