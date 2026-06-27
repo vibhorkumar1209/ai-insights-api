@@ -1275,3 +1275,49 @@ export async function researchConsultingTLTopicBatches(
 
   return results;
 }
+
+// ── Objection Handling Research ───────────────────────────────────────────────
+
+export async function researchObjectionHandling(
+  yourCompany: string,
+  competitorName: string,
+  targetAccount: string,
+  targetIndustry: string,
+  isIncumbent: boolean,
+  competitorWeaknesses?: string
+): Promise<string> {
+  const incumbentLine = isIncumbent
+    ? `CRITICAL: ${competitorName} is already DEPLOYED at ${targetAccount}. Focus heavily on switching cost drivers, migration complexity, and political/contractual lock-in risks.`
+    : `${competitorName} is being evaluated against ${yourCompany} (not yet deployed).`;
+
+  const weaknessLine = competitorWeaknesses?.trim()
+    ? `Known ${competitorName} weaknesses: ${competitorWeaknesses}`
+    : '';
+
+  const query = `
+B2B competitive intelligence for objection handling — bullet points only, max 900 words.
+
+Context: ${yourCompany} displacing ${competitorName} at ${targetAccount} (${targetIndustry}).
+${incumbentLine}
+${weaknessLine}
+
+A) ${competitorName} weaknesses in ${targetIndustry}: G2/Gartner reviews, Glassdoor R&D red flags, pricing complaints, support issues, product gaps, failed deals or public criticism.
+
+B) ${yourCompany} vs ${competitorName} head-to-head: Key differentiators, areas where ${yourCompany} wins on capability, TCO, support, industry fit. Include any analyst rankings.
+
+C) ${targetAccount} context: Known vendor relationships, IT budget signals, digital transformation priorities, risk appetite, key decision-maker profiles.
+
+D) Common objections heard in ${targetIndustry} displacement deals and what rebuttals work.
+
+${isIncumbent ? `E) Incumbent displacement specifics: switching cost estimates, migration success stories from ${targetIndustry}, contractual flexibility signals, change-management playbooks that worked.` : ''}
+
+Be specific, cite sources where possible, skip anything unverified.
+`.trim();
+
+  try {
+    return await runResearch(query, 'base');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Research failed';
+    return `Research unavailable (${yourCompany} vs ${competitorName} at ${targetAccount}): ${msg}`;
+  }
+}

@@ -3425,3 +3425,99 @@ If you are not confident about any ticker, reply: {"tickers":[]}`,
     return null;
   }
 }
+
+// ── Objection Handling ────────────────────────────────────────────────────────
+
+import {
+  ObjectionHandlingInput,
+  ObjectionHandlingItem,
+  IncumbentDisplacementTactic,
+} from '@ai-insights/types';
+
+export interface ObjectionHandlingPayload {
+  execSummary: string;
+  objections: ObjectionHandlingItem[];
+  incumbentDisplacementTactics: IncumbentDisplacementTactic[];
+  battleCard: string;
+}
+
+export async function synthesizeObjectionHandling(
+  input: ObjectionHandlingInput,
+  research: string
+): Promise<ObjectionHandlingPayload> {
+  const incumbentBlock = input.isIncumbent
+    ? `CRITICAL CONTEXT: ${input.competitorName} is an INCUMBENT vendor — already deployed at ${input.targetAccount}. This is a DISPLACEMENT sale. Generate extra-detailed incumbent-specific objections (switching cost, political risk, data migration, contractual lock-in, "if it ain't broke" resistance, executive sponsor loyalty) AND populate incumbentDisplacementTactics with 6–8 phased tactics covering Discovery → Business Case → Pilot → Commercials → Transition.`
+    : `Context: ${input.competitorName} is a competing vendor (not yet deployed). Focus on evaluation-stage objections. Return incumbentDisplacementTactics as an empty array [].`;
+
+  const solutionBlock = input.solutionAreas?.trim()
+    ? `${input.yourCompany}'s key solution areas: ${input.solutionAreas}`
+    : `Derive ${input.yourCompany}'s relevant solutions for ${input.targetIndustry} from your knowledge.`;
+
+  const weaknessBlock = input.competitorWeaknesses?.trim()
+    ? `Known ${input.competitorName} weaknesses (user-supplied): ${input.competitorWeaknesses}`
+    : `Research-based ${input.competitorName} weaknesses will be in the research data below.`;
+
+  const systemPrompt = `You are a senior B2B sales strategist specialising in competitive displacement. Output ONLY valid JSON — no markdown fences, no text outside JSON.
+Rules:
+- Each objection must have a DETAILED rebuttal (4–6 specific bullet points as a single string, using "• " prefix per bullet).
+- talkTrack must be 2–3 sentences of verbatim suggested language the rep can say out loud.
+- proofPoint must cite a specific metric, analyst finding, or case study outcome.
+- Categories to cover: Switching Cost / Risk, Product Capability Gap, Relationship & Politics, Commercial / Pricing, Implementation Complexity, Support & Service, Strategic Fit.
+- Generate EXACTLY 8 objections if competitor is NOT incumbent, or EXACTLY 12 if IS incumbent.
+- battleCard: concise head-to-head markdown-free paragraph (no bullets), 3–4 sentences, executive-ready.
+- execSummary: 2–3 sentences framing the competitive situation and recommended posture.`;
+
+  const userPrompt = `Generate a complete objection handling playbook as JSON.
+
+SELLING COMPANY: ${input.yourCompany}
+COMPETITOR: ${input.competitorName}
+TARGET ACCOUNT: ${input.targetAccount}
+INDUSTRY: ${input.targetIndustry}
+${incumbentBlock}
+${solutionBlock}
+${weaknessBlock}
+
+RESEARCH DATA:
+${research.slice(0, 40000)}
+
+Return this exact JSON structure:
+{
+  "execSummary": "string",
+  "objections": [
+    {
+      "category": "string",
+      "objection": "string",
+      "rebuttal": "string (bullet points prefixed with • )",
+      "proofPoint": "string",
+      "talkTrack": "string"
+    }
+  ],
+  "incumbentDisplacementTactics": [
+    {
+      "phase": "string",
+      "tactic": "string",
+      "rationale": "string"
+    }
+  ],
+  "battleCard": "string"
+}`;
+
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 6000, 'claude-sonnet-4-6', 120000, 0.15);
+  const cleaned = (raw as string).replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  let parsed: ObjectionHandlingPayload;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Claude returned non-JSON for objection handling');
+    parsed = JSON.parse(match[0]);
+  }
+
+  return {
+    execSummary:                  parsed.execSummary || '',
+    objections:                   Array.isArray(parsed.objections) ? parsed.objections : [],
+    incumbentDisplacementTactics: Array.isArray(parsed.incumbentDisplacementTactics) ? parsed.incumbentDisplacementTactics : [],
+    battleCard:                   parsed.battleCard || '',
+  };
+}

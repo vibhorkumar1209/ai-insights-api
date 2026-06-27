@@ -310,6 +310,53 @@ export interface SalesPlayResult {
   completedAt?: string;
 }
 
+// ── Objection Handling ───────────────────────────────────────────────────────
+
+export interface ObjectionHandlingInput {
+  yourCompany: string;
+  competitorName: string;
+  targetAccount: string;
+  targetIndustry: string;
+  isIncumbent: boolean;          // true = competitor is already deployed in the account
+  strategicPriorities?: string[];
+  solutionAreas?: string;
+  competitorWeaknesses?: string;
+}
+
+export interface ObjectionHandlingItem {
+  category: string;              // e.g. "Switching Cost", "Technical Risk", "Relationship"
+  objection: string;
+  rebuttal: string;              // detailed multi-point rebuttal
+  proofPoint?: string;           // specific stat / case study to cite
+  talkTrack?: string;            // verbatim suggested language
+}
+
+export interface IncumbentDisplacementTactic {
+  phase: string;                 // e.g. "Discovery", "Business Case", "Pilot"
+  tactic: string;
+  rationale: string;
+}
+
+export interface ObjectionHandlingResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  yourCompany?: string;
+  competitorName?: string;
+  targetAccount?: string;
+  targetIndustry?: string;
+  isIncumbent?: boolean;
+  // Core output
+  execSummary?: string;
+  objections?: ObjectionHandlingItem[];
+  incumbentDisplacementTactics?: IncumbentDisplacementTactic[];
+  battleCard?: string;           // terse head-to-head bullet summary
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Key Prospective Buyers ───────────────────────────────────────────────────
 
 export interface KeyBuyersInput {

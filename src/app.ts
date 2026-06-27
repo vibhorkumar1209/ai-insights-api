@@ -12,6 +12,7 @@ import challengesGrowthRouter from './routes/challengesGrowth';
 import financialAnalysisRouter from './routes/financialAnalysis';
 import salesPlayRouter from './routes/salesPlay';
 import salesPlay2Router from './routes/salesPlay2';
+import objectionHandlingRouter from './routes/objectionHandling';
 import keyBuyersRouter from './routes/keyBuyers';
 import industryTrendsRouter from './routes/industryTrends';
 import industryReportRouter from './routes/industryReport';
@@ -71,6 +72,7 @@ app.use('/api/technology-heat-map', memoryGuard, technologyHeatMapRouter);
 app.use('/api/content-generation', memoryGuard, contentGenerationRouter);
 app.use('/api/consulting-intelligence', memoryGuard, consultingIntelligenceRouter);
 app.use('/api/vuca-analysis', memoryGuard, vucaAnalysisRouter);
+app.use('/api/objection-handling', memoryGuard, objectionHandlingRouter);
 
 // ── Debug: test Claude connectivity ──────────────────────────────────────────
 app.get('/api/debug-claude', async (_req, res) => {
