@@ -1581,6 +1581,10 @@ export async function extractScopeWithWizard(
   const excludeHint = input.excludeRegion ? `\nExclude from research: "${input.excludeRegion}".` : '';
   const subIndustryHint = input.subIndustry ? `\nSub-industry focus: "${input.subIndustry}".` : '';
   const focusHint = input.focusAreas?.length ? `\nFocus areas: ${input.focusAreas.join(', ')}.` : '';
+  const hasCompanyContext = !!(input.companyName?.trim() || input.companyDomain?.trim());
+  const companyHint = hasCompanyContext
+    ? `\nUSER'S COMPANY: ${input.companyName || ''} ${input.companyDomain ? `(${input.companyDomain})` : ''}. Also suggest competitors of this company in the industry.`
+    : '';
 
   // Build the TOC section titles based on user-selected sections
   const sectionTitleMap: Record<string, string> = {
@@ -1599,9 +1603,15 @@ export async function extractScopeWithWizard(
   const tocTitles = ['Executive Summary', ...userSelectedSections.map((id) => sectionTitleMap[id]).filter(Boolean)];
   const sectionsHint = `\nUser has selected the following report sections (ONLY include these in tocPreview): ${tocTitles.join(', ')}.`;
 
+  const competitorsField = hasCompanyContext ? `
+  "suggestedCompetitors": [
+    { "name": "Competitor A", "description": "Key rival in segment X", "marketShare": "18%", "headquarters": "US", "revenue": "$X.XB", "selected": false },
+    { "name": "Competitor B", "description": "Strong in region Y", "marketShare": "15%", "headquarters": "EU", "revenue": "$X.XB", "selected": false }
+  ],` : '';
+
   const userPrompt = `
 Analyse this market research request and provide structured scope, market segmentation suggestions, and key player suggestions.
-${geographyHint}${excludeHint}${subIndustryHint}${focusHint}${sectionsHint}
+${geographyHint}${excludeHint}${subIndustryHint}${focusHint}${companyHint}${sectionsHint}
 
 INDUSTRY/PRODUCT: "${input.industry || input.query}"
 
@@ -1633,7 +1643,7 @@ Return ONLY valid JSON with this exact shape:
     { "name": "Company B", "description": "Strong competitor in segment Y", "marketShare": "20%", "headquarters": "EU", "revenue": "$X.XB", "selected": true },
     { "name": "Company C", "description": "Growing player in region Z", "marketShare": "15%", "headquarters": "APAC", "revenue": "$X.XB", "selected": true },
     { "name": "Company D", "description": "Emerging challenger", "marketShare": "10%", "headquarters": "US", "revenue": "$X.XB", "selected": false }
-  ],
+  ],${competitorsField}
   "tocPreview": ${JSON.stringify(tocTitles)}
 }
 
@@ -1642,9 +1652,10 @@ RULES:
 - Segments must cover ALL major market dimensions: geography, product type, application, channel, customer segment, technology, price tier, use case.
 - Each segment: comprehensive sub-segment list covering the full market breakdown for that dimension.
 - Example for "By Geography": North America, Europe, Asia-Pacific, Middle East Africa, Latin America, Emerging Markets (6 items).
-- Suggest 15-20 competitors. Pre-select top 10 (selected: true/false).
+- Suggest 15-20 companies for suggestedPlayers. Pre-select top 10 (selected: true/false).
 - For each player: name, description (1 short phrase: "Market leader in X", "Growing in segment Y", etc), marketShare (XX%), headquarters (US/EU/APAC/etc), revenue (estimated $X.XB format).
 - Description should be 3-8 words maximum, highlighting player's position or focus.
+${hasCompanyContext ? `- suggestedCompetitors: suggest 6-8 direct competitors of the user's company in this industry. All start with selected: false. Include market share % and revenue estimates.` : ''}
 - CRITICAL: NO special characters, NO quotes or newlines in any string, NO markdown.
 - Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
 - searchQueries: 6-10 words, simple English, current year focused.
@@ -1653,7 +1664,7 @@ RULES:
 
   const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
 
-  const raw = await claudeCreateDirect(systemPromptScope, userPrompt, 3000, SYNTHESIS_MODEL, 120000, 0.0);
+  const raw = await claudeCreateDirect(systemPromptScope, userPrompt, hasCompanyContext ? 4000 : 3000, SYNTHESIS_MODEL, 120000, 0.0);
 
   let parsed: ScopeWizardResult | null = null;
 
@@ -1715,11 +1726,21 @@ RULES:
     selected: player.selected ?? (idx < 10), // Pre-select top 10 if not specified
   }));
 
+  // Normalize competitors: all start unselected
+  if (parsed.suggestedCompetitors?.length) {
+    parsed.suggestedCompetitors = parsed.suggestedCompetitors.slice(0, 8).map((c) => ({
+      ...c,
+      selected: false,
+    }));
+  }
+
   // Carry forward input fields to scope
   if (input.subIndustry) parsed.scope.subIndustry = input.subIndustry;
   if (input.focusAreas) parsed.scope.focusAreas = input.focusAreas;
   if (input.excludeRegion) parsed.scope.excludeRegion = input.excludeRegion;
   if (input.selectedSections?.length) parsed.scope.selectedSections = input.selectedSections;
+  if (input.companyName) parsed.scope.companyName = input.companyName;
+  if (input.companyDomain) parsed.scope.companyDomain = input.companyDomain;
 
   // Override tocPreview to match exactly what user selected
   parsed.tocPreview = tocTitles;
@@ -1979,8 +2000,9 @@ export async function draftSectionsBatchV2(
     return `\nSECTION: "${id}"\nTitle: "${def.title}"\n- ${def.tableHint}\n- ${def.chartHint}\n- ${def.subsectionHint}\n`;
   }).join('\n');
 
+  const selectedCompNames = scope.selectedCompetitors?.map((c) => c.name) || [];
   const companyContext = (scope.companyName || scope.companyDomain)
-    ? `\nUSER'S COMPANY (for company_competition_analysis section): ${scope.companyName || ''}${scope.companyDomain ? ` (${scope.companyDomain})` : ''} — identify their top 5 competitors in ${scope.industry} and build the competitor comparison table.`
+    ? `\nUSER'S COMPANY (for company_competition_analysis section): ${scope.companyName || ''}${scope.companyDomain ? ` (${scope.companyDomain})` : ''}.${selectedCompNames.length > 0 ? ` Profile ONLY these user-selected competitors (max 5): ${selectedCompNames.join(', ')}. Do NOT add other competitors.` : ` Identify their top 5 competitors in ${scope.industry} and build the competitor comparison table.`}`
     : '';
   const reportDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const maDateContext = `\nREPORT DATE: ${reportDate} — for ma_jv_partnerships, only include deals from the last 12 months (on or after ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}).`;

@@ -16,7 +16,7 @@ const router = Router();
 
 // POST /api/industry-report/scope — Wizard: extract scope + suggest segments & players
 router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
-  const { industry, subIndustry, focusAreas, geography, excludeRegion, query, selectedSections } = req.body;
+  const { industry, subIndustry, focusAreas, geography, excludeRegion, query, selectedSections, companyName, companyDomain } = req.body;
 
   const effectiveQuery = industry || query;
   if (!effectiveQuery || typeof effectiveQuery !== 'string' || effectiveQuery.trim().length < 3) {
@@ -33,6 +33,8 @@ router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
       geography: geography?.trim() || undefined,
       excludeRegion: excludeRegion?.trim() || undefined,
       selectedSections: selectedSections || undefined,
+      companyName: companyName?.trim() || undefined,
+      companyDomain: companyDomain?.trim() || undefined,
     });
     res.json(result);
   } catch (err: unknown) {
@@ -44,7 +46,7 @@ router.post('/scope', aiLimiter, async (req: Request, res: Response) => {
 
 // POST /api/industry-report/generate — Wizard: generate full report with selected segments & players
 router.post('/generate', aiLimiter, (req: Request, res: Response) => {
-  const { scope, selectedSegments, selectedPlayers, allPlayers, companyName, companyDomain } = req.body;
+  const { scope, selectedSegments, selectedPlayers, allPlayers, companyName, companyDomain, selectedCompetitors } = req.body;
 
   if (!scope || !scope.industry) {
     res.status(400).json({ error: 'scope with industry is required' });
@@ -60,6 +62,7 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
     allPlayers: allPlayers || selectedPlayers || [],
     ...(companyName?.trim() && { companyName: companyName.trim() }),
     ...(companyDomain?.trim() && { companyDomain: companyDomain.trim() }),
+    ...(Array.isArray(selectedCompetitors) && selectedCompetitors.length > 0 && { selectedCompetitors: selectedCompetitors.slice(0, 5) }),
   };
 
   const input = { query: scope.industry, geography: scope.geography };

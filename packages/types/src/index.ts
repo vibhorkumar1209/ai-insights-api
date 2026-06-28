@@ -431,6 +431,8 @@ export interface BusinessTimelinesResult {
 // ── Industry Report ─────────────────────────────────────────────────────────
 
 export interface IndustryReportInput {
+  companyName?: string;
+  companyDomain?: string;
   query: string;                // Free-text, e.g. "EV battery market in North America"
   industry?: string;            // Primary industry/product
   subIndustry?: string;         // Sub-industry/sub-product
@@ -456,6 +458,7 @@ export interface IndustryReportScope {
   // For Competition Analysis section — user's own company context
   companyName?: string;
   companyDomain?: string;
+  selectedCompetitors?: KeyPlayerOption[]; // max 5, user-selected for Competition Analysis
 }
 
 export interface MarketSizingData {
@@ -597,6 +600,7 @@ export interface ScopeWizardResult {
   scope: IndustryReportScope;
   suggestedSegments: MarketSegmentOption[];
   suggestedPlayers: KeyPlayerOption[];
+  suggestedCompetitors?: KeyPlayerOption[]; // only present when companyName/companyDomain supplied
   tocPreview: string[];
 }
 
