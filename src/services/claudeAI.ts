@@ -1583,7 +1583,7 @@ export async function extractScopeWithWizard(
   const focusHint = input.focusAreas?.length ? `\nFocus areas: ${input.focusAreas.join(', ')}.` : '';
   const hasCompanyContext = !!(input.companyName?.trim() || input.companyDomain?.trim());
   const companyHint = hasCompanyContext
-    ? `\nUSER'S COMPANY: ${input.companyName || ''} ${input.companyDomain ? `(${input.companyDomain})` : ''}. Also suggest competitors of this company in the industry.`
+    ? `\nUSER'S COMPANY: ${input.companyName || ''} ${input.companyDomain ? `(${input.companyDomain})` : ''}. This company operates IN or SELLS TO the industry — use it only for the suggestedCompetitors field, NOT for suggestedPlayers.`
     : '';
 
   // Build the TOC section titles based on user-selected sections
@@ -1652,10 +1652,10 @@ RULES:
 - Segments must cover ALL major market dimensions: geography, product type, application, channel, customer segment, technology, price tier, use case.
 - Each segment: comprehensive sub-segment list covering the full market breakdown for that dimension.
 - Example for "By Geography": North America, Europe, Asia-Pacific, Middle East Africa, Latin America, Emerging Markets (6 items).
-- Suggest 15-20 companies for suggestedPlayers. Pre-select top 10 (selected: true/false).
+- suggestedPlayers: list 15-20 KEY PLAYERS OPERATING IN THE INDUSTRY ITSELF — companies that ARE the industry (incumbents, market leaders, significant players in that sector). For example, for "Utilities industry North America" list Duke Energy, NextEra Energy, Dominion Energy, Southern Company, Exelon, etc. — NOT technology vendors or software providers to the industry. Pre-select top 10 (selected: true/false).
 - For each player: name, description (1 short phrase: "Market leader in X", "Growing in segment Y", etc), marketShare (XX%), headquarters (US/EU/APAC/etc), revenue (estimated $X.XB format).
 - Description should be 3-8 words maximum, highlighting player's position or focus.
-${hasCompanyContext ? `- suggestedCompetitors: suggest 8-10 direct competitors of the user's company in this industry. All start with selected: false. Include market share % and revenue estimates.` : ''}
+${hasCompanyContext ? `- suggestedCompetitors: suggest 8-10 DIRECT COMPETITORS OF THE USER'S COMPANY (${input.companyName || input.companyDomain}) in serving this industry — other vendors, solution providers, or companies competing directly against the user's company for business in this industry. These are DIFFERENT from suggestedPlayers (which are industry operators). All start with selected: false. Include market share % and revenue estimates.` : ''}
 - CRITICAL: NO special characters, NO quotes or newlines in any string, NO markdown.
 - Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
 - searchQueries: 6-10 words, simple English, current year focused.
