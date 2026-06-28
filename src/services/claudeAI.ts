@@ -1655,7 +1655,7 @@ RULES:
 - Suggest 15-20 companies for suggestedPlayers. Pre-select top 10 (selected: true/false).
 - For each player: name, description (1 short phrase: "Market leader in X", "Growing in segment Y", etc), marketShare (XX%), headquarters (US/EU/APAC/etc), revenue (estimated $X.XB format).
 - Description should be 3-8 words maximum, highlighting player's position or focus.
-${hasCompanyContext ? `- suggestedCompetitors: suggest 6-8 direct competitors of the user's company in this industry. All start with selected: false. Include market share % and revenue estimates.` : ''}
+${hasCompanyContext ? `- suggestedCompetitors: suggest 8-10 direct competitors of the user's company in this industry. All start with selected: false. Include market share % and revenue estimates.` : ''}
 - CRITICAL: NO special characters, NO quotes or newlines in any string, NO markdown.
 - Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
 - searchQueries: 6-10 words, simple English, current year focused.
@@ -1728,7 +1728,7 @@ ${hasCompanyContext ? `- suggestedCompetitors: suggest 6-8 direct competitors of
 
   // Normalize competitors: all start unselected
   if (parsed.suggestedCompetitors?.length) {
-    parsed.suggestedCompetitors = parsed.suggestedCompetitors.slice(0, 8).map((c) => ({
+    parsed.suggestedCompetitors = parsed.suggestedCompetitors.slice(0, 10).map((c) => ({
       ...c,
       selected: false,
     }));
