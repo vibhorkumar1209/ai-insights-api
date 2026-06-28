@@ -241,10 +241,13 @@ export async function runIndustryReportV2(
       ['market_size_by_segment'],           // per-segment tables + charts (heavy)
       ['market_dynamics'],                  // 4 tables
       ['key_players_analysis'],             // profiles + market share chart
-      ['regulatory_overview'],              // 4 tables
+      ['regulatory_overview'],              // 4 tables (core)
       ['forecast'],                         // 3 charts + 2 tables
       ['company_competition_analysis'],     // 5-competitor table (user's company context)
-      ['ma_jv_partnerships'],               // M&A deals last 12 months
+      ['ma_jv_partnerships'],              // M&A deals last 12 months
+      ['swot'],                            // optional
+      ['porters_five_forces'],             // optional
+      ['tei_analysis'],                    // optional
     ];
     const batches = batchDefs
       .map((ids) => ids.filter((id) => selected.includes(id)))
