@@ -233,19 +233,18 @@ export async function runIndustryReportV2(
     // ── Step 4: Section drafting (60-88%) — dynamic batches ──
     const selected = scope.selectedSections?.length
       ? scope.selectedSections
-      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'competition_analysis', 'regulatory_overview', 'forecast', 'swot', 'porters_five_forces', 'tei_analysis'];
+      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'company_competition_analysis', 'ma_jv_partnerships'];
 
     // Group into batches — each batch with 1-2 sections max to reduce JSON complexity
     const batchDefs = [
-      ['market_overview'],             // combo chart + 4 subsections
-      ['market_size_by_segment'],      // per-segment tables + charts (heavy)
-      ['market_dynamics'],             // 4 tables
-      ['competition_analysis'],        // 10 profiles + BCG matrix (heavy)
-      ['regulatory_overview'],         // 4 tables
-      ['forecast'],                    // 3 charts + 2 tables
-      ['swot'],                        // SWOT only
-      ['porters_five_forces'],         // Porter's only
-      ['tei_analysis'],                // TEI only
+      ['market_overview'],                  // combo chart + 4 subsections
+      ['market_size_by_segment'],           // per-segment tables + charts (heavy)
+      ['market_dynamics'],                  // 4 tables
+      ['key_players_analysis'],             // profiles + market share chart
+      ['regulatory_overview'],              // 4 tables
+      ['forecast'],                         // 3 charts + 2 tables
+      ['company_competition_analysis'],     // 5-competitor table (user's company context)
+      ['ma_jv_partnerships'],               // M&A deals last 12 months
     ];
     const batches = batchDefs
       .map((ids) => ids.filter((id) => selected.includes(id)))

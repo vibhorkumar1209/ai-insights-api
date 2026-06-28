@@ -223,7 +223,7 @@ function safeParseJsonArray(raw: string): unknown[] | null {
 // Current date context: April 23, 2026 (Q2, Jan-Sep range)
 // Base year: 2025 (current year-1 per user's date-based logic)
 // Market sizing uses base year (2025) first; other sections use current year (2026)
-const RECENCY_DIRECTIVE = 'RECENCY RULE: For market sizing sections (market_overview, market_size_by_segment): Prioritize 2025 (base year) first, then 2024, then 2023. For all other sections (market_dynamics, competition_analysis, regulatory_overview, porters_five_forces, swot, tei_analysis): Prioritize 2026 data first, then 2025, then 2024. If using data from 2023 or earlier, clearly label as "(2023 or earlier - historical context)". When conflicting data exists across years, use the most recent available year. Do NOT use pre-2023 data unless essential for historical/trend context and explicitly labeled.';
+const RECENCY_DIRECTIVE = 'RECENCY RULE: For market sizing sections (market_overview, market_size_by_segment): Prioritize 2025 (base year) first, then 2024, then 2023. For all other sections (market_dynamics, key_players_analysis, regulatory_overview, company_competition_analysis, ma_jv_partnerships): Prioritize 2026 data first, then 2025, then 2024. If using data from 2023 or earlier, clearly label as "(2023 or earlier - historical context)". When conflicting data exists across years, use the most recent available year. Do NOT use pre-2023 data unless essential for historical/trend context and explicitly labeled.';
 
 const WRITING_DIRECTIVE = `WRITING RULES (apply to every word of output):
 1. NO SYNTHETIC DATA: Every figure, statistic, percentage, and fact must come from actual research, provided data, or verified training knowledge about this specific company or industry. Never invent, estimate, or fabricate numbers. If a figure is unavailable, omit it or state it is not publicly disclosed — do not fill the gap with a plausible-sounding number.
@@ -1587,12 +1587,11 @@ export async function extractScopeWithWizard(
     market_overview: 'Market Overview',
     market_size_by_segment: 'Market Size by Segment',
     market_dynamics: 'Market Dynamics',
-    competition_analysis: 'Competition Analysis',
+    key_players_analysis: 'Key Players Analysis',
     regulatory_overview: 'Regulatory Overview',
     forecast: 'Market Forecast',
-    swot: 'SWOT Analysis',
-    porters_five_forces: "Porter's Five Forces Analysis",
-    tei_analysis: 'Total Economic Impact Analysis',
+    company_competition_analysis: 'Competition Analysis',
+    ma_jv_partnerships: 'M&A, JVs and Partnerships',
   };
   const userSelectedSections = input.selectedSections?.length
     ? input.selectedSections
@@ -1908,8 +1907,8 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     chartHint: 'No chart needed. Set chartSpec to null.',
     subsectionHint: 'No subsections needed. The 4 tables carry all the content. Include 1-2 bodyParagraphs summarizing the overall market dynamics landscape.',
   },
-  competition_analysis: {
-    title: 'Competition Analysis',
+  key_players_analysis: {
+    title: 'Key Players Analysis',
     tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Key Strength"]. List all players (selected + unselected) sorted by market share descending.',
     chartHint: 'Include horizontal_bar chartSpec showing market share %. Data format: [{label:"Company A",value:25},{label:"Company B",value:20},...] sorted by value descending.',
     subsectionHint: 'First bodyParagraph: competitive landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), top 3-5 players with market shares, competitive dynamics (price-led, innovation-led, etc). Include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for KEY PLAYERS (selected in input). Do NOT include subsections. Do NOT include bcgMatrixData.',
@@ -1926,23 +1925,17 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     chartHint: 'Include 3 separate "combo" charts in the "charts" array (NOT chartSpec). One chart per scenario:\n1. Title: "Pessimistic Scenario" — bars for projected market size by year + line for CAGR\n2. Title: "Realistic Scenario" — same structure\n3. Title: "Optimistic Scenario" — same structure\nEach chart: data: [{label: "2025", value: <size>, growth: <cagr>}, ...], series: [{key: "value", name: "Market Size", type: "bar", yAxisId: "left"}, {key: "growth", name: "CAGR %", type: "line", yAxisId: "right"}], yRightLabel: "CAGR %".',
     subsectionHint: 'Include 1-2 bodyParagraphs introducing the forecast: type of growth (linear/exponential/step), key factors driving growth, which market segments are primary growth engines.',
   },
-  swot: {
-    title: 'SWOT Analysis',
-    tableHint: 'No table needed. Set keyTable to null.',
-    chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant. Focus on being concise — each item should be 1-2 sentences.',
+  company_competition_analysis: {
+    title: 'Competition Analysis',
+    tableHint: 'Return a "tables" array with ONE table titled "Competitor Profiles". Headers: ["Competitor Name", "Market Focus", "Key Products / Services", "Revenue", "Market Share", "Core Competitive Overlap", "Recent News", "JV / M&A / Partnerships", "Other Insights"]. Include the top 5 competitors of the user\'s company (companyName/companyDomain provided in scope). Each cell must be a concise string — use "N/A" where data is unavailable. Revenue and Market Share should include source year (e.g. "$12B (2024)"). Recent News should be the most impactful headline from the last 12 months. JV/M&A/Partnerships should list deals from the last 24 months. Other Insights can include technology bets, go-to-market shifts, or analyst commentary.',
+    chartHint: 'Include horizontal_bar chartSpec showing estimated market share % for the 5 competitors. Data format: [{label:"Competitor A", value:18}, ...] sorted descending.',
+    subsectionHint: 'bodyParagraphs[0]: 2–3 sentences introducing the competitive context — who the top 5 rivals are, what they compete on (price, product depth, geography, partnerships), and how the landscape has shifted in the last 12 months. No subsections.',
   },
-  porters_five_forces: {
-    title: "Porter's Five Forces Analysis",
-    tableHint: 'No table needed. Set keyTable to null.',
+  ma_jv_partnerships: {
+    title: 'M&A, JVs and Partnerships',
+    tableHint: 'Return a "tables" array with ONE table titled "Transactions (Last 12 Months)". Headers: ["Date", "Transacting Parties", "Transaction Type", "Primary Strategic Rationale", "Transaction Size", "Source"]. Transaction Type values: "Acquisition", "Merger", "Joint Venture", "Strategic Partnership", "Divestiture", or "Investment". Date format: "MMM YYYY". Transaction Size: include "$XB / $XM" if publicly disclosed, else "Undisclosed". Source: the publication or filing that reported the deal (e.g. "Reuters", "SEC Filing", "Company Press Release"). Include ALL significant deals in the INDUSTRY (not just key players) from the last 12 months from the report date. Target 8–15 rows; if fewer real deals exist, include only verified ones — do NOT fabricate.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }. Each force needs rating + 3-5 factors + 1-2 sentence description.',
-  },
-  tei_analysis: {
-    title: 'Total Economic Impact',
-    tableHint: 'No traditional keyTable. Set keyTable to null.',
-    chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "macroTeiData": { "items": [{"trigger": "Macroeconomic event/factor name", "impactLevel": "high|medium|low", "description": "Description of the macroeconomic trigger", "examples": "Real-world examples, recent events, data points", "marketSizeImpact": "+X.X% or -X.X% impact on market size"}, ...] }. Include 6-10 macroeconomic triggers (e.g., interest rate changes, inflation, trade wars, currency fluctuations, GDP growth, commodity prices, regulatory shifts, geopolitical events).',
+    subsectionHint: 'bodyParagraphs[0]: 2–3 sentences summarising deal activity — volume of transactions, dominant transaction type, largest deal, and what the deal flow signals about industry consolidation or growth strategy. No subsections. IMPORTANT: The "last 12 months" is measured from the report generation date, which is provided in the scope as reportDate. Only include deals on or after that date minus 12 months.',
   },
 };
 
@@ -1986,11 +1979,17 @@ export async function draftSectionsBatchV2(
     return `\nSECTION: "${id}"\nTitle: "${def.title}"\n- ${def.tableHint}\n- ${def.chartHint}\n- ${def.subsectionHint}\n`;
   }).join('\n');
 
+  const companyContext = (scope.companyName || scope.companyDomain)
+    ? `\nUSER'S COMPANY (for company_competition_analysis section): ${scope.companyName || ''}${scope.companyDomain ? ` (${scope.companyDomain})` : ''} — identify their top 5 competitors in ${scope.industry} and build the competitor comparison table.`
+    : '';
+  const reportDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const maDateContext = `\nREPORT DATE: ${reportDate} — for ma_jv_partnerships, only include deals from the last 12 months (on or after ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}).`;
+
   const userPrompt = `
 You are drafting sections of a comprehensive market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
 ${scope.subIndustry ? `Sub-industry focus: ${scope.subIndustry}` : ''}
 ${scope.excludeRegion ? `EXCLUDE from analysis: ${scope.excludeRegion}` : ''}
-${segmentContext}${playerContext}${allPlayersList}${unselectedPlayerContext}
+${segmentContext}${playerContext}${allPlayersList}${unselectedPlayerContext}${companyContext}${maDateContext}
 
 MARKET SIZING CONTEXT:
 - Current (Value): ${marketSizing.currentMarketSize}
@@ -2004,7 +2003,7 @@ ${safeResearch}
 
 YEAR PRIORITY:
 - For market sizing sections (market_overview, market_size_by_segment): Prioritize 2025 (base year), then 2024, then 2023.
-- For all other sections (market_dynamics, competition_analysis, regulatory_overview, porters_five_forces, swot, tei_analysis): Prioritize 2026 data, then 2025, then 2024. Pre-2023 data requires "(2023 or earlier - historical context)" label.
+- For all other sections (market_dynamics, key_players_analysis, regulatory_overview, company_competition_analysis, ma_jv_partnerships): Prioritize 2026 data, then 2025, then 2024. Pre-2023 data requires "(2023 or earlier - historical context)" label.
 
 Draft the following ${sectionIds.length} sections:
 ${sectionInstructions}
@@ -2024,9 +2023,6 @@ Each object structure:
   "charts": [{type, title, xLabel, yLabel, yRightLabel, data, series}, ...] OR null (for multi-chart sections like forecast),
   "subsections": [{"title": "...", "content": "paragraph text with • bullets", "keyTable": {...} OR null, "tables": [...] OR null, "chartSpec": {...} OR null, "charts": [...] OR null}] OR null,
   "citations": ["..."],
-  "swotData": {...} OR null,
-  "portersData": {...} OR null,
-  "macroTeiData": {"items": [...]} OR null,
   "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null
 }
 
@@ -2035,10 +2031,11 @@ CRITICAL RULES:
 - All string values must escape special characters: use \\n for newlines, \\" for quotes, \\\\ for backslashes.
 - Never include unescaped newlines or quotes within JSON strings. Use bullet points (•) instead of line breaks.
 - chartSpec.data and charts[].data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
-- For swot/porters/tei sections: include ONLY the specialized data field. bodyParagraphs can be empty [].
 - For market_dynamics and regulatory_overview: use "tables" array (NOT keyTable) for multiple tables.
 - For forecast: use "tables" array for assumption/summary tables AND "charts" array for 3 scenario charts.
-- For competition_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix).
+- For key_players_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix).
+- For company_competition_analysis: use "tables" array with competitor comparison table; include horizontal_bar chartSpec for market share. The user's company is in scope.companyName / scope.companyDomain — identify their top 5 competitors in this industry.
+- For ma_jv_partnerships: use "tables" array only. Only include deals from the last 12 months. Do NOT fabricate deals.
 - For market_size_by_segment: Ensure that for each year shown in the table, the sum of all sub-segment market sizes equals the total market size from Market Overview (tolerance: ±2% for rounding). This maintains consistency across sections.
 - Be specific: cite figures, company names, percentages, dates.
 - EVERY subsection MUST have a non-empty "content" string with substantive bullet-point analysis. Never leave subsection content as "" or null.
@@ -2046,7 +2043,7 @@ CRITICAL RULES:
 `.trim();
 
   // Prioritize quality over token reduction — use sufficient tokens for detailed analysis
-  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'competition_analysis'].includes(id));
+  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis', 'company_competition_analysis'].includes(id));
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
   const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${RECENCY_DIRECTIVE} ${WRITING_DIRECTIVE}`;
@@ -2114,39 +2111,14 @@ CRITICAL RULES:
   // Debug: log what was parsed
   console.log(`[draftV2] Parsed ${parsed.length} sections: ${(parsed as any[]).map((s: any) => s.id || '?').join(', ')}`);
 
-  // Detailed logging for competition_analysis
-  const compAnalysis = (parsed as any[]).find((s: any) => s.id === 'competition_analysis');
-  if (compAnalysis) {
-    console.log(`[draftV2] competition_analysis found:`, {
-      id: compAnalysis.id,
-      hasBody: compAnalysis.bodyParagraphs?.length || 0,
-      bcgCount: compAnalysis.bcgMatrixData?.length || 0,
-      profilesCount: compAnalysis.competitorProfiles?.length || 0,
-      hasKeyTable: !!compAnalysis.keyTable,
-      hasChartSpec: !!compAnalysis.chartSpec,
-    });
-  } else {
-    console.warn(`[draftV2] competition_analysis NOT in parsed sections`);
-  }
-
-  // Sections with specialized data (swot/porters/tei) may have empty bodyParagraphs
-  // Sections with tables/charts instead of bodyParagraphs (market_dynamics, regulatory) are valid
   const valid = (parsed as ReportSection[]).filter((s) => {
     if (!s.id || !s.title) return false;
     const hasBody = s.bodyParagraphs?.length > 0;
-    const hasSpecialData = s.swotData || s.portersData || s.macroTeiData;
     const hasTables = (s.tables && s.tables.length > 0) || s.keyTable;
     const hasCharts = (s.charts && s.charts.length > 0) || s.chartSpec;
     const hasProfiles = s.competitorProfiles && s.competitorProfiles.length > 0;
-    const hasBcg = s.bcgMatrixData && s.bcgMatrixData.length > 0;
     const hasSubsections = s.subsections && s.subsections.length > 0;
-    // Valid if it has: body OR special data OR (tables/charts) OR profiles/BCG OR subsections
-    const isValid = hasBody || hasSpecialData || hasTables || hasCharts || hasProfiles || hasBcg || hasSubsections;
-    // Log competition_analysis validation details
-    if (s.id === 'competition_analysis') {
-      console.log(`[draftV2] competition_analysis validation: valid=${isValid}, hasBody=${hasBody}, hasProfiles=${hasProfiles}, hasBcg=${hasBcg}, hasTables=${hasTables}, hasCharts=${hasCharts}`);
-    }
-    return isValid;
+    return hasBody || hasTables || hasCharts || hasProfiles || hasSubsections;
   });
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
   if (valid.length < parsed.length) {

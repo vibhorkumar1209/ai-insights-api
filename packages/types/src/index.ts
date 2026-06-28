@@ -453,6 +453,9 @@ export interface IndustryReportScope {
   selectedSegments?: MarketSegmentOption[];
   selectedPlayers?: KeyPlayerOption[];
   allPlayers?: KeyPlayerOption[];
+  // For Competition Analysis section — user's own company context
+  companyName?: string;
+  companyDomain?: string;
 }
 
 export interface MarketSizingData {
