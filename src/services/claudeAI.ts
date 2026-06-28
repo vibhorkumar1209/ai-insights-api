@@ -1594,7 +1594,7 @@ export async function extractScopeWithWizard(
     key_players_analysis: 'Key Players Analysis',
     regulatory_overview: 'Regulatory Overview',
     forecast: 'Market Forecast',
-    company_competition_analysis: 'Competition Analysis',
+    company_competition_analysis: 'Key Competitors',
     ma_jv_partnerships: 'M&A, JVs and Partnerships',
   };
   const userSelectedSections = input.selectedSections?.length
@@ -1947,7 +1947,7 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     subsectionHint: 'Include 1-2 bodyParagraphs introducing the forecast: type of growth (linear/exponential/step), key factors driving growth, which market segments are primary growth engines.',
   },
   company_competition_analysis: {
-    title: 'Competition Analysis',
+    title: 'Key Competitors',
     tableHint: 'Return a "tables" array with ONE table titled "Competitor Profiles". Headers: ["Competitor Name", "Market Focus", "Key Products / Services", "Revenue", "Market Share", "Core Competitive Overlap", "Recent News", "JV / M&A / Partnerships", "Other Insights"]. Include the top 5 competitors of the user\'s company (companyName/companyDomain provided in scope). Each cell must be a concise string — use "N/A" where data is unavailable. Revenue and Market Share should include source year (e.g. "$12B (2024)"). Recent News should be the most impactful headline from the last 12 months. JV/M&A/Partnerships should list deals from the last 24 months. Other Insights can include technology bets, go-to-market shifts, or analyst commentary.',
     chartHint: 'Include horizontal_bar chartSpec showing estimated market share % for the 5 competitors. Data format: [{label:"Competitor A", value:18}, ...] sorted descending.',
     subsectionHint: 'bodyParagraphs[0]: 2–3 sentences introducing the competitive context — who the top 5 rivals are, what they compete on (price, product depth, geography, partnerships), and how the landscape has shifted in the last 12 months. No subsections.',
