@@ -1,11 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials } from './yahooFinance';
-import {
-  fmpSearchTicker, fmpSearchByDomain, fmpFetchProfile, fmpFetchIncomeStatement,
-  fmpFetchBalanceSheet, fmpFetchCashFlow, fmpFetchQuarterly,
-  fmpFetchSegmentRevenue, fmpFetchGeographicRevenue,
-} from './fmpFinance';
 import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker } from './claudeAI';
 
@@ -14,7 +9,6 @@ import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTick
 const jobs = new Map<string, FinancialAnalysisResult>();
 const JOB_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-// Cleanup stale jobs every 30 minutes
 setInterval(() => {
   const cutoff = Date.now() - JOB_TTL_MS;
   for (const [id, job] of jobs.entries()) {
@@ -72,12 +66,9 @@ export function getFinancialJob(jobId: string): FinancialAnalysisResult | undefi
 
 // ── Main orchestrator ──────────────────────────────────────────────────────────
 // Flow:
-//   PUBLIC  → detectTicker (Yahoo Finance, fast) → Finance API annual + quarterly
-//             (parallel, up to 60 s each) → Claude synthesis
-//   PRIVATE → Parallel.AI research (up to 3 min) → Claude synthesis
-//
-// Parallel.AI is NOT called on the public path, keeping public-company
-// analysis under ~3 minutes total.
+//   PUBLIC  → detectTicker (Yahoo Finance) → Yahoo quoteSummary → Puppeteer scraper
+//             → Claude synthesis
+//   PRIVATE → Parallel.AI research → Claude synthesis
 
 export async function runFinancialAnalysis(
   jobId: string,
@@ -88,7 +79,7 @@ export async function runFinancialAnalysis(
     let job = update(jobId, {
       status: 'detecting',
       progress: 10,
-      currentStep: `Searching for ${input.companyName} on Google Finance…`,
+      currentStep: `Searching for ${input.companyName} on Yahoo Finance…`,
     });
     emit(jobId, 'progress', job);
 
@@ -97,102 +88,15 @@ export async function runFinancialAnalysis(
     let exchange: string | undefined;
 
     if (input.isPublic === false) {
-      // User explicitly forced private — skip ticker lookup
       isPublic = false;
     } else {
-      // ── Domain-first lookup (most precise) ──────────────────────────────────
-      // Priority when domain provided: FMP domain API → Claude (domain context) → Yahoo
-      // FMP domain API is fast but only covers well-indexed companies (mostly US/EU).
-      // Claude fallback handles LATAM/niche domains FMP doesn't have mapped.
-      let domainTicker: string | null = null;
-      if (input.companyDomain) {
-        domainTicker = await fmpSearchByDomain(input.companyDomain).catch(() => null);
-        if (domainTicker) {
-          console.log('[financialAnalysis] Domain lookup resolved ticker:', domainTicker, 'from', input.companyDomain);
-        } else {
-          // FMP doesn't have this domain — ask Claude which knows brand→ticker mappings.
-          // Claude returns tickers in priority order (OTC/ADR first for data availability).
-          // Try each in sequence until FMP confirms one has income data.
-          console.log('[financialAnalysis] FMP domain lookup failed for', input.companyDomain, '— trying Claude');
-          const claudeResult = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
-          const candidates: string[] = [];
-          if (claudeResult?.ticker) candidates.push(claudeResult.ticker);
-          // Also include any additional tickers Claude returned
-          const extra = (claudeResult as { allTickers?: Array<{ticker: string}> } | null)?.allTickers || [];
-          for (const t of extra) {
-            if (t.ticker && !candidates.includes(t.ticker)) candidates.push(t.ticker);
-          }
-          for (const candidate of candidates) {
-            try {
-              const incomeCheck = await fmpFetchIncomeStatement(candidate, 1);
-              if (incomeCheck && incomeCheck.revenueHistory.some(r => r.revenue && r.revenue !== 0)) {
-                domainTicker = candidate;
-                console.log('[financialAnalysis] Claude ticker', candidate, 'confirmed with FMP data');
-                break;
-              } else {
-                console.log('[financialAnalysis] Claude ticker', candidate, 'has no FMP income data — trying next');
-              }
-            } catch {
-              console.log('[financialAnalysis] FMP check failed for Claude ticker', candidate);
-            }
-          }
-          // If no candidate has FMP data, still use Claude's first suggestion so we treat as public
-          if (!domainTicker && candidates.length > 0) {
-            domainTicker = candidates[0];
-            console.log('[financialAnalysis] No FMP data found for any Claude ticker — using', domainTicker, 'anyway');
-          }
-        }
-      }
+      // Yahoo Finance ticker search (handles brand names, domain hints, global exchanges)
+      let tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
+      console.log('[financialAnalysis] Yahoo detectTicker result:', JSON.stringify(tickerResult));
 
-      // Run FMP name search and Yahoo in parallel for cross-validation
-      const [fmpResult, yahooResult] = await Promise.allSettled([
-        fmpSearchTicker(input.companyName),
-        detectTicker(input.companyName, input.companyDomain),
-      ]);
-
-      if (fmpResult.status === 'rejected') {
-        console.error('[financialAnalysis] DEBUG fmpSearchTicker threw:', fmpResult.reason);
-      }
-      if (yahooResult.status === 'rejected') {
-        console.error('[financialAnalysis] DEBUG detectTicker threw:', yahooResult.reason);
-      }
-
-      const fmpRaw = fmpResult.status === 'fulfilled' ? fmpResult.value : null;
-      const yahooTicker = yahooResult.status === 'fulfilled' ? yahooResult.value : null;
-      console.log('[financialAnalysis] DEBUG fmpRaw:', fmpRaw, '| yahooTicker:', JSON.stringify(yahooTicker));
-      // Allow up to 20 chars to cover long LATAM tickers e.g. GRUPOSURA.CL, ECOPETROL.CL, FALABELLA.SN
-      const fmpTicker = (fmpRaw && /^[A-Z0-9.]{1,20}$/.test(fmpRaw)) ? fmpRaw : null;
-
-      // Priority: domain lookup > Yahoo (good at brand names) > FMP name search
-      let resolvedTicker: string | undefined;
-      let resolvedExchange: string | undefined;
-
-      if (domainTicker) {
-        resolvedTicker = domainTicker;
-        resolvedExchange = yahooTicker?.exchange || '';
-        console.log('[financialAnalysis] Using domain-resolved ticker:', domainTicker);
-      } else if (yahooTicker?.ticker) {
-        // Yahoo result wins — it handles brand names and non-US exchanges well
-        resolvedTicker = yahooTicker.ticker;
-        resolvedExchange = yahooTicker.exchange;
-        if (fmpTicker && fmpTicker !== yahooTicker.ticker) {
-          console.log('[financialAnalysis] FMP suggested', fmpTicker, 'but Yahoo resolved', yahooTicker.ticker, '— using Yahoo');
-        } else if (!fmpTicker) {
-          console.log('[financialAnalysis] FMP found nothing — using Yahoo ticker:', yahooTicker.ticker);
-        }
-      } else if (fmpTicker) {
-        resolvedTicker = fmpTicker;
-        resolvedExchange = '';
-        console.log('[financialAnalysis] Using FMP-only ticker:', fmpTicker);
-      }
-
-      let tickerResult = resolvedTicker ? { ticker: resolvedTicker, exchange: resolvedExchange || '' } : null;
-      console.log('[financialAnalysis] ticker detection result:', tickerResult);
-
-      // Last resort: if neither FMP nor Yahoo found a ticker, ask Claude
-      // This handles cases like "Grupo Sura" where brand names diverge from legal names
+      // Last resort: ask Claude (knows brand→ticker mappings for LATAM/niche companies)
       if (!tickerResult) {
-        console.log('[financialAnalysis] No ticker found via FMP/Yahoo — trying Claude lookup');
+        console.log('[financialAnalysis] Yahoo found nothing — trying Claude lookup');
         const claudeTicker = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
         if (claudeTicker) {
           tickerResult = claudeTicker;
@@ -201,12 +105,10 @@ export async function runFinancialAnalysis(
       }
 
       if (input.isPublic === true) {
-        // User forced public — accept even if ticker not found
         isPublic = true;
         ticker   = tickerResult?.ticker;
         exchange = tickerResult?.exchange;
       } else {
-        // Auto-detect: public iff a ticker was found
         isPublic = !!tickerResult;
         ticker   = tickerResult?.ticker;
         exchange = tickerResult?.exchange;
@@ -231,8 +133,9 @@ export async function runFinancialAnalysis(
 }
 
 // ── Public path ────────────────────────────────────────────────────────────────
-// 1. Call Finance API annual + quarterly in parallel (up to 60 s each)
-// 2. Synthesise with Claude (Finance API data + training knowledge for segment/geo)
+// 1. yahoo-finance2 quoteSummary (primary — fast, global)
+// 2. Puppeteer scraper via Google Finance (fallback for tickers quoteSummary can't serve)
+// 3. Claude synthesis (enriches with segment/geo insights from training + Parallel.AI)
 
 async function runPublicPath(
   jobId: string,
@@ -244,142 +147,74 @@ async function runPublicPath(
     status: 'fetching',
     progress: 25,
     currentStep: ticker
-      ? `Fetching financial data for ${ticker} via FMP…`
+      ? `Fetching financial data for ${ticker} via Yahoo Finance…`
       : `Fetching financial data for ${input.companyName}…`,
   });
   emit(jobId, 'progress', job);
 
   let apiData: Partial<FinancialAnalysisResult> = {};
-  let usedFMP = false;
-  let fmpContext = ''; // For FMP segment/geo data passed to Claude
+  let segmentContext = '';
 
   if (ticker) {
-    // ── Primary: FMP (Financial Modeling Prep) ──────────────────────────────────
-    console.log('[financialAnalysis] Trying FMP as primary source for:', ticker);
-    const [fmpProfile, fmpIncome, fmpBS, fmpCF, fmpQuarterly, fmpSegment, fmpGeographic] = await Promise.allSettled([
-      fmpFetchProfile(ticker),
-      fmpFetchIncomeStatement(ticker, 5),
-      fmpFetchBalanceSheet(ticker),
-      fmpFetchCashFlow(ticker),
-      fmpFetchQuarterly(ticker),
-      fmpFetchSegmentRevenue(ticker),
-      fmpFetchGeographicRevenue(ticker),
-    ]);
-
-    const profileData   = fmpProfile.status === 'fulfilled' ? fmpProfile.value : null;
-    const incomeData    = fmpIncome.status === 'fulfilled' ? fmpIncome.value : null;
-    const bsData        = fmpBS.status === 'fulfilled' ? fmpBS.value : null;
-    const cfData        = fmpCF.status === 'fulfilled' ? fmpCF.value : null;
-    const quarterlyData = fmpQuarterly.status === 'fulfilled' ? fmpQuarterly.value : null;
-    const segmentData   = fmpSegment.status === 'fulfilled' ? fmpSegment.value : null;
-    const geoData       = fmpGeographic.status === 'fulfilled' ? fmpGeographic.value : null;
-
-    // Build FMP segment/geo context for Claude synthesis
-    if (segmentData?.data) {
-      fmpContext += `\n### FMP Segment Revenue Data\n${JSON.stringify(segmentData.data)}\n`;
-    }
-    if (geoData?.data) {
-      fmpContext += `\n### FMP Geographic Revenue Data\n${JSON.stringify(geoData.data)}\n`;
+    // ── Primary: yahoo-finance2 quoteSummary ───────────────────────────────────
+    let quoteSummaryDone = false;
+    try {
+      console.log('[financialAnalysis] Trying yahoo-finance2 quoteSummary for:', ticker);
+      const qs = await fetchYahooQuoteSummaryFinancials(ticker);
+      if (qs.revenueHistory.length > 0) {
+        apiData = {
+          companyInfo:    qs.companyInfo,
+          currency:       qs.currency,
+          revenueHistory: qs.revenueHistory,
+          marginHistory:  qs.marginHistory,
+          plStatement:    qs.plStatement,
+        };
+        quoteSummaryDone = true;
+        console.log('[financialAnalysis] yahoo-finance2 quoteSummary succeeded:', qs.revenueHistory.length, 'years');
+      }
+    } catch (err) {
+      console.warn('[financialAnalysis] yahoo-finance2 quoteSummary failed:', err instanceof Error ? err.message : err);
     }
 
-    // Extract parsed segment/geo data for direct use in frontend
-    const segmentRevenue = segmentData?.parsed && segmentData.parsed.length > 0 ? segmentData.parsed : undefined;
-    const geoRevenue = geoData?.parsed && geoData.parsed.length > 0 ? geoData.parsed : undefined;
+    // ── Fallback: Puppeteer scraper (Google Finance) ───────────────────────────
+    if (!quoteSummaryDone) {
+      const searchString = buildSearchString(ticker, exchange || '');
+      console.log('[financialAnalysis] Puppeteer scraper fallback, search string:', searchString);
 
-    // When FMP has no segment/geo data (common for non-US companies), run a targeted
-    // Parallel.AI search so Claude has real source material rather than guessing
-    if (!segmentRevenue && !geoRevenue && ticker) {
-      const currency = incomeData?.currency || 'USD';
-      try {
-        const segResearch = await researchCompanySegments(input.companyName, ticker, currency);
-        if (segResearch && segResearch.trim().length > 50) {
-          fmpContext += `\n### Segment & Geographic Revenue Research\n${segResearch}\n`;
-          console.log('[financialAnalysis] Segment/geo research retrieved via Parallel.AI for:', ticker);
-        }
-      } catch (err) {
-        console.warn('[financialAnalysis] Segment research failed (non-blocking):', err instanceof Error ? err.message : err);
+      const [annualResult, quarterlyResult] = await Promise.allSettled([
+        fetchAnnualFinancials(searchString),
+        fetchQuarterlyFinancials(searchString),
+      ]);
+
+      if (annualResult.status === 'fulfilled') {
+        const a = annualResult.value;
+        apiData = {
+          companyInfo:    a.companyInfo,
+          currency:       a.currency,
+          revenueHistory: a.revenueHistory,
+          marginHistory:  a.marginHistory,
+          plStatement:    a.plStatement,
+        };
+      } else {
+        console.error('[financialAnalysis] Puppeteer annual fetch failed:', annualResult.reason);
+      }
+
+      if (quarterlyResult.status === 'fulfilled') {
+        apiData.quarterlyHistory = quarterlyResult.value;
       }
     }
 
-    // FMP is considered successful only if income data has meaningful revenue figures
-    // (not just a null-free but all-zero response, which can happen for LATAM companies)
-    const hasMeaningfulFMPData = !!incomeData && incomeData.revenueHistory.some(r => r.revenue && r.revenue !== 0);
-    if (hasMeaningfulFMPData) {
-      usedFMP = true;
-      console.log('[financialAnalysis] FMP data retrieved successfully');
-      apiData = {
-        companyInfo:     profileData?.companyInfo,
-        currency:        incomeData.currency || profileData?.currency || 'USD',
-        revenueHistory:  incomeData.revenueHistory,
-        marginHistory:   incomeData.marginHistory,
-        plStatement:     incomeData.plStatement,
-        balanceSheet:    bsData || undefined,
-        cashFlow:        cfData || undefined,
-        quarterlyHistory: quarterlyData?.quarterly,
-        segmentRevenue:  segmentRevenue,
-        geoRevenue:      geoRevenue,
-      };
-    } else {
-      // Even if income data is unavailable (e.g. non-US exchange requires FMP premium),
-      // still store the profile so the validation gate knows this is a real listed company.
-      if (profileData?.companyInfo) {
-        apiData.companyInfo = profileData.companyInfo;
-        apiData.currency    = profileData.currency || 'USD';
+    // ── Segment/geo research via Parallel.AI (non-blocking) ───────────────────
+    // Runs when Yahoo doesn't provide segment breakdown (which is almost always)
+    try {
+      const currency = apiData.currency || 'USD';
+      const segResearch = await researchCompanySegments(input.companyName, ticker, currency);
+      if (segResearch && segResearch.trim().length > 50) {
+        segmentContext = `\n### Segment & Geographic Revenue Research\n${segResearch}\n`;
+        console.log('[financialAnalysis] Segment/geo research retrieved via Parallel.AI for:', ticker);
       }
-      console.warn('[financialAnalysis] FMP returned no meaningful revenue data for', ticker, '— falling back to Google Finance scraper');
-    }
-
-    // ── Fallback: Yahoo Finance ────────────────────────────────────────────────
-    if (!usedFMP) {
-      // First try: yahoo-finance2 quoteSummary (works for all tickers including non-US)
-      let quoteSummaryDone = false;
-      try {
-        console.log('[financialAnalysis] Trying yahoo-finance2 quoteSummary for:', ticker);
-        const qs = await fetchYahooQuoteSummaryFinancials(ticker);
-        if (qs.revenueHistory.length > 0) {
-          apiData = {
-            companyInfo:    qs.companyInfo,
-            currency:       qs.currency,
-            revenueHistory: qs.revenueHistory,
-            marginHistory:  qs.marginHistory,
-            plStatement:    qs.plStatement,
-          };
-          quoteSummaryDone = true;
-          console.log('[financialAnalysis] yahoo-finance2 quoteSummary succeeded:', qs.revenueHistory.length, 'years');
-        }
-      } catch (err) {
-        console.warn('[financialAnalysis] yahoo-finance2 quoteSummary failed:', err instanceof Error ? err.message : err);
-      }
-
-      // Second try: Puppeteer scraper (works for US/some non-US via Google Finance codes)
-      if (!quoteSummaryDone) {
-        const searchString = buildSearchString(ticker, exchange || '');
-        console.log('[financialAnalysis] Puppeteer scraper fallback, search string:', searchString);
-
-        const [annualResult, quarterlyResult] = await Promise.allSettled([
-          fetchAnnualFinancials(searchString),
-          fetchQuarterlyFinancials(searchString),
-        ]);
-
-        if (annualResult.status === 'fulfilled') {
-          const a = annualResult.value;
-          apiData = {
-            companyInfo:    a.companyInfo,
-            currency:       a.currency,
-            revenueHistory: a.revenueHistory,
-            marginHistory:  a.marginHistory,
-            plStatement:    a.plStatement,
-          };
-        } else {
-          console.error('[financialAnalysis] Puppeteer annual fetch failed:', annualResult.reason);
-        }
-
-        if (quarterlyResult.status === 'fulfilled') {
-          apiData.quarterlyHistory = quarterlyResult.value;
-        } else {
-          console.error('[financialAnalysis] Puppeteer quarterly fetch failed:', quarterlyResult.reason);
-        }
-      }
+    } catch (err) {
+      console.warn('[financialAnalysis] Segment research failed (non-blocking):', err instanceof Error ? err.message : err);
     }
 
     // Stream partial data so charts render while Claude synthesises
@@ -389,27 +224,17 @@ async function runPublicPath(
     console.warn('[financialAnalysis] No ticker found — proceeding to Claude synthesis with empty data');
   }
 
-  // ── Ticker validation gate ───────────────────────────────────────────────────
-  // A resolved ticker can still be wrong (e.g. brand-name fuzzy match landing on
-  // an unrelated small-cap with the same letters) or simply have no usable data.
-  // If neither FMP nor the Yahoo fallback produced real revenue figures, this
-  // is not a usable public company match — fall back to the private path
-  // instead of synthesizing a profile out of "undisclosed"/"N/A" everywhere.
-  // EXCEPTION: if the FMP profile confirms the company by name, the ticker is correct
-  // but income data may be behind a paywall (e.g. non-US exchanges require FMP premium).
-  // In that case, stay on the public path and let Claude synthesize from training knowledge.
+  // ── Ticker validation gate ─────────────────────────────────────────────────
   const hasMeaningfulData   = (apiData.revenueHistory?.some((r) => r.revenue && r.revenue !== 0)) ?? false;
   const profileConfirmsName = !!apiData.companyInfo?.name;
   if (ticker && !hasMeaningfulData && !profileConfirmsName && input.isPublic !== true) {
-    console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private company path`);
+    console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private path`);
     const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined });
     emit(jobId, 'progress', job0);
     return runPrivatePath(jobId, input);
   }
 
-  // ── Step 2: Claude synthesis ─────────────────────────────────────────────────
-  // When FMP provided BS/CF, pass them through so Claude knows not to extract.
-  // Claude uses FMP segment/geo data (if available) + training knowledge
+  // ── Claude synthesis ───────────────────────────────────────────────────────
   job = update(jobId, {
     status: 'synthesizing',
     progress: 60,
@@ -417,7 +242,7 @@ async function runPublicPath(
   });
   emit(jobId, 'progress', job);
 
-  const insights = await synthesizeFinancialInsights(input, apiData, fmpContext, (accumulated) => {
+  const insights = await synthesizeFinancialInsights(input, apiData, segmentContext, (accumulated) => {
     const synthProgress = Math.min(95, 60 + Math.floor((accumulated.length / 5000) * 35));
     const j = update(jobId, { progress: synthProgress });
     emit(jobId, 'progress', j);
@@ -439,7 +264,6 @@ async function runPublicPath(
       ? apiData.plStatement
       : insights.plStatementExtracted?.length ? insights.plStatementExtracted : undefined;
 
-  // For BS/CF: FMP provides these directly; Claude is fallback only
   const finalBalanceSheet =
     (apiData.balanceSheet?.length ?? 0) > 0
       ? apiData.balanceSheet
@@ -456,7 +280,7 @@ async function runPublicPath(
     progress:        100,
     currentStep:     'Complete',
     completedAt,
-    dataSource:      usedFMP ? 'FMP' : 'Google Finance',
+    dataSource:      'Yahoo Finance',
     companyInfo:     apiData.companyInfo,
     currency:        apiData.currency,
     quarterlyHistory: apiData.quarterlyHistory?.length ? apiData.quarterlyHistory : undefined,
@@ -475,19 +299,13 @@ async function runPublicPath(
     keyHighlights:      insights.keyHighlights,
     chartInsights:      insights.chartInsights?.length ? insights.chartInsights : undefined,
     geoSegmentInsights: insights.geoSegmentInsights?.length ? insights.geoSegmentInsights : undefined,
-    segmentRevenue:  (apiData.segmentRevenue?.length ?? 0) > 0
-      ? apiData.segmentRevenue
-      : insights.segmentRevenue?.length ? insights.segmentRevenue : undefined,
-    geoRevenue:      (apiData.geoRevenue?.length ?? 0) > 0
-      ? apiData.geoRevenue
-      : insights.geoRevenue?.length ? insights.geoRevenue : undefined,
+    segmentRevenue:  insights.segmentRevenue?.length ? insights.segmentRevenue : undefined,
+    geoRevenue:      insights.geoRevenue?.length ? insights.geoRevenue : undefined,
   });
   emit(jobId, 'result', job);
 }
 
 // ── Private path ───────────────────────────────────────────────────────────────
-// 1. Parallel.AI research (Crunchbase / Tracxn / LinkedIn / news)
-// 2. Claude synthesis → estimated revenue, margins, funding info
 
 async function runPrivatePath(
   jobId: string,

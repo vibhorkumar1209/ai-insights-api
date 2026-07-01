@@ -700,7 +700,7 @@ export interface FinancialAnalysisResult {
   ticker?: string;
   exchange?: string;
   isPublic?: boolean;
-  dataSource?: 'FMP' | 'Google Finance' | 'Parallel.AI';
+  dataSource?: 'Yahoo Finance' | 'Google Finance' | 'Parallel.AI';
 
   // ── Public company ──────────────────────────────────────────────
   companyInfo?:      CompanyInfo;
@@ -1165,3 +1165,35 @@ export interface VucaAnalysisJob {
   completedAt?: string;
 }
 
+
+// ── Revenue Module ─────────────────────────────────────────────────────────────
+
+export interface RevenueInput {
+  companyName: string;
+  companyDomain?: string;
+}
+
+export interface RevenueResult {
+  jobId: string;
+  status: 'pending' | 'detecting' | 'fetching' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName: string;
+  // Resolved ticker info
+  ticker?: string;
+  exchange?: string;
+  isPublic?: boolean;
+  // Revenue data — same values as Financial Analysis module
+  latestRevenue?: string;       // formatted e.g. "$245.1B"
+  latestRevenueRaw?: number;    // raw number in base currency units
+  revenueYear?: string;         // fiscal year e.g. "2024"
+  currency?: string;            // ISO code e.g. "USD"
+  yoyGrowth?: number;           // % e.g. 8.3
+  previousRevenue?: string;     // formatted prior year
+  previousYear?: string;
+  dataSource?: string;          // 'Yahoo Finance' | 'Parallel.AI'
+  companyInfo?: CompanyInfo;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
