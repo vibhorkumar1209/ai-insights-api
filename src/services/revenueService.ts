@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { RevenueInput, RevenueResult } from '@ai-insights/types';
-import { detectTicker, fetchYahooQuoteSummaryFinancials } from './yahooFinance';
+import { detectTicker, fetchYahooQuoteSummaryFinancials, fetchAnnualFinancials, buildSearchString } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
 import { researchPrivateCompany } from './parallelAI';
 import { synthesizePrivateCompany } from './claudeAI';
@@ -66,19 +66,20 @@ export function getRevenueJob(jobId: string): RevenueResult | undefined {
 
 export async function runRevenueJob(jobId: string, input: RevenueInput): Promise<void> {
   try {
-    // Step 1: Ticker detection
+    // Step 1: Ticker detection — skip yahoo-finance2 (rate-limited), go straight to Claude
     let job = update(jobId, {
       status: 'detecting',
       progress: 20,
-      currentStep: `Looking up ${input.companyName} on Yahoo Finance…`,
+      currentStep: `Looking up ${input.companyName}…`,
     });
     emit(jobId, 'progress', job);
 
-    let tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
+    // Claude lookup doesn't hit Yahoo's crumb endpoint
+    let tickerResult = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
 
+    // Only try detectTicker (yahoo-finance2) as last resort if Claude couldn't find it
     if (!tickerResult) {
-      const claudeTicker = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
-      if (claudeTicker) tickerResult = claudeTicker;
+      tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
     }
 
     const ticker   = tickerResult?.ticker;
@@ -89,7 +90,7 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
     emit(jobId, 'progress', job);
 
     if (isPublic && ticker) {
-      // Step 2: Fetch revenue via Yahoo Finance (same source as Financial Analysis)
+      // Step 2: Fetch revenue via Yahoo Finance
       job = update(jobId, {
         status: 'fetching',
         progress: 55,
@@ -97,8 +98,16 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
       });
       emit(jobId, 'progress', job);
 
-      const data = await fetchYahooQuoteSummaryFinancials(ticker);
-      const history = data.revenueHistory;
+      // Try Puppeteer scraper first (avoids Yahoo crumb/429 entirely),
+      // then fall back to yahoo-finance2 quoteSummary
+      const searchStr = buildSearchString(ticker, tickerResult?.exchange || '');
+      let data = await fetchAnnualFinancials(searchStr).catch(async (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[revenue] Puppeteer scraper failed (${msg}), trying yahoo-finance2…`);
+        return fetchYahooQuoteSummaryFinancials(ticker).catch(() => null);
+      });
+
+      const history = data?.revenueHistory ?? [];
 
       if (history.length > 0) {
         const latest   = history[history.length - 1];
@@ -110,8 +119,8 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
           currentStep:     'Complete',
           completedAt:     new Date().toISOString(),
           dataSource:      'Yahoo Finance',
-          companyInfo:     data.companyInfo,
-          currency:        data.currency,
+          companyInfo:     data?.companyInfo,
+          currency:        data?.currency,
           latestRevenue:   latest.revenueFormatted,
           latestRevenueRaw: latest.revenue,
           revenueYear:     latest.year,

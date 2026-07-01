@@ -1947,9 +1947,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   key_players_analysis: {
     title: 'Key Players Analysis',
-    tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Key Strength"]. List all players (selected + unselected) sorted by market share descending.',
-    chartHint: 'Include horizontal_bar chartSpec showing market share %. Data format: [{label:"Company A",value:25},{label:"Company B",value:20},...] sorted by value descending.',
-    subsectionHint: 'First bodyParagraph: competitive landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), top 3-5 players with market shares, competitive dynamics (price-led, innovation-led, etc). Include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for KEY PLAYERS (selected in input). Do NOT include subsections. Do NOT include bcgMatrixData.',
+    tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Key Strength"]. ONLY list the selected KEY PLAYERS (from KEY PLAYERS FOR PROFILING in scope). Do NOT add unselected or other players to the table.',
+    chartHint: 'Include horizontal_bar chartSpec showing market share % for selected key players only. Data format: [{label:"Company A",value:25},{label:"Company B",value:20},...] sorted by value descending.',
+    subsectionHint: 'First bodyParagraph: competitive landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), mention ALL known players briefly (selected + others) with market shares, competitive dynamics (price-led, innovation-led, etc). Then include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for the KEY PLAYERS FOR PROFILING listed in the scope — do NOT profile players not in that list. Do NOT include subsections. Do NOT include bcgMatrixData.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',

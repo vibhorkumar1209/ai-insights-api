@@ -53,10 +53,18 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
     return;
   }
 
+  // Only include competition section if BOTH company name AND domain are present
+  const hasFullCompanyContext = !!(companyName?.trim() && companyDomain?.trim());
+  const filteredSections = scope.selectedSections
+    ? (scope.selectedSections as string[]).filter(
+        (s: string) => s !== 'company_competition_analysis' || hasFullCompanyContext
+      )
+    : undefined;
+
   // Merge selections into scope
   const enrichedScope = {
     ...scope,
-    selectedSections: scope.selectedSections || undefined,
+    selectedSections: filteredSections,
     selectedSegments: selectedSegments || [],
     selectedPlayers: selectedPlayers || [],
     allPlayers: allPlayers || selectedPlayers || [],
