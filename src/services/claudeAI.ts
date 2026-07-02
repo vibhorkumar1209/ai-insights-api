@@ -1650,8 +1650,8 @@ Return ONLY valid JSON with this exact shape:
     { "id": "seg_1", "label": "Organized vs Unorganized", "type": "organized", "selected": true, "subSegments": ["Organized Market", "Unorganized Market"] },
     { "id": "seg_2", "label": "By Geography", "type": "geo", "selected": true, "subSegments": ["North America", "Europe", "Asia-Pacific", "Middle East Africa", "Latin America", "Emerging Markets"] },
     { "id": "seg_3", "label": "By Product Type", "type": "product_type", "selected": true, "subSegments": ["Product Type A", "Product Type B", "Product Type C", "Product Type D", "Product Type E"] },
-    { "id": "seg_4", "label": "By Application", "type": "application", "selected": true, "subSegments": ["Application 1", "Application 2", "Application 3", "Application 4", "Application 5", "Application 6"] },
-    { "id": "seg_5", "label": "By Distribution Channel", "type": "distribution", "selected": true, "subSegments": ["Direct Sales", "Distributors", "E-commerce", "Retail", "OEM"] },
+    { "id": "seg_4", "label": "By Application", "type": "application", "selected": false, "subSegments": ["Application 1", "Application 2", "Application 3", "Application 4", "Application 5", "Application 6"] },
+    { "id": "seg_5", "label": "By Distribution Channel", "type": "distribution", "selected": false, "subSegments": ["Direct Sales", "Distributors", "E-commerce", "Retail", "OEM"] },
     { "id": "seg_6", "label": "By Customer Segment", "type": "customer_segment", "selected": false, "subSegments": ["Enterprise", "Mid-Market", "SMB", "Startups"] },
     { "id": "seg_7", "label": "By Price Tier", "type": "pricing", "selected": false, "subSegments": ["Premium", "Mid-Range", "Budget", "Entry-Level"] }
   ],
@@ -1666,6 +1666,7 @@ Return ONLY valid JSON with this exact shape:
 
 RULES:
 - Suggest 6-10 market segments. Each has 3-6 sub-segments (be exhaustive).
+- suggestedSegments: mark ONLY the top 3 most important segmentation dimensions as "selected": true (typically Organized/Unorganized, Geography, Product Type, or whichever 3 are most material to this industry). ALL remaining segments MUST be "selected": false. The report will only analyse segments marked true — do not over-select.
 - Segments must cover ALL major market dimensions: geography, product type, application, channel, customer segment, technology, price tier, use case.
 - Each segment: comprehensive sub-segment list covering the full market breakdown for that dimension.
 - Example for "By Geography": North America, Europe, Asia-Pacific, Middle East Africa, Latin America, Emerging Markets (6 items).
@@ -1937,7 +1938,7 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     title: 'Market Size by Segment',
     tableHint: 'For each segment subsection, include keyTable with headers: ["Sub-segment", "Market Size", "% of Segment", "CAGR", "Key Players"]. Show ALL sub-segments from input. CRITICAL: For each year, the sum of all sub-segment market sizes MUST match the total market size declared in the Market Overview section for that same year (tolerance: ±2% for rounding). If Market Overview shows 2025 total = $75.2B, all segment sub-segments for 2025 must sum to approximately $75.2B.',
     chartHint: 'For each segment, build stacked_bar chart: data=[{label:"2024","<sub1>":<val>,"<sub2>":<val>,"cagrTrend":<pct>},{label:"2025",...}], series=[{key:"<sub1>",name:"Sub-seg 1",type:"bar",stack:"segment"},{key:"cagrTrend",name:"CAGR %",type:"line",yAxisId:"right"}].',
-    subsectionHint: 'Create ONE subsection per selected segment (e.g., "By Geography", "By Product Type"). Each subsection: title=segment name, content=3-5 bullets analyzing that segment\'s breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. If no segments provided, identify 4-6 from research. YEAR PRIORITY: Market sizing prioritizes 2025 (base year), then 2024, then 2023. Ensure all years reference appropriate historical data.',
+    subsectionHint: 'Create ONE subsection PER SEGMENT LISTED IN THE "MARKET SEGMENTS" CONTEXT ABOVE — and ONLY those segments (e.g., "By Geography", "By Product Type"). Do NOT create subsections for any other segmentation dimension, even if research data suggests additional ways to segment the market. If the MARKET SEGMENTS context is empty, identify 4-6 from research as a fallback. Each subsection: title=segment name (exactly as given), content=3-5 bullets analyzing that segment\'s breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. YEAR PRIORITY: Market sizing prioritizes 2025 (base year), then 2024, then 2023. Ensure all years reference appropriate historical data.',
   },
   market_dynamics: {
     title: 'Market Dynamics',
@@ -1970,9 +1971,9 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   company_competition_analysis: {
     title: 'Key Competitors',
-    tableHint: 'Return a "tables" array with ONE table titled "Competitor Profiles". Headers: ["Competitor Name", "Market Focus", "Key Products / Services", "Revenue", "Market Share", "Core Competitive Overlap", "Recent News", "JV / M&A / Partnerships", "Other Insights"]. Include the top 5 competitors of the user\'s company (companyName/companyDomain provided in scope). Each cell must be a concise string — use "N/A" where data is unavailable. Revenue and Market Share should include source year (e.g. "$12B (2024)"). Recent News should be the most impactful headline from the last 12 months. JV/M&A/Partnerships should list deals from the last 24 months. Other Insights can include technology bets, go-to-market shifts, or analyst commentary.',
-    chartHint: 'Include horizontal_bar chartSpec showing estimated market share % for the 5 competitors. Data format: [{label:"Competitor A", value:18}, ...] sorted descending.',
-    subsectionHint: 'bodyParagraphs[0]: 2–3 sentences introducing the competitive context — who the top 5 rivals are, what they compete on (price, product depth, geography, partnerships), and how the landscape has shifted in the last 12 months. No subsections.',
+    tableHint: 'Return a "tables" array with ONE table titled "Competitor Profiles". Headers: ["Competitor Name", "Market Focus", "Key Products / Services", "Revenue", "Market Share", "Core Competitive Overlap", "Recent News", "JV / M&A / Partnerships", "Other Insights"]. Profile ONLY the competitors named in the USER\'S COMPANY context above (the user-selected competitor list) — do NOT add, substitute, or invent any other competitors, even if research suggests other rivals. Each cell must be a concise string — use "N/A" where data is unavailable. Revenue and Market Share should include source year (e.g. "$12B (2024)"). Recent News should be the most impactful headline from the last 12 months. JV/M&A/Partnerships should list deals from the last 24 months. Other Insights can include technology bets, go-to-market shifts, or analyst commentary.',
+    chartHint: 'Include horizontal_bar chartSpec showing estimated market share % ONLY for the user-selected competitors listed above. Data format: [{label:"Competitor A", value:18}, ...] sorted descending.',
+    subsectionHint: 'bodyParagraphs[0]: 2–3 sentences introducing the competitive context — who the selected rivals are, what they compete on (price, product depth, geography, partnerships), and how the landscape has shifted in the last 12 months. No subsections. Do NOT mention competitors outside the user-selected list.',
   },
   ma_jv_partnerships: {
     title: 'M&A, JVs and Partnerships',
@@ -1982,21 +1983,21 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   swot: {
     title: 'SWOT Analysis',
-    tableHint: 'Return a "tables" array with ONE table titled "SWOT Summary". Headers: ["Dimension", "Key Points"]. Four rows: Strengths, Weaknesses, Opportunities, Threats. Each "Key Points" cell: 3-5 bullet points separated by " • ". Prioritise observations from the last 12 months.',
+    tableHint: 'No table needed. Set keyTable to null.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'bodyParagraphs[0]: 2-3 sentences framing the overall strategic position. No subsections.',
+    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant. Focus on being concise — each item should be 1-2 sentences. Prioritise observations from the last 12 months.',
   },
   porters_five_forces: {
     title: "Porter's Five Forces",
-    tableHint: 'Return a "tables" array with ONE table titled "Five Forces Assessment". Headers: ["Force", "Intensity", "Key Drivers", "Strategic Implication"]. Five rows: Threat of New Entrants, Bargaining Power of Suppliers, Bargaining Power of Buyers, Threat of Substitutes, Competitive Rivalry. Intensity: High / Medium / Low.',
+    tableHint: 'No table needed. Set keyTable to null.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'bodyParagraphs[0]: 2-3 sentences summarising the overall competitive intensity of the industry. No subsections.',
+    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }. Each force needs rating + 3-5 factors + 1-2 sentence description.',
   },
   tei_analysis: {
     title: 'Technology, Economy & Innovation Analysis',
-    tableHint: 'Return a "tables" array with THREE tables:\n1. Title: "Technology Trends", Headers: ["Technology", "Maturity Stage", "Adoption Rate", "Impact on Industry", "Key Players"]. 4-6 rows.\n2. Title: "Economic Indicators", Headers: ["Indicator", "Current Value", "Trend", "Impact"]. 4-6 rows.\n3. Title: "Innovation Pipeline", Headers: ["Innovation / Initiative", "Stage", "Expected Impact", "Timeline"]. 4-6 rows.',
+    tableHint: 'No traditional keyTable. Set keyTable to null.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'bodyParagraphs[0]: 2-3 sentences summarising the technology and innovation landscape. No subsections.',
+    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "macroTeiData": { "items": [{"trigger": "Macroeconomic or technology/innovation trigger name", "impactLevel": "high|medium|low", "description": "Description of the trigger and its relevance to this industry", "examples": "Real-world examples, recent events, data points", "marketSizeImpact": "+X.X% or -X.X% impact on market size"}, ...] }. Include 6-10 triggers spanning macroeconomic factors (interest rates, inflation, trade policy, currency, GDP growth, commodity prices) AND technology/innovation factors (AI adoption, automation, digital transformation, emerging tech disruption) most relevant to this industry.',
   },
 };
 
@@ -2041,8 +2042,8 @@ export async function draftSectionsBatchV2(
   }).join('\n');
 
   const selectedCompNames = scope.selectedCompetitors?.map((c) => c.name) || [];
-  const companyContext = (scope.companyName || scope.companyDomain)
-    ? `\nUSER'S COMPANY (for company_competition_analysis section): ${scope.companyName || ''}${scope.companyDomain ? ` (${scope.companyDomain})` : ''}.${selectedCompNames.length > 0 ? ` Profile ONLY these user-selected competitors (max 5): ${selectedCompNames.join(', ')}. Do NOT add other competitors.` : ` Identify their top 5 competitors in ${scope.industry} and build the competitor comparison table.`}`
+  const companyContext = (scope.companyName || scope.companyDomain) && selectedCompNames.length > 0
+    ? `\nUSER'S COMPANY (for company_competition_analysis section): ${scope.companyName || ''}${scope.companyDomain ? ` (${scope.companyDomain})` : ''}. Profile ONLY these user-selected competitors: ${selectedCompNames.join(', ')}. Do NOT add, substitute, or invent any other competitors.`
     : '';
   const reportDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const maDateContext = `\nREPORT DATE: ${reportDate} — for ma_jv_partnerships, only include deals from the last 12 months (on or after ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}).`;
@@ -2093,7 +2094,10 @@ Each object structure:
   "charts": [{type, title, xLabel, yLabel, yRightLabel, data, series}, ...] OR null (for multi-chart sections like forecast),
   "subsections": [{"title": "...", "content": "paragraph text with • bullets", "keyTable": {...} OR null, "tables": [...] OR null, "chartSpec": {...} OR null, "charts": [...] OR null}] OR null,
   "citations": ["..."],
-  "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null
+  "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null,
+  "swotData": {...} OR null,
+  "portersData": {...} OR null,
+  "macroTeiData": {"items": [...]} OR null
 }
 
 CRITICAL RULES:
@@ -2106,6 +2110,7 @@ CRITICAL RULES:
 - For key_players_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix).
 - For company_competition_analysis: use "tables" array with competitor comparison table; include horizontal_bar chartSpec for market share. The user's company is in scope.companyName / scope.companyDomain — identify their top 5 competitors in this industry.
 - For ma_jv_partnerships: use "tables" array only. Only include deals from the last 12 months. Do NOT fabricate deals.
+- For swot/porters_five_forces/tei_analysis: include ONLY the specialized data field (swotData / portersData / macroTeiData respectively). bodyParagraphs, keyTable, tables, chartSpec, charts, and subsections should all be null or empty for these three sections.
 - For market_size_by_segment: Ensure that for each year shown in the table, the sum of all sub-segment market sizes equals the total market size from Market Overview (tolerance: ±2% for rounding). This maintains consistency across sections.
 - Be specific: cite figures, company names, percentages, dates.
 - EVERY subsection MUST have a non-empty "content" string with substantive bullet-point analysis. Never leave subsection content as "" or null.
@@ -2188,11 +2193,12 @@ CRITICAL RULES:
     const hasCharts = (s.charts && s.charts.length > 0) || s.chartSpec;
     const hasProfiles = s.competitorProfiles && s.competitorProfiles.length > 0;
     const hasSubsections = s.subsections && s.subsections.length > 0;
-    return hasBody || hasTables || hasCharts || hasProfiles || hasSubsections;
+    const hasSpecialData = !!(s.swotData || s.portersData || s.macroTeiData || s.teiData);
+    return hasBody || hasTables || hasCharts || hasProfiles || hasSubsections || hasSpecialData;
   });
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
   if (valid.length < parsed.length) {
-    console.warn(`[draftV2] Filtered out ${parsed.length - valid.length} sections. Filtered:`, (parsed as any[]).filter((s: any) => !valid.includes(s)).map((s: any) => `${s.id} (bodyParagraphs:${s.bodyParagraphs?.length || 0}, tables:${s.tables?.length || 0}, charts:${s.charts?.length || 0}, bcg:${s.bcgMatrixData?.length || 0}, profiles:${s.competitorProfiles?.length || 0})`).join(', '));
+    console.warn(`[draftV2] Filtered out ${parsed.length - valid.length} sections. Filtered:`, (parsed as any[]).filter((s: any) => !valid.includes(s)).map((s: any) => `${s.id} (bodyParagraphs:${s.bodyParagraphs?.length || 0}, tables:${s.tables?.length || 0}, charts:${s.charts?.length || 0}, bcg:${s.bcgMatrixData?.length || 0}, profiles:${s.competitorProfiles?.length || 0}, swot:${!!s.swotData}, porters:${!!s.portersData}, tei:${!!(s.macroTeiData || s.teiData)})`).join(', '));
   }
   return valid;
 }

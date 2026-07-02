@@ -54,7 +54,9 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
   }
 
   // Only include competition section if BOTH company name AND domain are present
-  const hasFullCompanyContext = !!(companyName?.trim() && companyDomain?.trim());
+  // AND the user has actually selected at least one competitor to profile.
+  const hasSelectedCompetitors = Array.isArray(selectedCompetitors) && selectedCompetitors.length > 0;
+  const hasFullCompanyContext = !!(companyName?.trim() && companyDomain?.trim()) && hasSelectedCompetitors;
   const filteredSections = scope.selectedSections
     ? (scope.selectedSections as string[]).filter(
         (s: string) => s !== 'company_competition_analysis' || hasFullCompanyContext

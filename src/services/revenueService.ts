@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { RevenueInput, RevenueResult } from '@ai-insights/types';
-import { detectTicker, fetchYahooQuoteSummaryFinancials, fetchAnnualFinancials, buildSearchString } from './yahooFinance';
+import { detectTicker, fetchAnnualFinancials, buildSearchString } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
 import { researchPrivateCompany } from './parallelAI';
 import { synthesizePrivateCompany } from './claudeAI';
@@ -98,13 +98,14 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
       });
       emit(jobId, 'progress', job);
 
-      // Try Puppeteer scraper first (avoids Yahoo crumb/429 entirely),
-      // then fall back to yahoo-finance2 quoteSummary
+      // yahoo-finance2's quoteSummary requires a crumb token that Yahoo is currently
+      // rate-limiting from shared hosting IPs (429 on every attempt) — skip it entirely
+      // and go straight to the Puppeteer scraper, falling to AI estimate below on failure.
       const searchStr = buildSearchString(ticker, tickerResult?.exchange || '');
-      let data = await fetchAnnualFinancials(searchStr).catch(async (err: unknown) => {
+      const data = await fetchAnnualFinancials(searchStr).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[revenue] Puppeteer scraper failed (${msg}), trying yahoo-finance2…`);
-        return fetchYahooQuoteSummaryFinancials(ticker).catch(() => null);
+        console.warn(`[revenue] Puppeteer scraper failed for ${ticker} (${msg}) — falling back to AI estimate`);
+        return null;
       });
 
       const history = data?.revenueHistory ?? [];
