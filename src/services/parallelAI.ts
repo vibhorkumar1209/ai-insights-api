@@ -602,7 +602,7 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 If you cannot find a credible, sourced revenue figure, return exactly: {"latestRevenue": null}`;
 }
 
-function parseGeminiRevenueJson(text: string): Partial<GeminiRevenueResult> | null {
+function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();
 
@@ -636,7 +636,7 @@ export async function geminiRevenueLookup(
         continue;
       }
 
-      const parsed = parseGeminiRevenueJson(text);
+      const parsed = parseGeminiJson<GeminiRevenueResult>(text);
       if (!parsed) {
         console.warn(`[gemini] Revenue lookup for ${companyName} (simplified=${simplified}) — unparseable response: ${text.slice(0, 200)}`);
         continue;
@@ -657,6 +657,96 @@ export async function geminiRevenueLookup(
       };
     } catch (err) {
       console.warn(`[gemini] Revenue lookup failed for ${companyName} (simplified=${simplified}):`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  return null;
+}
+
+// ── Gemini Google Search grounding — company firmographic profile ────────────
+
+export interface GeminiFirmographicResult {
+  foundedYear?: string;
+  headquartersCity?: string;
+  headquartersState?: string;
+  headquartersCountry?: string;
+  employeeRange?: string;
+  website?: string;
+  linkedinUrl?: string;
+  source?: string;
+}
+
+function buildFirmographicPrompt(companyName: string, domainHint: string, simplified: boolean): string {
+  if (simplified) {
+    return `Look up basic company profile facts for ${companyName}${domainHint}: founding year, headquarters location, employee count, official website, and LinkedIn company page URL.
+
+Reply with ONLY this JSON object, nothing else: {"foundedYear": "<year or null>", "headquartersCity": "<city or null>", "headquartersState": "<state/province or null>", "headquartersCountry": "<country or null>", "employeeRange": "<range or null>", "website": "<url or null>", "linkedinUrl": "<url or null>", "source": "<where this came from>"}`;
+  }
+
+  return `Using Google Search, find firmographic profile information for "${companyName}"${domainHint}.
+
+Look for:
+1. Founded year — the year the company was established
+2. Headquarters location — city, state/province, and country
+3. Employee count — as a range (e.g. "1,001-5,000" or "10,001+") from LinkedIn or the company's own disclosures
+4. Official company website URL
+5. LinkedIn company page URL (must be a real linkedin.com/company/... URL, not a guess)
+
+Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
+{
+  "foundedYear": "year, e.g. 1981",
+  "headquartersCity": "city name",
+  "headquartersState": "state or province, or null if not applicable",
+  "headquartersCountry": "country name",
+  "employeeRange": "range, e.g. 10,001+",
+  "website": "https://...",
+  "linkedinUrl": "https://www.linkedin.com/company/...",
+  "source": "the publication or site the profile came from"
+}
+
+Use null for any field you cannot verify — do not guess or fabricate. If you cannot find the LinkedIn URL with confidence, set "linkedinUrl" to null rather than inventing one.`;
+}
+
+export async function geminiFirmographicLookup(
+  companyName: string,
+  domain?: string
+): Promise<GeminiFirmographicResult | null> {
+  const domainHint = domain ? ` (${domain})` : '';
+
+  for (const simplified of [false, true]) {
+    const prompt = buildFirmographicPrompt(companyName, domainHint, simplified);
+    try {
+      const { text } = await runGeminiGroundedSearch(prompt);
+      if (!text) {
+        console.warn(`[gemini] Firmographic lookup for ${companyName} (simplified=${simplified}) returned empty text`);
+        continue;
+      }
+
+      const parsed = parseGeminiJson<GeminiFirmographicResult>(text);
+      if (!parsed) {
+        console.warn(`[gemini] Firmographic lookup for ${companyName} (simplified=${simplified}) — unparseable response: ${text.slice(0, 200)}`);
+        continue;
+      }
+
+      // Consider it a success if we got at least one useful field
+      const hasAnyField = !!(parsed.foundedYear || parsed.headquartersCity || parsed.employeeRange || parsed.website || parsed.linkedinUrl);
+      if (!hasAnyField) {
+        console.warn(`[gemini] Firmographic lookup for ${companyName} (simplified=${simplified}) — no fields found`);
+        continue;
+      }
+
+      return {
+        foundedYear: parsed.foundedYear || undefined,
+        headquartersCity: parsed.headquartersCity || undefined,
+        headquartersState: parsed.headquartersState || undefined,
+        headquartersCountry: parsed.headquartersCountry || undefined,
+        employeeRange: parsed.employeeRange || undefined,
+        website: parsed.website || undefined,
+        linkedinUrl: parsed.linkedinUrl || undefined,
+        source: parsed.source || undefined,
+      };
+    } catch (err) {
+      console.warn(`[gemini] Firmographic lookup failed for ${companyName} (simplified=${simplified}):`, err instanceof Error ? err.message : err);
     }
   }
 

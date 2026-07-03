@@ -1,31 +1,31 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
-import { createRevenueJob, getRevenueJob, runRevenueJob, subscribeToJob, unsubscribeFromJob } from '../services/revenueService';
+import { createFirmographicJob, getFirmographicJob, runFirmographicJob, subscribeToJob, unsubscribeFromJob } from '../services/firmographicService';
 
 const router = Router();
 
-// POST /api/revenue — create and start a revenue lookup job
+// POST /api/firmographic — create and start a firmographic lookup job
 router.post('/', aiLimiter, (req: Request, res: Response) => {
   const { companyName, companyDomain } = req.body;
   if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
     res.status(400).json({ error: 'companyName is required (min 2 characters)' });
     return;
   }
-  const jobId = createRevenueJob({ companyName: companyName.trim(), companyDomain: companyDomain?.trim() });
-  runRevenueJob(jobId, { companyName: companyName.trim(), companyDomain: companyDomain?.trim() }).catch(() => {});
+  const jobId = createFirmographicJob({ companyName: companyName.trim(), companyDomain: companyDomain?.trim() });
+  runFirmographicJob(jobId, { companyName: companyName.trim(), companyDomain: companyDomain?.trim() }).catch(() => {});
   res.status(202).json({ jobId });
 });
 
-// GET /api/revenue/:jobId — snapshot
+// GET /api/firmographic/:jobId — snapshot
 router.get('/:jobId', (req: Request, res: Response) => {
-  const job = getRevenueJob(req.params.jobId);
+  const job = getFirmographicJob(req.params.jobId);
   if (!job) { res.status(404).json({ error: 'Job not found' }); return; }
   res.json(job);
 });
 
-// GET /api/revenue/:jobId/stream — SSE
+// GET /api/firmographic/:jobId/stream — SSE
 router.get('/:jobId/stream', (req: Request, res: Response) => {
-  const job = getRevenueJob(req.params.jobId);
+  const job = getFirmographicJob(req.params.jobId);
   if (!job) { res.status(404).json({ error: 'Job not found' }); return; }
 
   res.setHeader('Content-Type', 'text/event-stream');

@@ -1,12 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
-import { RevenueInput, RevenueResult } from '@ai-insights/types';
+import { FirmographicInput, FirmographicResult } from '@ai-insights/types';
 import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
-import { geminiRevenueLookup } from './parallelAI';
+import { geminiRevenueLookup, geminiFirmographicLookup } from './parallelAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
-const jobs = new Map<string, RevenueResult>();
+const jobs = new Map<string, FirmographicResult>();
 
 setInterval(() => {
   const cutoff = Date.now() - 2 * 60 * 60 * 1000;
@@ -36,7 +36,7 @@ function emit(jobId: string, event: string, data: unknown): void {
   (subscribers.get(jobId) || []).forEach((cb) => cb(event, data));
 }
 
-function update(jobId: string, patch: Partial<RevenueResult>): RevenueResult {
+function update(jobId: string, patch: Partial<FirmographicResult>): FirmographicResult {
   const current = jobs.get(jobId)!;
   const updated = { ...current, ...patch };
   jobs.set(jobId, updated);
@@ -45,7 +45,7 @@ function update(jobId: string, patch: Partial<RevenueResult>): RevenueResult {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export function createRevenueJob(input: RevenueInput): string {
+export function createFirmographicJob(input: FirmographicInput): string {
   const jobId = uuidv4();
   jobs.set(jobId, {
     jobId,
@@ -57,13 +57,48 @@ export function createRevenueJob(input: RevenueInput): string {
   return jobId;
 }
 
-export function getRevenueJob(jobId: string): RevenueResult | undefined {
+export function getFirmographicJob(jobId: string): FirmographicResult | undefined {
   return jobs.get(jobId);
+}
+
+// ── Firmographic enrichment (founded year, HQ, employees, website, LinkedIn) ──
+// Runs after revenue is resolved, regardless of which source produced it.
+
+async function enrichAndComplete(
+  jobId: string,
+  input: FirmographicInput,
+  revenueFields: Partial<FirmographicResult>
+): Promise<void> {
+  let job = update(jobId, {
+    ...revenueFields,
+    status: 'enriching',
+    progress: 85,
+    currentStep: `Researching ${input.companyName}'s company profile…`,
+  });
+  emit(jobId, 'progress', job);
+
+  const firmographic = await geminiFirmographicLookup(input.companyName, input.companyDomain).catch(() => null);
+
+  job = update(jobId, {
+    status:               'complete',
+    progress:             100,
+    currentStep:          'Complete',
+    completedAt:          new Date().toISOString(),
+    foundedYear:          firmographic?.foundedYear,
+    headquartersCity:     firmographic?.headquartersCity,
+    headquartersState:    firmographic?.headquartersState,
+    headquartersCountry:  firmographic?.headquartersCountry,
+    employeeRange:        firmographic?.employeeRange,
+    website:              firmographic?.website,
+    linkedinUrl:          firmographic?.linkedinUrl,
+    firmographicSource:   firmographic?.source,
+  });
+  emit(jobId, 'result', job);
 }
 
 // ── Main runner ────────────────────────────────────────────────────────────────
 
-export async function runRevenueJob(jobId: string, input: RevenueInput): Promise<void> {
+export async function runFirmographicJob(jobId: string, input: FirmographicInput): Promise<void> {
   try {
     // Step 1: Ticker detection — skip yahoo-finance2 (rate-limited), go straight to Claude
     let job = update(jobId, {
@@ -100,7 +135,7 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
       // Try Yahoo Finance (yahoo-finance2 quoteSummary) first.
       const yahooData = await fetchYahooQuoteSummaryFinancials(ticker).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[revenue] Yahoo Finance failed for ${ticker} (${msg}) — trying Google Finance`);
+        console.warn(`[firmographic] Yahoo Finance failed for ${ticker} (${msg}) — trying Google Finance`);
         return null;
       });
 
@@ -117,7 +152,7 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
         const searchStr = buildSearchString(ticker, tickerResult?.exchange || '');
         data = await fetchAnnualFinancials(searchStr).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[revenue] Google Finance failed for ${ticker} (${msg}) — falling back to Gemini search`);
+          console.warn(`[firmographic] Google Finance failed for ${ticker} (${msg}) — falling back to Gemini search`);
           return null;
         });
         source = 'Google Finance';
@@ -129,11 +164,7 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
         const latest   = history[history.length - 1];
         const previous = history.length > 1 ? history[history.length - 2] : undefined;
 
-        job = update(jobId, {
-          status:          'complete',
-          progress:        100,
-          currentStep:     'Complete',
-          completedAt:     new Date().toISOString(),
+        await enrichAndComplete(jobId, input, {
           dataSource:      source,
           companyInfo:     data?.companyInfo,
           currency:        data?.currency,
@@ -144,7 +175,6 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
           previousRevenue: previous?.revenueFormatted,
           previousYear:    previous?.year,
         });
-        emit(jobId, 'result', job);
         return;
       }
     }
@@ -169,24 +199,19 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
       return;
     }
 
-    job = update(jobId, {
-      status:          'complete',
-      progress:        100,
-      currentStep:     'Complete',
-      completedAt:     new Date().toISOString(),
+    await enrichAndComplete(jobId, input, {
       dataSource:      'Google Search (Gemini)',
       latestRevenue:   geminiResult.latestRevenue,
       revenueYear:     geminiResult.revenueYear,
       currency:        geminiResult.currency,
-      yoyGrowth:        geminiResult.yoyGrowth,
+      yoyGrowth:       geminiResult.yoyGrowth,
       previousRevenue: geminiResult.previousRevenue,
       previousYear:    geminiResult.previousYear,
     });
-    emit(jobId, 'result', job);
 
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Revenue lookup failed';
-    console.error(`[revenue] job ${jobId} failed:`, message);
+    const message = err instanceof Error ? err.message : 'Firmographic lookup failed';
+    console.error(`[firmographic] job ${jobId} failed:`, message);
     const job = update(jobId, { status: 'error', error: message });
     emit(jobId, 'error', job);
   }

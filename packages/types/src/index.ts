@@ -1166,16 +1166,16 @@ export interface VucaAnalysisJob {
 }
 
 
-// ── Revenue Module ─────────────────────────────────────────────────────────────
+// ── Firmographic Module ──────────────────────────────────────────────────────
 
-export interface RevenueInput {
+export interface FirmographicInput {
   companyName: string;
   companyDomain?: string;
 }
 
-export interface RevenueResult {
+export interface FirmographicResult {
   jobId: string;
-  status: 'pending' | 'detecting' | 'fetching' | 'complete' | 'error';
+  status: 'pending' | 'detecting' | 'fetching' | 'enriching' | 'complete' | 'error';
   progress: number;
   currentStep?: string;
   companyName: string;
@@ -1191,8 +1191,17 @@ export interface RevenueResult {
   yoyGrowth?: number;           // % e.g. 8.3
   previousRevenue?: string;     // formatted prior year
   previousYear?: string;
-  dataSource?: string;          // 'Yahoo Finance' | 'Parallel.AI'
+  dataSource?: string;          // 'Yahoo Finance' | 'Google Finance' | 'Google Search (Gemini)'
   companyInfo?: CompanyInfo;
+  // Firmographic profile — researched after revenue via Gemini grounded search
+  foundedYear?: string;
+  headquartersCity?: string;
+  headquartersState?: string;
+  headquartersCountry?: string;
+  employeeRange?: string;       // e.g. "10,001+" or "501-1,000"
+  website?: string;
+  linkedinUrl?: string;
+  firmographicSource?: string;  // publication/site the profile data came from
   error?: string;
   createdAt: string;
   completedAt?: string;
