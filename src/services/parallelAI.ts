@@ -559,6 +559,70 @@ async function fetchCompanyWebpage(domain: string): Promise<string> {
   }
 }
 
+// ── Gemini Google Search grounding — company revenue lookup ──────────────────
+
+export interface GeminiRevenueResult {
+  latestRevenue: string;       // formatted, e.g. "$94.83B"
+  revenueYear: string;
+  currency?: string;
+  yoyGrowth?: number;
+  previousRevenue?: string;
+  previousYear?: string;
+  source?: string;             // publication / filing cited
+}
+
+export async function geminiRevenueLookup(
+  companyName: string,
+  domain?: string,
+  isPublic?: boolean
+): Promise<GeminiRevenueResult | null> {
+  const domainHint = domain ? ` (${domain})` : '';
+  const scopeHint = isPublic === false
+    ? 'This is a PRIVATE company — search news, funding announcements, industry reports, and press coverage for credible revenue estimates.'
+    : 'Search Google Finance, Yahoo Finance, the company\'s investor relations page, and its most recent annual report / 10-K filing.';
+
+  const prompt = `Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
+
+${scopeHint}
+
+Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
+{
+  "latestRevenue": "formatted figure with currency symbol, e.g. $94.83B or ₹1,20,000 Cr",
+  "revenueYear": "fiscal year label, e.g. FY2025 or 2025",
+  "currency": "3-letter ISO code, e.g. USD",
+  "yoyGrowth": <number, year-over-year growth percent, or null if unknown>,
+  "previousRevenue": "prior year formatted figure, or null",
+  "previousYear": "prior fiscal year label, or null",
+  "source": "the publication, filing, or site the figure came from"
+}
+
+If you cannot find a credible, sourced revenue figure, return exactly: {"latestRevenue": null}`;
+
+  try {
+    const { text } = await runGeminiGroundedSearch(prompt);
+    if (!text) return null;
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]) as Partial<GeminiRevenueResult>;
+    if (!parsed.latestRevenue) return null;
+
+    return {
+      latestRevenue: parsed.latestRevenue,
+      revenueYear: parsed.revenueYear || '',
+      currency: parsed.currency || undefined,
+      yoyGrowth: typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined,
+      previousRevenue: parsed.previousRevenue || undefined,
+      previousYear: parsed.previousYear || undefined,
+      source: parsed.source || undefined,
+    };
+  } catch (err) {
+    console.warn(`[gemini] Revenue lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 // ── Vendor ↔ Target existing relationship research ───────────────────────────
 
 export async function researchVendorRelationship(

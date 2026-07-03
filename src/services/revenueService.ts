@@ -1,9 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { RevenueInput, RevenueResult } from '@ai-insights/types';
-import { detectTicker, fetchAnnualFinancials, buildSearchString } from './yahooFinance';
+import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
-import { researchPrivateCompany } from './parallelAI';
-import { synthesizePrivateCompany } from './claudeAI';
+import { geminiRevenueLookup } from './parallelAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -90,7 +89,7 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
     emit(jobId, 'progress', job);
 
     if (isPublic && ticker) {
-      // Step 2: Fetch revenue via Yahoo Finance
+      // Step 2: Fetch revenue from Yahoo Finance or Google Finance
       job = update(jobId, {
         status: 'fetching',
         progress: 55,
@@ -98,15 +97,31 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
       });
       emit(jobId, 'progress', job);
 
-      // yahoo-finance2's quoteSummary requires a crumb token that Yahoo is currently
-      // rate-limiting from shared hosting IPs (429 on every attempt) — skip it entirely
-      // and go straight to the Puppeteer scraper, falling to AI estimate below on failure.
-      const searchStr = buildSearchString(ticker, tickerResult?.exchange || '');
-      const data = await fetchAnnualFinancials(searchStr).catch((err: unknown) => {
+      // Try Yahoo Finance (yahoo-finance2 quoteSummary) first.
+      const yahooData = await fetchYahooQuoteSummaryFinancials(ticker).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[revenue] Puppeteer scraper failed for ${ticker} (${msg}) — falling back to AI estimate`);
+        console.warn(`[revenue] Yahoo Finance failed for ${ticker} (${msg}) — trying Google Finance`);
         return null;
       });
+
+      let data = yahooData;
+      let source: 'Yahoo Finance' | 'Google Finance' = 'Yahoo Finance';
+
+      // Fall back to Google Finance (Puppeteer scraper) if Yahoo has no data.
+      if (!data || data.revenueHistory.length === 0) {
+        job = update(jobId, {
+          currentStep: `Fetching revenue for ${ticker} from Google Finance…`,
+        });
+        emit(jobId, 'progress', job);
+
+        const searchStr = buildSearchString(ticker, tickerResult?.exchange || '');
+        data = await fetchAnnualFinancials(searchStr).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[revenue] Google Finance failed for ${ticker} (${msg}) — falling back to Gemini search`);
+          return null;
+        });
+        source = 'Google Finance';
+      }
 
       const history = data?.revenueHistory ?? [];
 
@@ -119,7 +134,7 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
           progress:        100,
           currentStep:     'Complete',
           completedAt:     new Date().toISOString(),
-          dataSource:      'Yahoo Finance',
+          dataSource:      source,
           companyInfo:     data?.companyInfo,
           currency:        data?.currency,
           latestRevenue:   latest.revenueFormatted,
@@ -134,33 +149,38 @@ export async function runRevenueJob(jobId: string, input: RevenueInput): Promise
       }
     }
 
-    // Fallback: private/AI-estimated revenue
+    // Fallback: neither Yahoo Finance nor Google Finance had data (or this is a
+    // private company) — search for the revenue figure using Gemini (Google Search grounding).
     job = update(jobId, {
-      isPublic: false,
       status: 'fetching',
       progress: 60,
-      currentStep: `Estimating revenue for ${input.companyName} via AI research…`,
+      currentStep: `Searching for ${input.companyName}'s revenue via Google Search…`,
     });
     emit(jobId, 'progress', job);
 
-    let research = '';
-    try {
-      research = await researchPrivateCompany(input.companyName, input.companyDomain);
-    } catch { /* non-blocking */ }
+    const geminiResult = await geminiRevenueLookup(input.companyName, input.companyDomain, isPublic);
 
-    const privateData = await synthesizePrivateCompany(
-      { companyName: input.companyName, companyDomain: input.companyDomain },
-      research,
-      () => {}
-    );
+    if (!geminiResult) {
+      job = update(jobId, {
+        status: 'error',
+        error: `Could not find a verifiable revenue figure for ${input.companyName}.`,
+      });
+      emit(jobId, 'error', job);
+      return;
+    }
 
     job = update(jobId, {
-      status:        'complete',
-      progress:      100,
-      currentStep:   'Complete',
-      completedAt:   new Date().toISOString(),
-      dataSource:    'Parallel.AI',
-      latestRevenue: privateData.estimatedRevenue,
+      status:          'complete',
+      progress:        100,
+      currentStep:     'Complete',
+      completedAt:     new Date().toISOString(),
+      dataSource:      'Google Search (Gemini)',
+      latestRevenue:   geminiResult.latestRevenue,
+      revenueYear:     geminiResult.revenueYear,
+      currency:        geminiResult.currency,
+      yoyGrowth:        geminiResult.yoyGrowth,
+      previousRevenue: geminiResult.previousRevenue,
+      previousYear:    geminiResult.previousYear,
     });
     emit(jobId, 'result', job);
 
