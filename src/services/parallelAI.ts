@@ -571,17 +571,20 @@ export interface GeminiRevenueResult {
   source?: string;             // publication / filing cited
 }
 
-export async function geminiRevenueLookup(
-  companyName: string,
-  domain?: string,
-  isPublic?: boolean
-): Promise<GeminiRevenueResult | null> {
-  const domainHint = domain ? ` (${domain})` : '';
+function buildRevenuePrompt(companyName: string, domainHint: string, isPublic: boolean | undefined, simplified: boolean): string {
   const scopeHint = isPublic === false
-    ? 'This is a PRIVATE company — search news, funding announcements, industry reports, and press coverage for credible revenue estimates.'
-    : 'Search Google Finance, Yahoo Finance, the company\'s investor relations page, and its most recent annual report / 10-K filing.';
+    ? 'This is a privately-held company — look for news coverage, funding announcements, industry reports, or press releases that cite a revenue figure.'
+    : 'This is a publicly-traded company — look for its latest annual revenue as reported in its financial statements (10-K / annual report), Yahoo Finance, or Google Finance.';
 
-  const prompt = `Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
+  if (simplified) {
+    // Fallback prompt: fewer constraints, in case the structured version made the
+    // model over-cautious about qualifying as a "credible" search result.
+    return `What was ${companyName}'s${domainHint} latest reported annual revenue? ${scopeHint}
+
+Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<formatted figure with currency symbol>", "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure or null>", "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>"}`;
+  }
+
+  return `Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
 
 ${scopeHint}
 
@@ -597,30 +600,67 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 }
 
 If you cannot find a credible, sourced revenue figure, return exactly: {"latestRevenue": null}`;
+}
 
+function parseGeminiRevenueJson(text: string): Partial<GeminiRevenueResult> | null {
+  // Strip markdown code fences if present
+  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();
+
+  // Try direct parse first
   try {
-    const { text } = await runGeminiGroundedSearch(prompt);
-    if (!text) return null;
+    return JSON.parse(cleaned);
+  } catch { /* fall through to regex extraction */ }
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-
-    const parsed = JSON.parse(jsonMatch[0]) as Partial<GeminiRevenueResult>;
-    if (!parsed.latestRevenue) return null;
-
-    return {
-      latestRevenue: parsed.latestRevenue,
-      revenueYear: parsed.revenueYear || '',
-      currency: parsed.currency || undefined,
-      yoyGrowth: typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined,
-      previousRevenue: parsed.previousRevenue || undefined,
-      previousYear: parsed.previousYear || undefined,
-      source: parsed.source || undefined,
-    };
-  } catch (err) {
-    console.warn(`[gemini] Revenue lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
     return null;
   }
+}
+
+export async function geminiRevenueLookup(
+  companyName: string,
+  domain?: string,
+  isPublic?: boolean
+): Promise<GeminiRevenueResult | null> {
+  const domainHint = domain ? ` (${domain})` : '';
+
+  for (const simplified of [false, true]) {
+    const prompt = buildRevenuePrompt(companyName, domainHint, isPublic, simplified);
+    try {
+      const { text } = await runGeminiGroundedSearch(prompt);
+      if (!text) {
+        console.warn(`[gemini] Revenue lookup for ${companyName} (simplified=${simplified}) returned empty text`);
+        continue;
+      }
+
+      const parsed = parseGeminiRevenueJson(text);
+      if (!parsed) {
+        console.warn(`[gemini] Revenue lookup for ${companyName} (simplified=${simplified}) — unparseable response: ${text.slice(0, 200)}`);
+        continue;
+      }
+      if (!parsed.latestRevenue) {
+        console.warn(`[gemini] Revenue lookup for ${companyName} (simplified=${simplified}) — no revenue found in response`);
+        continue;
+      }
+
+      return {
+        latestRevenue: parsed.latestRevenue,
+        revenueYear: parsed.revenueYear || '',
+        currency: parsed.currency || undefined,
+        yoyGrowth: typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined,
+        previousRevenue: parsed.previousRevenue || undefined,
+        previousYear: parsed.previousYear || undefined,
+        source: parsed.source || undefined,
+      };
+    } catch (err) {
+      console.warn(`[gemini] Revenue lookup failed for ${companyName} (simplified=${simplified}):`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  return null;
 }
 
 // ── Vendor ↔ Target existing relationship research ───────────────────────────
