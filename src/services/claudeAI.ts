@@ -1595,11 +1595,6 @@ export async function extractScopeWithWizard(
   const excludeHint = input.excludeRegion ? `\nExclude from research: "${input.excludeRegion}".` : '';
   const subIndustryHint = input.subIndustry ? `\nSub-industry focus: "${input.subIndustry}".` : '';
   const focusHint = input.focusAreas?.length ? `\nFocus areas: ${input.focusAreas.join(', ')}.` : '';
-  const hasCompanyContext = !!(input.companyName?.trim() || input.companyDomain?.trim());
-  const companyHint = hasCompanyContext
-    ? `\nUSER'S COMPANY: ${input.companyName || ''} ${input.companyDomain ? `(${input.companyDomain})` : ''}. This company operates IN or SELLS TO the industry — use it only for the suggestedCompetitors field, NOT for suggestedPlayers.`
-    : '';
-
   // Build the TOC section titles based on user-selected sections
   const sectionTitleMap: Record<string, string> = {
     market_overview: 'Market Overview',
@@ -1608,8 +1603,9 @@ export async function extractScopeWithWizard(
     key_players_analysis: 'Key Players Analysis',
     regulatory_overview: 'Regulatory Overview',
     forecast: 'Market Forecast',
-    company_competition_analysis: 'Key Competitors',
     ma_jv_partnerships: 'M&A, JVs and Partnerships',
+    market_innovation: 'Market Innovation',
+    market_opportunities: 'Market Opportunities',
     swot: 'SWOT Analysis',
     porters_five_forces: "Porter's Five Forces",
     tei_analysis: 'Technology, Economy & Innovation Analysis',
@@ -1620,15 +1616,9 @@ export async function extractScopeWithWizard(
   const tocTitles = ['Executive Summary', ...userSelectedSections.map((id) => sectionTitleMap[id]).filter(Boolean)];
   const sectionsHint = `\nUser has selected the following report sections (ONLY include these in tocPreview): ${tocTitles.join(', ')}.`;
 
-  const competitorsField = hasCompanyContext ? `
-  "suggestedCompetitors": [
-    { "name": "Competitor A", "description": "Key rival in segment X", "marketShare": "18%", "headquarters": "US", "revenue": "$X.XB", "selected": false },
-    { "name": "Competitor B", "description": "Strong in region Y", "marketShare": "15%", "headquarters": "EU", "revenue": "$X.XB", "selected": false }
-  ],` : '';
-
   const userPrompt = `
 Analyse this market research request and provide structured scope, market segmentation suggestions, and key player suggestions.
-${geographyHint}${excludeHint}${subIndustryHint}${focusHint}${companyHint}${sectionsHint}
+${geographyHint}${excludeHint}${subIndustryHint}${focusHint}${sectionsHint}
 
 INDUSTRY/PRODUCT: "${input.industry || input.query}"
 
@@ -1657,10 +1647,10 @@ Return ONLY valid JSON with this exact shape:
   ],
   "suggestedPlayers": [
     { "name": "Company A", "description": "Market leader in category X", "marketShare": "25%", "headquarters": "US", "revenue": "$X.XB", "selected": true },
-    { "name": "Company B", "description": "Strong competitor in segment Y", "marketShare": "20%", "headquarters": "EU", "revenue": "$X.XB", "selected": true },
+    { "name": "Company B", "description": "Strong presence in segment Y", "marketShare": "20%", "headquarters": "EU", "revenue": "$X.XB", "selected": true },
     { "name": "Company C", "description": "Growing player in region Z", "marketShare": "15%", "headquarters": "APAC", "revenue": "$X.XB", "selected": true },
     { "name": "Company D", "description": "Emerging challenger", "marketShare": "10%", "headquarters": "US", "revenue": "$X.XB", "selected": false }
-  ],${competitorsField}
+  ],
   "tocPreview": ${JSON.stringify(tocTitles)}
 }
 
@@ -1673,7 +1663,6 @@ RULES:
 - suggestedPlayers: list 15-20 KEY PLAYERS OPERATING IN THE INDUSTRY ITSELF — companies that ARE the industry (incumbents, market leaders, significant players in that sector). For example, for "Utilities industry North America" list Duke Energy, NextEra Energy, Dominion Energy, Southern Company, Exelon, etc. — NOT technology vendors or software providers to the industry. Pre-select top 10 (selected: true/false).
 - For each player: name, description (1 short phrase: "Market leader in X", "Growing in segment Y", etc), marketShare (XX%), headquarters (US/EU/APAC/etc), revenue (estimated $X.XB format).
 - Description should be 3-8 words maximum, highlighting player's position or focus.
-${hasCompanyContext ? `- suggestedCompetitors: suggest 8-10 DIRECT COMPETITORS OF THE USER'S COMPANY (${input.companyName || input.companyDomain}) in serving this industry — other vendors, solution providers, or companies competing directly against the user's company for business in this industry. These are DIFFERENT from suggestedPlayers (which are industry operators). All start with selected: false. Include market share % and revenue estimates.` : ''}
 - CRITICAL: NO special characters, NO quotes or newlines in any string, NO markdown.
 - Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
 - searchQueries: 6-10 words, simple English, current year focused.
@@ -1682,7 +1671,7 @@ ${hasCompanyContext ? `- suggestedCompetitors: suggest 8-10 DIRECT COMPETITORS O
 
   const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
 
-  const raw = await claudeCreateDirect(systemPromptScope, userPrompt, hasCompanyContext ? 4000 : 3000, SYNTHESIS_MODEL, 120000, 0.0);
+  const raw = await claudeCreateDirect(systemPromptScope, userPrompt, 3000, SYNTHESIS_MODEL, 120000, 0.0);
 
   let parsed: ScopeWizardResult | null = null;
 
@@ -1744,21 +1733,11 @@ ${hasCompanyContext ? `- suggestedCompetitors: suggest 8-10 DIRECT COMPETITORS O
     selected: player.selected ?? (idx < 10), // Pre-select top 10 if not specified
   }));
 
-  // Normalize competitors: all start unselected
-  if (parsed.suggestedCompetitors?.length) {
-    parsed.suggestedCompetitors = parsed.suggestedCompetitors.slice(0, 10).map((c) => ({
-      ...c,
-      selected: false,
-    }));
-  }
-
   // Carry forward input fields to scope
   if (input.subIndustry) parsed.scope.subIndustry = input.subIndustry;
   if (input.focusAreas) parsed.scope.focusAreas = input.focusAreas;
   if (input.excludeRegion) parsed.scope.excludeRegion = input.excludeRegion;
   if (input.selectedSections?.length) parsed.scope.selectedSections = input.selectedSections;
-  if (input.companyName) parsed.scope.companyName = input.companyName;
-  if (input.companyDomain) parsed.scope.companyDomain = input.companyDomain;
 
   // Override tocPreview to match exactly what user selected
   parsed.tocPreview = tocTitles;
@@ -1903,7 +1882,7 @@ RULES:
 - tickerBoxes: include 3-5 ticker boxes. CRITICAL: If volume data is provided in MARKET SIZING above (Current Volume / Projected Volume), you MUST include the volume as secondaryValue in the Current and Projected ticker boxes. Format: "XX.X million units" or equivalent. Omit "Unorganized Market Share" ticker if not relevant to this market.
 - marketSizeChartSpec: MUST include historical years (n-4 to n) AND projected years (n+1 to n+5). Data values MUST be numbers.
 - concentrationInsights, keyPlayersInsights, topTrends, recentMaJvInsights: All required. Extract from the drafted sections.
-- keyPlayersInsights MUST name every competitor from both SELECTED KEY PLAYERS and OTHER KNOWN PLAYERS lists. Do not omit any player.
+- keyPlayersInsights MUST name every player from both SELECTED KEY PLAYERS and OTHER KNOWN PLAYERS lists. Do not omit any player.
 - topTrends: exactly 3-5 items, each a single concise sentence
 - kpis: keep as fallback, 4-6 metrics with trend direction
 - Paragraphs: use bullet points (• ) separated by newlines
@@ -1950,7 +1929,7 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     title: 'Key Players Analysis',
     tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Key Strength"]. ONLY list the selected KEY PLAYERS (from KEY PLAYERS FOR PROFILING in scope). Do NOT add unselected or other players to the table.',
     chartHint: 'Include horizontal_bar chartSpec showing market share % for selected key players only. Data format: [{label:"Company A",value:25},{label:"Company B",value:20},...] sorted by value descending.',
-    subsectionHint: 'First bodyParagraph: competitive landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), mention ALL known players briefly (selected + others) with market shares, competitive dynamics (price-led, innovation-led, etc). Then include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for the KEY PLAYERS FOR PROFILING listed in the scope — do NOT profile players not in that list. Do NOT include subsections. Do NOT include bcgMatrixData.',
+    subsectionHint: 'First bodyParagraph: industry landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), mention ALL known players briefly (selected + others) with market shares, how they differentiate from one another (price-led, innovation-led, etc). Refer to them as "players" or "companies" — NOT as "competitors" (these are companies operating in the industry, not rivals of any single entity). Then include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for the KEY PLAYERS FOR PROFILING listed in the scope — do NOT profile players not in that list. Do NOT include subsections. Do NOT include bcgMatrixData.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
@@ -1969,17 +1948,23 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
       subsectionHint: `Include 1-2 bodyParagraphs introducing the forecast from ${by} to ${ey}: type of growth (linear/exponential/step), key factors driving growth, which market segments are primary growth engines.`,
     };
   },
-  company_competition_analysis: {
-    title: 'Key Competitors',
-    tableHint: 'Return a "tables" array with ONE table titled "Competitor Profiles". Headers: ["Competitor Name", "Market Focus", "Key Products / Services", "Revenue", "Market Share", "Core Competitive Overlap", "Recent News", "JV / M&A / Partnerships", "Other Insights"]. Profile ONLY the competitors named in the USER\'S COMPANY context above (the user-selected competitor list) — do NOT add, substitute, or invent any other competitors, even if research suggests other rivals. Each cell must be a concise string — use "N/A" where data is unavailable. Revenue and Market Share should include source year (e.g. "$12B (2024)"). Recent News should be the most impactful headline from the last 12 months. JV/M&A/Partnerships should list deals from the last 24 months. Other Insights can include technology bets, go-to-market shifts, or analyst commentary.',
-    chartHint: 'Include horizontal_bar chartSpec showing estimated market share % ONLY for the user-selected competitors listed above. Data format: [{label:"Competitor A", value:18}, ...] sorted descending.',
-    subsectionHint: 'bodyParagraphs[0]: 2–3 sentences introducing the competitive context — who the selected rivals are, what they compete on (price, product depth, geography, partnerships), and how the landscape has shifted in the last 12 months. No subsections. Do NOT mention competitors outside the user-selected list.',
-  },
   ma_jv_partnerships: {
     title: 'M&A, JVs and Partnerships',
     tableHint: 'Return a "tables" array with ONE table titled "Transactions (Last 12 Months)". Headers: ["Date", "Transacting Parties", "Transaction Type", "Primary Strategic Rationale", "Transaction Size", "Source"]. Transaction Type values: "Acquisition", "Merger", "Joint Venture", "Strategic Partnership", "Divestiture", or "Investment". Date format: "MMM YYYY". Transaction Size: include "$XB / $XM" if publicly disclosed, else "Undisclosed". Source: the publication or filing that reported the deal (e.g. "Reuters", "SEC Filing", "Company Press Release"). Include ALL significant deals in the INDUSTRY (not just key players) from the last 12 months from the report date. Target 8–15 rows; if fewer real deals exist, include only verified ones — do NOT fabricate.',
     chartHint: 'No chart needed. Set chartSpec to null.',
     subsectionHint: 'bodyParagraphs[0]: 2–3 sentences summarising deal activity — volume of transactions, dominant transaction type, largest deal, and what the deal flow signals about industry consolidation or growth strategy. No subsections. IMPORTANT: The "last 12 months" is measured from the report generation date, which is provided in the scope as reportDate. Only include deals on or after that date minus 12 months. List rows in REVERSE CHRONOLOGICAL ORDER — most recent deal first.',
+  },
+  market_innovation: {
+    title: 'Market Innovation',
+    tableHint: 'Return a "tables" array with ONE table titled "Innovation Tracker". Headers: ["Innovation / Initiative", "Innovator (Startup / Company)", "Category", "Description", "Stage", "Source"]. Category values: "Product Innovation", "Process Innovation", "Business Model Innovation", "Patent / IP", or "R&D Breakthrough". Stage values: "Concept", "Pilot", "Launched", "Scaling", or "Granted" (for patents). Description: 1-2 concise sentences on what is novel about it. Source: MUST be a working direct URL (starting with https://) to the news article, patent filing, or press release — e.g. "https://patents.google.com/..." or "https://techcrunch.com/...". Include 8-12 rows covering both startup-led innovations and notable patents/R&D from established players, prioritising the last 12-18 months.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'bodyParagraphs[0]: 2-3 sentences summarising the innovation landscape — which categories of innovation are most active, notable startups to watch, and the overall pace of patent activity. No subsections.',
+  },
+  market_opportunities: {
+    title: 'Market Opportunities',
+    tableHint: 'Return a "tables" array with ONE table titled "Growth Hotspots & Emerging Opportunities". Headers: ["Opportunity Area", "Type", "Description", "Analyst Firm", "Source"]. Type values: "Tech" or "Non-Tech". Description: 1-2 concise sentences on why this is a growth hotspot and the addressable opportunity. Analyst Firm: the research firm or analyst that highlighted this (e.g. "Gartner", "McKinsey", "Forrester", "IDC", "Bain") — use "Industry Research" if no specific firm is attributable. Source: MUST be a working direct URL (starting with https://) to the analyst report, article, or press release citing this opportunity. Include 6-10 rows covering both technology-driven and non-technology growth opportunities.',
+    chartHint: 'No chart needed. Set chartSpec to null.',
+    subsectionHint: 'bodyParagraphs[0]: 2-3 sentences framing the overall opportunity landscape — the highest-conviction growth hotspots and what is driving analyst attention toward them. No subsections.',
   },
   swot: {
     title: 'SWOT Analysis',
@@ -2041,10 +2026,6 @@ export async function draftSectionsBatchV2(
     return `\nSECTION: "${id}"\nTitle: "${def.title}"\n- ${def.tableHint}\n- ${def.chartHint}\n- ${def.subsectionHint}\n`;
   }).join('\n');
 
-  const selectedCompNames = scope.selectedCompetitors?.map((c) => c.name) || [];
-  const companyContext = (scope.companyName || scope.companyDomain) && selectedCompNames.length > 0
-    ? `\nUSER'S COMPANY (for company_competition_analysis section): ${scope.companyName || ''}${scope.companyDomain ? ` (${scope.companyDomain})` : ''}. Profile ONLY these user-selected competitors: ${selectedCompNames.join(', ')}. Do NOT add, substitute, or invent any other competitors.`
-    : '';
   const reportDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const maDateContext = `\nREPORT DATE: ${reportDate} — for ma_jv_partnerships, only include deals from the last 12 months (on or after ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}).`;
 
@@ -2052,7 +2033,7 @@ export async function draftSectionsBatchV2(
 You are drafting sections of a comprehensive market intelligence report on the ${scope.industry} market in ${scope.geography} (${scope.timeHorizon}).
 ${scope.subIndustry ? `Sub-industry focus: ${scope.subIndustry}` : ''}
 ${scope.excludeRegion ? `EXCLUDE from analysis: ${scope.excludeRegion}` : ''}
-${segmentContext}${playerContext}${allPlayersList}${unselectedPlayerContext}${companyContext}${maDateContext}
+${segmentContext}${playerContext}${allPlayersList}${unselectedPlayerContext}${maDateContext}
 
 MARKET SIZING CONTEXT:
 - Current (Value): ${marketSizing.currentMarketSize}
@@ -2107,9 +2088,9 @@ CRITICAL RULES:
 - chartSpec.data and charts[].data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
 - For market_dynamics and regulatory_overview: use "tables" array (NOT keyTable) for multiple tables.
 - For forecast: use "tables" array for assumption/summary tables AND "charts" array for 3 scenario charts.
-- For key_players_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix).
-- For company_competition_analysis: use "tables" array with competitor comparison table; include horizontal_bar chartSpec for market share. The user's company is in scope.companyName / scope.companyDomain — identify their top 5 competitors in this industry.
+- For key_players_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix). Refer to the companies as "players", not "competitors".
 - For ma_jv_partnerships: use "tables" array only. Only include deals from the last 12 months. Do NOT fabricate deals.
+- For market_innovation and market_opportunities: use "tables" array only. The "Source" column MUST contain a working https:// URL for every row — do NOT fabricate sources or leave them as publication names only.
 - For swot/porters_five_forces/tei_analysis: include ONLY the specialized data field (swotData / portersData / macroTeiData respectively). bodyParagraphs, keyTable, tables, chartSpec, charts, and subsections should all be null or empty for these three sections.
 - For market_size_by_segment: Ensure that for each year shown in the table, the sum of all sub-segment market sizes equals the total market size from Market Overview (tolerance: ±2% for rounding). This maintains consistency across sections.
 - Be specific: cite figures, company names, percentages, dates.
@@ -2118,7 +2099,7 @@ CRITICAL RULES:
 `.trim();
 
   // Prioritize quality over token reduction — use sufficient tokens for detailed analysis
-  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis', 'company_competition_analysis'].includes(id));
+  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis'].includes(id));
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
   const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;

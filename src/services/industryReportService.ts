@@ -233,7 +233,7 @@ export async function runIndustryReportV2(
     // ── Step 4: Section drafting (60-88%) — dynamic batches ──
     const selected = scope.selectedSections?.length
       ? scope.selectedSections
-      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'company_competition_analysis', 'ma_jv_partnerships'];
+      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'ma_jv_partnerships', 'market_innovation', 'market_opportunities'];
 
     // Group into batches — each batch with 1-2 sections max to reduce JSON complexity
     const batchDefs = [
@@ -243,8 +243,9 @@ export async function runIndustryReportV2(
       ['key_players_analysis'],             // profiles + market share chart
       ['regulatory_overview'],              // 4 tables (core)
       ['forecast'],                         // 3 charts + 2 tables
-      ['company_competition_analysis'],     // 5-competitor table (user's company context)
       ['ma_jv_partnerships'],              // M&A deals last 12 months
+      ['market_innovation'],               // startup/patent innovation tracker table
+      ['market_opportunities'],            // analyst-highlighted growth hotspots table
       ['swot'],                            // optional
       ['porters_five_forces'],             // optional
       ['tei_analysis'],                    // optional
