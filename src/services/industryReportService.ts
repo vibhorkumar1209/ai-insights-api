@@ -262,18 +262,29 @@ export async function runIndustryReportV2(
       step(`Drafting report sections (${i + 1}/${batches.length})...`, Math.round(draftStart + i * draftStep), 'drafting');
       try {
         const batchResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, batches[i]);
+        if (batchResult.length === 0) throw new Error('Batch returned zero sections');
         allSections = [...allSections, ...batchResult];
       } catch (batchErr) {
-        // Retry each section individually if batch fails
         console.warn(`[industryReport] Batch [${batches[i].join(', ')}] failed, retrying individually:`, batchErr instanceof Error ? batchErr.message : batchErr);
+        // Retry each section individually — up to 2 extra attempts with a short
+        // backoff, since failures here are typically transient (NDJSON parse
+        // truncation or momentary API rate limiting under sustained sequential load).
         for (const sectionId of batches[i]) {
           checkAbort(jobId);
-          try {
-            const singleResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, [sectionId]);
-            allSections = [...allSections, ...singleResult];
-          } catch (singleErr) {
-            console.error(`[industryReport] Section ${sectionId} failed even individually:`, singleErr instanceof Error ? singleErr.message : singleErr);
-            // Skip this section rather than fail the whole report
+          let succeeded = false;
+          for (let attempt = 1; attempt <= 2 && !succeeded; attempt++) {
+            try {
+              const singleResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, [sectionId]);
+              if (singleResult.length === 0) throw new Error('Retry returned zero sections');
+              allSections = [...allSections, ...singleResult];
+              succeeded = true;
+            } catch (singleErr) {
+              console.warn(`[industryReport] Section ${sectionId} retry ${attempt}/2 failed:`, singleErr instanceof Error ? singleErr.message : singleErr);
+              if (attempt < 2) await new Promise((r) => setTimeout(r, 3000));
+            }
+          }
+          if (!succeeded) {
+            console.error(`[industryReport] Section ${sectionId} failed after all retries — skipping.`);
           }
         }
       }
