@@ -244,6 +244,11 @@ const WRITING_DIRECTIVE = `WRITING RULES (apply to every word of output):
 2. NO DASHES IN SENTENCES: Do not use em dashes (—), en dashes (–), or hyphens (-) as clause separators or parenthetical connectors within sentences. Instead of "Revenue grew — despite headwinds — by 8%" write "Revenue grew by 8% despite headwinds". Instead of "The company - founded in 1968 - operates globally" write "The company, founded in 1968, operates globally". Compound adjectives and established compound words that use hyphens (data-driven, well-known, cost-effective, follow-up, state-of-the-art) are perfectly acceptable.
 3. HUMAN LANGUAGE: Write as an experienced analyst would speak to a senior executive — direct, specific, and free of AI clichés. Banned phrases: "delve into", "leverage" (when meaning "use"), "unlock", "it is worth noting", "in the realm of", "comprehensive", "cutting-edge", "robust" (when describing solutions), "game-changer", "transformative", "holistic", "synergies", "actionable insights", "empower", "seamlessly", "it is important to note", "in today's landscape", "in conclusion". Say what you mean plainly.`;
 
+// Used only in Industry Report generation — do NOT attribute any figure, quote, or
+// data point to syndicated market-research publishers. Cite primary sources instead
+// (company filings/press releases, government data, trade press, reputable news outlets).
+const NO_SYNDICATED_RESEARCH_DIRECTIVE = `SOURCE RESTRICTION: Never mention, cite, or attribute any figure, estimate, or claim to MarketsandMarkets, GlobalData, Fortune Business Insights, Mordor Intelligence, Precedence Research, IMARC Group, Transparency Market Research, Technavio, Grand View Research, Global Market Insights, Market Research Future, Data Bridge Market Research, Verified Market Research, or any other syndicated market-research publisher — by name or by implication (e.g. do not write "according to a leading market research firm"). If a figure originated from training knowledge of such a publisher's report, present it as your own analytical estimate without naming a source, or attribute it instead to a primary source (company filings, investor relations, SEC/regulatory filings, government/trade body data, press releases, or named news outlets like Reuters/Bloomberg).`;
+
 // ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
 
 import { Competitor } from '@ai-insights/types';
@@ -1669,7 +1674,7 @@ RULES:
 - Output must be VALID JSON with proper commas, no trailing commas.
 `.trim();
 
-  const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+  const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
 
   const raw = await claudeCreateDirect(systemPromptScope, userPrompt, 3000, SYNTHESIS_MODEL, 120000, 0.0);
 
@@ -1774,20 +1779,21 @@ Return ONLY valid JSON with this exact shape:
   "projectedVolume": "XX.X million units (2030) — same rule as currentVolume",
   "methodology": "2-3 sentence summary of how estimates were derived using both methods",
   "dataPoints": [
-    { "metric": "descriptive metric name", "value": "$XX.XB or XX%", "source": "Source Name, Year" },
+    { "metric": "descriptive metric name", "value": "$XX.XB or XX%", "source": "Primary source only — e.g. company filing, government/trade body data, Reuters/Bloomberg, or 'Analyst estimate' if no named source; NEVER a syndicated market-research publisher, Year" },
     ... (5-8 data points supporting the estimates)
   ]
 }
 
 RULES:
 - Use research data first; supplement with training knowledge — label estimates "(est.)"
+- NEVER cite MarketsandMarkets, GlobalData, Fortune Business Insights, Mordor Intelligence, Precedence Research, IMARC Group, Transparency Market Research, Technavio, Grand View Research, or similar syndicated market-research publishers as a source. If a figure traces back to one of these, present it as your own analytical estimate instead, or attribute it to a primary source.
 - If data conflicts, explain in methodology and use the more authoritative source
 - Include at least 5 data points from the research
 - Be specific: cite exact figures, not vague ranges
 - VOLUME DATA: For industries where units/volume makes sense (vehicles, devices, tonnes, liters, units sold, etc.), you MUST include currentVolume and projectedVolume. Use the most appropriate unit (million units, thousand tonnes, etc.). Only omit if the industry is purely a service/intangible market where volume doesn't apply.
 `.trim();
 
-  const systemPromptSizing = `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+  const systemPromptSizing = `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
   const raw = await claudeCreateDirect(systemPromptSizing, userPrompt, 4096, SYNTHESIS_MODEL, 120000, 0);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in market sizing response');
@@ -1891,7 +1897,7 @@ RULES:
 - Every figure must be traceable to a section already drafted — do not invent new data
 `.trim();
 
-  const systemPromptExec = `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+  const systemPromptExec = `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
   const raw = await claudeCreateDirect(systemPromptExec, userPrompt, 8192, SYNTHESIS_MODEL, 120000, 0.2);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in executive summary response');
@@ -1962,7 +1968,7 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
   },
   market_opportunities: {
     title: 'Market Opportunities',
-    tableHint: 'Return a "tables" array with ONE table titled "Growth Hotspots & Emerging Opportunities". Headers: ["Opportunity Area", "Type", "Description"]. Type values: "Tech" or "Non-Tech". Description: 2-3 detailed sentences on why this is a growth hotspot, the addressable opportunity, and which analyst firm or research source has highlighted it (name the firm inline in the text, e.g. "Gartner projects..." or "per McKinsey research..."). Include 6-10 rows covering both technology-driven and non-technology growth opportunities.',
+    tableHint: 'Return a "tables" array with ONE table titled "Growth Hotspots & Emerging Opportunities". Headers: ["Opportunity Area", "Type", "Description"]. Type values: "Tech" or "Non-Tech". Description: 2-3 detailed sentences on why this is a growth hotspot and the addressable opportunity, grounded in the market data and research already gathered. Do NOT attribute the opportunity to any named research or analyst firm — present it as your own analytical judgment. Include 6-10 rows covering both technology-driven and non-technology growth opportunities.',
     chartHint: 'No chart needed. Set chartSpec to null.',
     subsectionHint: 'bodyParagraphs[0]: 2-3 sentences framing the overall opportunity landscape — the highest-conviction growth hotspots and what is driving analyst attention toward them. No subsections.',
   },
@@ -2091,7 +2097,7 @@ CRITICAL RULES:
 - For key_players_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix). Refer to the companies as "players", not "competitors".
 - For ma_jv_partnerships: use "tables" array only. Only include deals from the last 12 months. Do NOT fabricate deals.
 - For market_innovation: use "tables" array only, exactly 5 columns (no Source column). Weight rows toward startups active in the specific target industry and target geography — search for local/regional startup activity, not just global players.
-- For market_opportunities: use "tables" array only, exactly 3 columns (no Source or Analyst Firm columns) — mention the analyst firm inline within the Description text instead.
+- For market_opportunities: use "tables" array only, exactly 3 columns (no Source or Analyst Firm columns). Do NOT attribute rows to any named research/analyst firm.
 - For swot/porters_five_forces/tei_analysis: include ONLY the specialized data field (swotData / portersData / macroTeiData respectively). bodyParagraphs, keyTable, tables, chartSpec, charts, and subsections should all be null or empty for these three sections.
 - For market_size_by_segment: Ensure that for each year shown in the table, the sum of all sub-segment market sizes equals the total market size from Market Overview (tolerance: ±2% for rounding). This maintains consistency across sections.
 - Be specific: cite figures, company names, percentages, dates.
@@ -2103,7 +2109,7 @@ CRITICAL RULES:
   const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis'].includes(id));
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
-  const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+  const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
   const raw = await claudeCreateDirect(systemPromptDraft, userPrompt, maxTokens, SYNTHESIS_MODEL, 120000, 0.1);
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}`);
 
