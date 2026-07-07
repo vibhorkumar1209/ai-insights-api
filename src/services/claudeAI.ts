@@ -249,6 +249,10 @@ const WRITING_DIRECTIVE = `WRITING RULES (apply to every word of output):
 // (company filings/press releases, government data, trade press, reputable news outlets).
 const NO_SYNDICATED_RESEARCH_DIRECTIVE = `SOURCE RESTRICTION: Never mention, cite, or attribute any figure, estimate, or claim to MarketsandMarkets, GlobalData, Fortune Business Insights, Mordor Intelligence, Precedence Research, IMARC Group, Transparency Market Research, Technavio, Grand View Research, Global Market Insights, Market Research Future, Data Bridge Market Research, Verified Market Research, or any other syndicated market-research publisher — by name or by implication (e.g. do not write "according to a leading market research firm"). If a figure originated from training knowledge of such a publisher's report, present it as your own analytical estimate without naming a source, or attribute it instead to a primary source (company filings, investor relations, SEC/regulatory filings, government/trade body data, press releases, or named news outlets like Reuters/Bloomberg).`;
 
+// Used only in Industry Report generation (stricter than NO_SYNDICATED_RESEARCH_DIRECTIVE
+// above): a positive allow-list of source types, rather than just a ban list.
+const CREDIBLE_SOURCE_ONLY_DIRECTIVE = `CRITICAL SOURCE RULE: Do not name or cite any source unless it is credible. Credible sources are limited to: government bodies and regulators (e.g. SEC, Census Bureau, Eurostat, ministries, central banks), official industry/trade associations, multilateral/intergovernmental organizations (e.g. IMF, World Bank, WTO), company filings/investor relations/press releases, reputable news outlets (e.g. Reuters, Bloomberg, WSJ, FT), and top-tier consulting/professional services firms (e.g. McKinsey, BCG, Bain, PwC, KPMG, Deloitte, EY, Accenture). Do NOT name syndicated market-research publishers (MarketsandMarkets, GlobalData, Fortune Business Insights, Mordor Intelligence, Precedence Research, IMARC, Transparency Market Research, Technavio, Grand View Research, or similar), blogs, unverified web content, or vague attributions like "industry reports" or "market research". If you cannot trace a figure to one of the credible source types above, present it as your own analytical estimate without naming any source at all — never invent or guess a source to fill the gap.`;
+
 // ── Fast Competitor Discovery (Claude — no Parallel.AI) ─────────────────────
 
 import { Competitor } from '@ai-insights/types';
@@ -1674,7 +1678,7 @@ RULES:
 - Output must be VALID JSON with proper commas, no trailing commas.
 `.trim();
 
-  const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+  const systemPromptScope = `Output ONLY a single valid JSON object. No markdown, no explanation text. Ensure every string value uses ONLY: letters, numbers, spaces, hyphens, percent signs, forward slashes. Zero special characters. Proper JSON syntax with no trailing commas. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
 
   const raw = await claudeCreateDirect(systemPromptScope, userPrompt, 3000, SYNTHESIS_MODEL, 120000, 0.0);
 
@@ -1793,7 +1797,7 @@ RULES:
 - VOLUME DATA: For industries where units/volume makes sense (vehicles, devices, tonnes, liters, units sold, etc.), you MUST include currentVolume and projectedVolume. Use the most appropriate unit (million units, thousand tonnes, etc.). Only omit if the industry is purely a service/intangible market where volume doesn't apply.
 `.trim();
 
-  const systemPromptSizing = `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+  const systemPromptSizing = `You are a quantitative market sizing analyst. Produce estimates grounded in actual data. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
   const raw = await claudeCreateDirect(systemPromptSizing, userPrompt, 4096, SYNTHESIS_MODEL, 120000, 0);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in market sizing response');
@@ -1897,7 +1901,7 @@ RULES:
 - Every figure must be traceable to a section already drafted — do not invent new data
 `.trim();
 
-  const systemPromptExec = `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+  const systemPromptExec = `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
   const raw = await claudeCreateDirect(systemPromptExec, userPrompt, 8192, SYNTHESIS_MODEL, 120000, 0.2);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in executive summary response');
@@ -2109,7 +2113,7 @@ CRITICAL RULES:
   const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis'].includes(id));
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
-  const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+  const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
   const raw = await claudeCreateDirect(systemPromptDraft, userPrompt, maxTokens, SYNTHESIS_MODEL, 120000, 0.1);
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}`);
 
