@@ -1225,3 +1225,27 @@ export interface OutsourcingReportResult {
   createdAt: string;
   completedAt?: string;
 }
+
+// ── GCC Sales Play ────────────────────────────────────────────────────────────
+
+export interface GccSalesPlayInput {
+  targetCompany: string;
+  advisoryFirm: string;
+  targetGeoRegion: string;
+  coreIndustrySegment: string;
+}
+
+export interface GccSalesPlayResult {
+  jobId: string;
+  status: 'pending' | 'drafting' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  targetCompany: string;
+  advisoryFirm: string;
+  targetGeoRegion: string;
+  coreIndustrySegment: string;
+  content?: string;             // full markdown dossier (concatenated across generation chunks)
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}

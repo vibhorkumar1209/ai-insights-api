@@ -3688,3 +3688,123 @@ export async function synthesizeOutsourcingReportChunk(
 
   return { label: chunk.label, markdown };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GCC SALES PLAY (Account Strategy & Opportunity Dossier)
+// ══════════════════════════════════════════════════════════════════════════════
+
+import { GccSalesPlayInput } from '@ai-insights/types';
+
+const GCC_SALES_PLAY_SYSTEM_PROMPT = `You are an expert Enterprise Account Intelligence and Strategic Growth Advisor specializing in Global Capability Centers (GCCs), Digital Engineering Exports, Tier-1 Management Consulting, and Cross-Border Corporate Restructuring. Output clean Markdown only — use headers, data-dense bullet points, and GitHub-flavored Markdown tables. Prioritize direct answers, structural markdown tables, visual anchors, and short, scannable sentences. Do not truncate information. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+
+function gccContextBlock(input: GccSalesPlayInput): string {
+  return `**Target Company:** ${input.targetCompany}
+**Advisory Firm:** ${input.advisoryFirm}
+**Target Geo Region:** ${input.targetGeoRegion}
+**Core Industry Segment:** ${input.coreIndustrySegment}`;
+}
+
+interface GccChunkDef {
+  label: string;
+  maxTokens: number;
+  buildPrompt: (input: GccSalesPlayInput) => string;
+}
+
+const GCC_SALES_PLAY_CHUNKS: GccChunkDef[] = [
+  {
+    label: 'GCC function & project-line cross-tabulations (Modules 1-2)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${gccContextBlock(input)}
+
+Execute MODULE 1 and MODULE 2 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 1" — no preamble, no closing summary.
+
+### MODULE 1: GCC Cross-Tabulation by Function Type
+Build a comprehensive cross-tabulation matrix mapping ${input.targetCompany}'s localized footprints/units across major cities in ${input.targetGeoRegion} against Core Functional Domains (e.g., Technology & Software, BFSI, ER&D/Advanced Manufacturing, Business Operations, Healthcare/Life Sciences). Follow this with bulleted city-by-city structural takeaways detailing domain specializations and localized strategic hubs.
+
+### MODULE 2: GCC Cross-Tabulation by Project Line
+Build a secondary cross-tabulation matrix mapping ${input.targetCompany}'s localized footprints/units across major cities in the region against specific Operational Project Lines (e.g., IT & Product Engineering, Finance & Accounting (F&A), Customer Support & Success (CS&S), Sales & Marketing Ops, HR & People Ops, Procurement & Supply Chain). Provide a brief operational commentary explaining structural traits like matrixed multi-functional setups or automation trends.`,
+  },
+  {
+    label: 'Headcount distribution & macro/financial profile (Modules 3-4)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${gccContextBlock(input)}
+
+Execute MODULE 3 and MODULE 4 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 3" — no preamble, no closing summary.
+
+### MODULE 3: Local Headcount Distribution Matrix
+Construct a headcount distribution chart mapping estimated or actual employee volumes for ${input.targetCompany} broken down by City and by the same Operational Project Lines used in Module 2. Add an explanatory footnote citing industry staffing benchmarks, official facility capacities, or talent tracking datasets used to model the matrix (do not name syndicated market-research publishers).
+
+### MODULE 4: QuickView Macro & Financial Profile
+Deliver a comprehensive strategic overview of ${input.targetCompany}'s regional footprint in ${input.targetGeoRegion} (focused on ${input.coreIndustrySegment}) divided into the following sections:
+1. SCALE & FOOTPRINT: Headcount, administrative anchors, advanced technology hubs, and specialized facilities.
+2. FINANCIAL PROFILE: Local entity revenue ranges, margin health, financial team restructuring trends, and parent company financial interactions.
+3. ROLE OF THE GCC IN GLOBAL BUSINESS: Evolution from cost-arbitrage to a product co-creation hub, global Center of Excellence (CoE) dynamics, and localized leadership mandates.
+4. HISTORICAL PARTNER RELATIONSHIP: Bidirectional interactions with ${input.advisoryFirm} (e.g., internal compliance advisory vs. commercial go-to-market/consortium project execution).
+5. CURRENT LIFECYCLE STATUS: Classify the GCC's lifecycle phase (Nascent, Emerging, Mature, or Strategic Value/Evolution) with clear operational evidence.`,
+  },
+  {
+    label: 'C-suite roster & technology stack (Modules 5-6)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${gccContextBlock(input)}
+
+Execute MODULE 5 and MODULE 6 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 5" — no preamble, no closing summary.
+
+### MODULE 5: City-by-City C-Suite Operational Roster
+Generate a comprehensive, city-wise leadership table capturing the top tier of executive decision-makers running ${input.targetCompany}'s GCC/local entity in ${input.targetGeoRegion}. Include the following columns:
+- City / Location Hub
+- Estimated Workforce Headcount
+- Core Business Functions Covered
+- Local Hiring Momentum (Low, Selective, Steady, High, Critical)
+- Current Facility Growth Phase (Emerging, Mature, Scaling/Evolution)
+- Key Named Executives based locally (CEO, CFO, COO, CTO, CISO, and core Business Unit leads) with a text placeholder for their hyperlinked LinkedIn profiles.
+
+### MODULE 6: Core Technology Stack & Infrastructure Architecture
+Build a structured architectural matrix tracing ${input.targetCompany}'s technological landscape. Contrast their infrastructure states across three horizons:
+- Legacy Infrastructure (Systems/Monoliths currently being phased out)
+- Current Core Infrastructure (Mainstream operational frameworks, cloud pipelines, and databases)
+- New Stack Integration (Active adoptions, modern AI tools, open-source container switches, and sovereign platforms)
+Categorize this table by technical layers: Compute/Servers, Cloud/Virtualization, AI/Data Platforms, Application/Architecture, Identity/Edge, and Cybersecurity/Compliance. Conclude with major technical conversion triggers impacting their current development roadmap.`,
+  },
+  {
+    label: 'Expansion signals, opportunity playbook & engagement timeline (Modules 7-8)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${gccContextBlock(input)}
+
+Execute MODULE 7 and MODULE 8 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 7" — no preamble, no closing summary. End with the 30-60-90 day engagement timeline described at the end of Module 8.
+
+### MODULE 7: Account Expansion Signals Tracking
+Identify the top 4-5 immediate corporate triggers, expansions, or leadership structural movements occurring within ${input.targetCompany}. Present this data in a table covering:
+- Key Expansion Signal (e.g., new executive hires, landmark enterprise contract wins, capital injections, divestments/acquisitions, or government empanelments)
+- Direct Impact on GCC Expansion (How it forces changes to real estate, tech pipelines, or localized hiring)
+- How ${input.advisoryFirm} Can Take Advantage (Strategic consultation, transformation, or joint selling opportunities)
+
+### MODULE 8: Structured Strategic Opportunities & Delivery Playbook
+Pinpoint 3-5 specific, high-yield consulting opportunities where ${input.advisoryFirm} can actively cater to ${input.targetCompany}. Present this in a final master table featuring:
+1. OPPORTUNITY DOMAIN: Targeted consulting or advisory category.
+2. SUPPORTING BUSINESS INSTANCE: Documented macro event or recent trigger proving the need.
+3. WHY ${input.advisoryFirm} MUST ENGAGE NOW: The urgency, competitive advantage, or high-risk exposure for the client if left unaddressed.
+4. WHAT ${input.advisoryFirm} WILL DELIVER: Concrete, actionable consulting artifacts, blueprints, frameworks, playbooks, or audit reports that will be delivered to the C-suite.
+
+Conclude the entire response with an actionable 30-60-90 day account engagement timeline (as a "## 30-60-90 Day Engagement Timeline" section) that the Lead Account Partners at ${input.advisoryFirm} can execute immediately to secure introductory briefings.`,
+  },
+];
+
+export const GCC_SALES_PLAY_CHUNK_COUNT = GCC_SALES_PLAY_CHUNKS.length;
+
+export async function synthesizeGccSalesPlayChunk(
+  input: GccSalesPlayInput,
+  chunkIndex: number
+): Promise<{ label: string; markdown: string }> {
+  const chunk = GCC_SALES_PLAY_CHUNKS[chunkIndex];
+  if (!chunk) throw new Error(`Invalid GCC sales play chunk index: ${chunkIndex}`);
+
+  const userPrompt = chunk.buildPrompt(input);
+  const raw = await claudeCreateDirect(GCC_SALES_PLAY_SYSTEM_PROMPT, userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 300000, 0.2);
+  const markdown = raw.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  if (!markdown || markdown.length < 50) {
+    throw new Error(`GCC sales play chunk "${chunk.label}" returned empty/too-short content`);
+  }
+
+  return { label: chunk.label, markdown };
+}
