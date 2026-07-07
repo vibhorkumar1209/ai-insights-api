@@ -22,6 +22,11 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
+  if (!companyDomain || typeof companyDomain !== 'string' || !companyDomain.trim()) {
+    res.status(400).json({ error: 'companyDomain is required — it is used to verify the company\'s identity before researching financials, since company names are frequently shared by unrelated businesses' });
+    return;
+  }
+
   const jobId = createFinancialJob({
     companyName: companyName.trim().slice(0, 200),
     companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined,

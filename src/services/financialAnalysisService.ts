@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials } from './yahooFinance';
 import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
-import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker } from './claudeAI';
+import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker, generateBusinessDescription } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -314,6 +314,26 @@ async function runPrivatePath(
   let job = update(jobId, {
     isPublic:    false,
     status:      'researching',
+    progress:    15,
+    currentStep: `Verifying ${input.companyName}'s identity at ${input.companyDomain}…`,
+  });
+  emit(jobId, 'progress', job);
+
+  // Verify company identity FIRST, rooted in the domain, before researching financials.
+  // Company names are frequently shared by unrelated businesses — pure company-name
+  // research/synthesis without an anchored identity check has previously returned
+  // financials for the wrong company entirely.
+  let verifiedDescription = '';
+  try {
+    verifiedDescription = await generateBusinessDescription(input.companyName, input.companyDomain);
+    if (verifiedDescription.includes('No business description can be ascertained')) {
+      verifiedDescription = '';
+    }
+  } catch (err) {
+    console.warn('[financialAnalysis] Identity verification failed, proceeding without it:', err);
+  }
+
+  job = update(jobId, {
     progress:    25,
     currentStep: `Researching ${input.companyName}'s financial profile via Parallel.AI…`,
   });
@@ -333,7 +353,7 @@ async function runPrivatePath(
   });
   emit(jobId, 'progress', job);
 
-  const privateData = await synthesizePrivateCompany(input, research, (accumulated) => {
+  const privateData = await synthesizePrivateCompany(input, research, verifiedDescription, (accumulated) => {
     const synthProgress = Math.min(95, 70 + Math.floor((accumulated.length / 4000) * 25));
     const j = update(jobId, { progress: synthProgress });
     emit(jobId, 'progress', j);

@@ -1185,9 +1185,11 @@ interface PrivateCompanyPayload {
 export async function synthesizePrivateCompany(
   input: FinancialAnalysisInput,
   research: string,
+  verifiedDescription?: string,
   onChunk?: (accumulated: string) => void
 ): Promise<PrivateCompanyPayload> {
   const hasResearch = !isEmptyResearch(research);
+  const hasVerified = !!verifiedDescription && verifiedDescription.trim().length > 20;
 
   const systemPrompt = `You are a senior investment analyst producing concise private company financial profiles.
 Rules:
@@ -1202,9 +1204,13 @@ Rules:
     ? `\n- COMPANY IDENTITY: "${input.companyName}" is identified by domain ${input.companyDomain}. If multiple companies share this name, focus ONLY on the one at ${input.companyDomain}. Do NOT use data from any other company with a similar or identical name — this is a common failure mode you must actively guard against.`
     : `\n- WARNING: No domain was provided to disambiguate this company. If you are not highly confident which specific company "${input.companyName}" refers to (e.g. the name is generic or shared by multiple unrelated companies), state this uncertainty explicitly in privateInsights rather than confidently profiling the wrong company.`;
 
+  const verifiedBlock = hasVerified
+    ? `\nVERIFIED FACT — what "${input.companyName}" actually does (already confirmed via live research at ${input.companyDomain}; this is authoritative and OVERRIDES anything your training data suggests about a similarly-named company):\n"""\n${verifiedDescription!.slice(0, 3000)}\n"""\nEvery figure and insight you produce MUST be consistent with the business described above. If your training data suggests a different industry or business model for this name, that instinct refers to a DIFFERENT, unrelated company — discard it entirely.\n`
+    : '';
+
   const userPrompt = `Produce a financial profile for private company "${input.companyName}"${input.companyDomain ? ` (domain: ${input.companyDomain})` : ''}.
 ${domainContextPrivate}
-
+${verifiedBlock}
 ${hasResearch ? `RESEARCH:\n${research.slice(0, 50000)}` : `[No live research — use training knowledge. Label all estimates as "(est.)"]`}
 
 Return a JSON object with EXACTLY this structure:

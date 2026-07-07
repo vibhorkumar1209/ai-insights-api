@@ -957,9 +957,12 @@ export async function researchPrivateCompany(
   companyName: string,
   domain?: string
 ): Promise<string> {
+  const identityAnchor = domain
+    ? `COMPANY TO RESEARCH: "${companyName}", operating at the domain ${domain}. This domain is the definitive identifier — company names are frequently shared by multiple unrelated businesses, so before gathering any data, confirm you are researching the company that operates at ${domain} specifically. If search results surface a different company with the same or a similar name that does NOT operate at ${domain}, discard those results entirely and do not use them.\n\n`
+    : `COMPANY TO RESEARCH: "${companyName}" (no domain provided — if this name is ambiguous or shared by multiple companies, state that explicitly rather than blending data from unrelated companies).\n\n`;
   const domainNote = domain ? ` (domain: ${domain})` : '';
   const query = `
-Research the financial profile and business intelligence for private company "${companyName}"${domainNote}.
+${identityAnchor}Research the financial profile and business intelligence for private company "${companyName}"${domainNote}.
 
 Gather data from Crunchbase, Tracxn, Pitchbook references, LinkedIn, news articles, and press releases:
 
@@ -1045,9 +1048,12 @@ export async function researchCompanyOverview(
   companyName: string,
   domain?: string
 ): Promise<string> {
+  const identityAnchor = domain
+    ? `COMPANY TO RESEARCH: "${companyName}", operating at the domain ${domain}. This domain is the definitive identifier — company names are frequently shared by multiple unrelated businesses, so before gathering any data, confirm you are researching the company that operates at ${domain} specifically. If search results surface a different company with the same or a similar name that does NOT operate at ${domain}, discard those results entirely and do not use them.\n\n`
+    : `COMPANY TO RESEARCH: "${companyName}" (no domain provided — if this name is ambiguous or shared by multiple companies, state that explicitly rather than blending data from unrelated companies).\n\n`;
   const domainNote = domain ? ` (website: ${domain})` : '';
   const query = `
-Research factual, current company-overview data for "${companyName}"${domainNote}.
+${identityAnchor}Research factual, current company-overview data for "${companyName}"${domainNote}.
 
 Report on the following, citing the source and year for each fact:
 

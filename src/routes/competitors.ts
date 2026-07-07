@@ -12,7 +12,7 @@ const router = Router();
  * returning competitors for the wrong company when the name was ambiguous
  * or Claude's training data on the target company was sparse.
  *
- * Body: { targetCompany: string, industryContext?: string, companyDomain?: string }
+ * Body: { targetCompany: string, companyDomain: string, industryContext?: string }
  * Returns: { competitors: Competitor[] }
  */
 router.post('/', aiLimiter, async (req: Request, res: Response) => {
@@ -20,6 +20,10 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
 
   if (!targetCompany || typeof targetCompany !== 'string') {
     return res.status(400).json({ error: 'targetCompany is required and must be a string' });
+  }
+
+  if (!companyDomain || typeof companyDomain !== 'string' || !companyDomain.trim()) {
+    return res.status(400).json({ error: 'companyDomain is required — it is used to verify company identity before researching peers, since company names are frequently shared by unrelated businesses' });
   }
 
   if (targetCompany.length > 200 || (industryContext && String(industryContext).length > 500)) {
@@ -30,9 +34,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     ? industryContext.trim()
     : undefined;
 
-  const domain = typeof companyDomain === 'string' && companyDomain.trim()
-    ? companyDomain.trim()
-    : undefined;
+  const domain = companyDomain.trim();
 
   try {
     const research = await researchCompanyOverview(targetCompany.trim(), domain).catch((err) => {
