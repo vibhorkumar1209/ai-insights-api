@@ -262,7 +262,8 @@ import { Competitor } from '@ai-insights/types';
 export async function discoverCompetitorsFast(
   targetCompany: string,
   industryContext?: string,
-  companyDomain?: string
+  companyDomain?: string,
+  research?: string
 ): Promise<Competitor[]> {
   const industryLine = industryContext
     ? `in the ${industryContext} industry`
@@ -272,9 +273,14 @@ export async function discoverCompetitorsFast(
     ? `\nCOMPANY IDENTITY: "${targetCompany}" is identified by domain ${companyDomain}. Company names can be shared by multiple unrelated businesses — if you recall a different company with this or a similar name that does NOT match this domain, ignore it entirely and identify the correct company at ${companyDomain} first before listing competitors.`
     : `\nWARNING: No domain was provided. "${targetCompany}" may be a name shared by multiple unrelated companies. Before listing competitors, first state (internally) which specific company and industry you believe this refers to, and only proceed if you are confident. If the name is ambiguous or you cannot confidently identify a specific real company, return an empty array [] rather than guessing and profiling the wrong company.`;
 
+  const hasResearch = !!research && !isEmptyResearch(research);
+  const researchBlock = hasResearch
+    ? `\nRESEARCH (this is live, current information about the SPECIFIC company in question — trust it over your training knowledge, which may be sparse, outdated, or confuse this company with an unrelated one of a similar name):\n${research!.slice(0, 12000)}\n`
+    : `\nNo live research is available for this company. Your training knowledge of it may be limited or you may be confusing it with an unrelated company of a similar name — be conservative and prefer returning [] over confidently listing competitors for the wrong company.\n`;
+
   const userPrompt = `Identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
 ${domainIdentityLine}
-
+${researchBlock}
 For each competitor return a JSON object with these fields:
 - name: Company name (exact legal or commonly known name)
 - description: One-sentence business description

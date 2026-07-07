@@ -1,12 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { discoverCompetitorsFast } from '../services/claudeAI';
+import { researchCompanyOverview } from '../services/parallelAI';
 import { aiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
 /**
  * POST /api/competitors
- * Discover competitors for a target company using Claude (fast, ~5-10s).
+ * Discover competitors for a target company. Grounds Claude in a live web
+ * research pass first — pure training-knowledge lookups were confidently
+ * returning competitors for the wrong company when the name was ambiguous
+ * or Claude's training data on the target company was sparse.
  *
  * Body: { targetCompany: string, industryContext?: string, companyDomain?: string }
  * Returns: { competitors: Competitor[] }
@@ -31,10 +35,16 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     : undefined;
 
   try {
+    const research = await researchCompanyOverview(targetCompany.trim(), domain).catch((err) => {
+      console.warn('[competitors] Research failed, proceeding with training knowledge:', err);
+      return '';
+    });
+
     const competitors = await discoverCompetitorsFast(
       targetCompany.trim(),
       industry,
-      domain
+      domain,
+      research
     );
 
     return res.json({
