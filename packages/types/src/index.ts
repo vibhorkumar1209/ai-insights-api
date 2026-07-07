@@ -1199,3 +1199,29 @@ export interface FirmographicResult {
   createdAt: string;
   completedAt?: string;
 }
+
+// ── Industry Outsourcing Report ──────────────────────────────────────────────
+
+export interface OutsourcingReportInput {
+  vendorName: string;
+  targetIndustry: string;
+  geoFocus: string;
+  focusTech: string;
+  focusSegment: string;
+}
+
+export interface OutsourcingReportResult {
+  jobId: string;
+  status: 'pending' | 'drafting' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  vendorName: string;
+  targetIndustry: string;
+  geoFocus: string;
+  focusTech: string;
+  focusSegment: string;
+  content?: string;             // full markdown blueprint (concatenated across generation chunks)
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}

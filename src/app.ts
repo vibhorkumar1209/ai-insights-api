@@ -27,6 +27,7 @@ import contentGenerationRouter from './routes/contentGeneration';
 import consultingIntelligenceRouter from './routes/consultingIntelligence';
 import vucaAnalysisRouter from './routes/vucaAnalysis';
 import firmographicRouter from './routes/firmographic';
+import outsourcingReportRouter from './routes/outsourcingReport';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -75,6 +76,7 @@ app.use('/api/consulting-intelligence', memoryGuard, consultingIntelligenceRoute
 app.use('/api/vuca-analysis', memoryGuard, vucaAnalysisRouter);
 app.use('/api/objection-handling', memoryGuard, objectionHandlingRouter);
 app.use('/api/firmographic', memoryGuard, firmographicRouter);
+app.use('/api/industry-outsourcing-report', memoryGuard, outsourcingReportRouter);
 
 // ── Debug: test Claude connectivity ──────────────────────────────────────────
 app.get('/api/debug-claude', async (_req, res) => {

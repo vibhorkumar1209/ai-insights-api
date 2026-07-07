@@ -3557,3 +3557,134 @@ Return this exact JSON structure:
     battleCard:                   parsed.battleCard || '',
   };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INDUSTRY OUTSOURCING REPORT
+// ══════════════════════════════════════════════════════════════════════════════
+
+import { OutsourcingReportInput } from '@ai-insights/types';
+
+const OUTSOURCING_SYSTEM_PROMPT = `You are an elite, world-class Technology Strategy Consultant, Enterprise Sales Enablement Director, and Industrial Market Analyst. Output clean Markdown only — use headers, data-dense bullet points, and GitHub-flavored Markdown tables. Do not truncate information or summarize sections broadly. Avoid generic corporate buzzwords; dive deep into technical, workload-specific, and operational realities. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+
+function outsourcingContextBlock(input: OutsourcingReportInput): string {
+  return `**Vendor Name:** ${input.vendorName}
+**Target Industry:** ${input.targetIndustry}
+**Geo Focus:** ${input.geoFocus}
+**Focus Tech:** ${input.focusTech}
+**Focus Segment:** ${input.focusSegment}`;
+}
+
+interface OutsourcingChunkDef {
+  label: string;
+  maxTokens: number;
+  buildPrompt: (input: OutsourcingReportInput) => string;
+}
+
+const OUTSOURCING_CHUNKS: OutsourcingChunkDef[] = [
+  {
+    label: 'Strategic framework & ecosystem map (Steps 1-2)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+
+Execute STEP 1 and STEP 2 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 1" — no preamble, no closing summary.
+
+### STEP 1: 4W1H STRATEGIC OUTSOURCING FRAMEWORK
+Build a robust introductory market alignment section and a comprehensive markdown table mapping the outsourcing workloads.
+- **Introductory Context:** Analyze how ${input.vendorName} must pivot its product portfolio, specifically weaponizing ${input.focusTech}, to sell high-value IT, DX, AI, and infrastructure services into ${input.targetIndustry} instead of legacy hardware or physical products.
+- **Tabular 4W1H Analysis:** Construct a 5-column table tailored to intercepting ${input.focusSegment}:
+  1. WHAT to Sell (Target Workloads): Break down specific, high-tech workloads explicitly powered by ${input.focusTech}.
+  2. WHO to Sell To (Example Accounts): List real-world, prominent target enterprises matching ${input.focusSegment}.
+  3. WHEN to Sell (Trigger Events): Detail clear operational, macro, or microeconomic pain points or business triggers.
+  4. WHERE to Sell (Regions): Specify geographies based on ${input.geoFocus}.
+  5. HOW to Sell & Strategic Reason: Provide a precise sales playbook action method backed by a technical reason for each workload.
+- **Operational Execution Strategy:** Conclude with clear notes on how the vendor can leverage its existing international subsidiaries or structural trust advantages to scale operations.
+
+### STEP 2: VERTICAL INDUSTRY ECOSYSTEM MAP
+Map the structural dynamics surrounding ${input.vendorName} within ${input.targetIndustry} across three separate deep-dive dimensions, heavily emphasizing ${input.focusTech} and ${input.focusSegment}:
+1. Top Customers (The Buy Side): Categorize the major buyer segments in the industry, placing ${input.focusSegment} at the absolute top. For each segment, list explicit target accounts, specify a concrete major workload example, and provide a comprehensive "Business Reason & Technical Rationale" explaining why they would outsource.
+2. Key Suppliers & Partners (The Tech Enablers): Map the critical third-party infrastructure players that ${input.vendorName} must partner with to deliver ${input.focusTech} as an end-to-end solution. Detail co-created workload examples and the underlying technical rationale.
+3. Competitors of the Vendor (The Rivalry): Identify the top global and regional IT service providers or industrial consultants competing for these exact budgets. For each competitor, state their core strength, where they clash directly with ${input.vendorName} over ${input.focusTech}, and build a "Why They Win / Why They Lose Against ${input.vendorName}" tactical assessment.`,
+  },
+  {
+    label: 'Competitive benchmarking & strategic implications (Steps 3-4)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+
+Execute STEP 3 and STEP 4 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 3" — no preamble, no closing summary.
+
+### STEP 3: COMPETITIVE BENCHMARKING & MARKET LANDSCAPE
+Analyze the supplier market architecture for this vertical:
+- **Market Concentration vs. Fragmentation Analysis:** Write an analytical narrative evaluating which layers of the industry are highly concentrated (dominated by a tight circle of niche engineering giants with high entry barriers) versus which layers are highly fragmented (split across global tech firms, regional consultancies, and internal captive IT units). Focus on how fragmentation allows ${input.vendorName} to insert ${input.focusTech} without altering core engineering layers.
+- **Top Supplier Matrix:** Build a comprehensive Markdown table benchmarking ${input.vendorName} against its top 4-5 direct rivals in this space. Table columns must include: Supplier, Primary Accounts / Ecosystem Alliances, Major Workloads Managed, Core Products & Services, Estimated Active Deals & Scale, and a customized Quick SWOT Analysis focusing strictly on their position in ${input.targetIndustry} relative to ${input.focusTech}.
+
+### STEP 4: STRATEGIC IMPLICATIONS FOR THE VENDOR
+Based on the benchmarking data generated in Step 3, write an aggressive strategic mandate for ${input.vendorName}. Provide concrete, actionable direction broken into four separate pillars:
+1. The Positioning Imperative: Identify the commodity or high-capital traps ${input.vendorName} must avoid, and define exactly how they should leverage ${input.focusTech} to build a high-margin, repeatable GTM strategy. Provide a clear "AVOID vs. CHOOSE" messaging example.
+2. Geographic & Geopolitical Imperative: Show how to monetize macro trends, national subsidy acts, nearshoring transitions, and sovereign-trust frameworks within ${input.geoFocus} to lock out global generic competitors.
+3. Capability Imperative: Detail how ${input.vendorName} should leverage its core software alliances, APIs, or data platforms to build a unique "IT-to-OT" bridge that applies ${input.focusTech} directly to the physical factory or operational floor.
+4. Delivery Scale Imperative: Explain how to restructure delivery costs to match competitor pricing while respecting local data sovereignty mandates.
+- Conclude this step with a Summary Matrix outlining: Competitor Vulnerability, Vendor Counter-Strategy, and an explicit Target Metric for Success.`,
+  },
+  {
+    label: 'High-volume workloads & capability heat map (Steps 5-6)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+
+Execute STEP 5 and STEP 6 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 5" — no preamble, no closing summary.
+
+### STEP 5: HIGH-VOLUME WORKLOAD ANALYSIS
+Identify the core, day-to-day transaction engines of the industry, the workloads that drive the highest consistent contract and deal volumes rather than just marketing headlines. Construct a comprehensive Markdown table ranked by transaction density. Columns must include:
+- Rank & Workload
+- Core Product / Service Focus
+- Primary Reason for Outsourcing (Cost, Complexity, Compliance, or Scale)
+- Key Customers
+- Key Tech Suppliers
+- Future Trend (Next 3-5 Years)
+Follow the table with an analytical summary distinguishing between where the general industry money pools and where ${input.vendorName} is positioned to capture high-margin, recurring managed services revenue using ${input.focusTech}.
+
+### STEP 6: COMPETITOR CAPABILITY HEAT MAP
+Construct a clear visual capability matrix evaluating ${input.vendorName} and its top 9 competitors (10 total rows) against at least 7 key industry-specific workloads, ensuring at least 3 workloads are directly mapped to ${input.focusTech}.
+- Use clear visual indicators: 🔥 Market Leader / Dominant, 🟢 Strong / Core Competency, 🟡 Emerging / Niche Player, and 🔴 Minimal / No Capability.
+- Follow the matrix with "Critical Strategic Insights" detailing exactly where ${input.vendorName} faces an entrenched "Red Ocean" (and must cede the space) versus where ${input.focusTech} unlocks a highly lucrative "Blue Ocean" or "Sovereign Shield" sweet spot across ${input.focusSegment}.`,
+  },
+  {
+    label: 'Customer anchors, regional dynamics & final playbook (Steps 7-8)',
+    maxTokens: 8192,
+    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+
+Execute STEP 7 and STEP 8 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 7" — no preamble, no closing summary.
+
+### STEP 7: CUSTOMER ANCHOR PROFILES & REGIONAL MARKET DYNAMICS
+Provide granular operational visibility across two distinct frameworks:
+- **Key Customer Profile Architecture:** Build a comprehensive Markdown table detailing 10 large, real-world customer accounts across the industry (at least 5 must represent ${input.focusSegment}). For each account, map: Key Workloads Managed, Incumbent / Key Tech Suppliers, Core Business Theme, Core Technology Theme, and Strategic Outsourcing Entry Point. Follow the table with a commercial roadmap detailing how to operationalize these profiles into sales wins using ${input.focusTech}.
+- **Regional Market Dynamics Matrix:** Segregate the industry into its key global operating regions relevant to ${input.geoFocus} (e.g. Japan, North America, Europe, Asia-Pacific). For each region, list exactly 5 distinct dynamics categorized across Business Trends, Tech Trends, Drivers, and Barriers. For each item, build out four data points in a table: Dynamic Type, Trend/Element, Impact of Trend (High/Medium/Low), Description of Trend, and Strategic Impact on ${input.vendorName}'s ${input.focusTech} portfolio.
+
+### STEP 8: TRANSACTIONAL INTELLIGENCE & FINAL INTEGRATED SALES PLAYBOOK
+Conclude the blueprint by compiling real-world contract data and building an actionable sales strategy:
+- **Large Outsourcing Deals (> $25M TCV):** Build a detailed Markdown table listing at least 5 major industry outsourcing contracts signed or executed within the past 12-18 months. Include columns for: Customer, Vendor, Announcement Date, Description of Deal, TCV, ACV, Start Date, End Date, and Duration. If fewer than 5 real, verifiable deals exist, include only verified ones and state so — do not fabricate.
+- **Ecosystem Adjustments (M&A, JVs, Partnerships):** Build two separate tables capturing consolidation:
+  1. Player-Level Transactions: Consolidation at the core industry builder/manufacturer layer.
+  2. Supplier-Level Transactions: Mergers, acquisitions, or product integration alliances at the IT/Software provider layer. Map out how ${input.vendorName} can leverage or intercept these shifts using ${input.focusTech}.
+- **Emerging Industry Outsourcing Trends:** List 5 next-generation outsourcing shifts. Include columns for: Emerging Trend, Market Impact, Description of Trend, and Strategic Action Plan for ${input.vendorName}.`,
+  },
+];
+
+export const OUTSOURCING_CHUNK_COUNT = OUTSOURCING_CHUNKS.length;
+
+export async function synthesizeOutsourcingReportChunk(
+  input: OutsourcingReportInput,
+  chunkIndex: number
+): Promise<{ label: string; markdown: string }> {
+  const chunk = OUTSOURCING_CHUNKS[chunkIndex];
+  if (!chunk) throw new Error(`Invalid outsourcing report chunk index: ${chunkIndex}`);
+
+  const userPrompt = chunk.buildPrompt(input);
+  const raw = await claudeCreateDirect(OUTSOURCING_SYSTEM_PROMPT, userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 180000, 0.2);
+  const markdown = raw.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  if (!markdown || markdown.length < 50) {
+    throw new Error(`Outsourcing report chunk "${chunk.label}" returned empty/too-short content`);
+  }
+
+  return { label: chunk.label, markdown };
+}
