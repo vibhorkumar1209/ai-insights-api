@@ -3679,7 +3679,7 @@ export async function synthesizeOutsourcingReportChunk(
   if (!chunk) throw new Error(`Invalid outsourcing report chunk index: ${chunkIndex}`);
 
   const userPrompt = chunk.buildPrompt(input);
-  const raw = await claudeCreateDirect(OUTSOURCING_SYSTEM_PROMPT, userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 180000, 0.2);
+  const raw = await claudeCreateDirect(OUTSOURCING_SYSTEM_PROMPT, userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 300000, 0.2);
   const markdown = raw.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
   if (!markdown || markdown.length < 50) {
