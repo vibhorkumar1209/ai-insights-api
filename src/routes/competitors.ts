@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { discoverCompetitorsFast } from '../services/claudeAI';
+import { discoverCompetitorsFast, generateBusinessDescription } from '../services/claudeAI';
 import { researchCompanyOverview } from '../services/parallelAI';
 import { aiLimiter } from '../middleware/rateLimiter';
 
@@ -40,11 +40,23 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
       return '';
     });
 
+    // Get a verified identity/description first (same pipeline as Business Description) —
+    // this is a much stronger disambiguation signal than raw research text, since it forces
+    // Claude to commit to a specific factual identity before reasoning about competitors.
+    let verifiedDescription = await generateBusinessDescription(targetCompany.trim(), domain, research).catch((err) => {
+      console.warn('[competitors] Verified description failed, proceeding without it:', err);
+      return '';
+    });
+    if (verifiedDescription.includes('No business description can be ascertained')) {
+      verifiedDescription = '';
+    }
+
     const competitors = await discoverCompetitorsFast(
       targetCompany.trim(),
       industry,
       domain,
-      research
+      research,
+      verifiedDescription
     );
 
     return res.json({
