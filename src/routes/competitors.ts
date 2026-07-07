@@ -8,11 +8,11 @@ const router = Router();
  * POST /api/competitors
  * Discover competitors for a target company using Claude (fast, ~5-10s).
  *
- * Body: { targetCompany: string, industryContext?: string }
+ * Body: { targetCompany: string, industryContext?: string, companyDomain?: string }
  * Returns: { competitors: Competitor[] }
  */
 router.post('/', aiLimiter, async (req: Request, res: Response) => {
-  const { targetCompany, industryContext } = req.body;
+  const { targetCompany, industryContext, companyDomain } = req.body;
 
   if (!targetCompany || typeof targetCompany !== 'string') {
     return res.status(400).json({ error: 'targetCompany is required and must be a string' });
@@ -26,10 +26,15 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     ? industryContext.trim()
     : undefined;
 
+  const domain = typeof companyDomain === 'string' && companyDomain.trim()
+    ? companyDomain.trim()
+    : undefined;
+
   try {
     const competitors = await discoverCompetitorsFast(
       targetCompany.trim(),
-      industry
+      industry,
+      domain
     );
 
     return res.json({

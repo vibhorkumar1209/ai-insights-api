@@ -261,13 +261,19 @@ import { Competitor } from '@ai-insights/types';
 
 export async function discoverCompetitorsFast(
   targetCompany: string,
-  industryContext?: string
+  industryContext?: string,
+  companyDomain?: string
 ): Promise<Competitor[]> {
   const industryLine = industryContext
     ? `in the ${industryContext} industry`
     : '(determine the primary industry/sector first)';
 
+  const domainIdentityLine = companyDomain
+    ? `\nCOMPANY IDENTITY: "${targetCompany}" is identified by domain ${companyDomain}. Company names can be shared by multiple unrelated businesses — if you recall a different company with this or a similar name that does NOT match this domain, ignore it entirely and identify the correct company at ${companyDomain} first before listing competitors.`
+    : `\nWARNING: No domain was provided. "${targetCompany}" may be a name shared by multiple unrelated companies. Before listing competitors, first state (internally) which specific company and industry you believe this refers to, and only proceed if you are confident. If the name is ambiguous or you cannot confidently identify a specific real company, return an empty array [] rather than guessing and profiling the wrong company.`;
+
   const userPrompt = `Identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
+${domainIdentityLine}
 
 For each competitor return a JSON object with these fields:
 - name: Company name (exact legal or commonly known name)
@@ -280,7 +286,7 @@ For each competitor return a JSON object with these fields:
 Return ONLY a JSON array. No markdown fences, no explanation.
 [{"name":"...","description":"...","headquarters":"...","estimatedRevenue":"...","employees":"...","relevanceScore":8}]
 
-Only include direct competitors — companies competing for the same customers, contracts, or market segments as ${targetCompany}. Prioritize companies with publicly available technology/digital strategy information. IMPORTANT: Only include companies that are currently active and operating. Do NOT include companies that have shut down, filed for bankruptcy, been liquidated, or permanently exited the market.`;
+Only include direct competitors — companies competing for the same customers, contracts, or market segments as the SPECIFIC company identified above (not a different company with a similar name). Prioritize companies with publicly available technology/digital strategy information. IMPORTANT: Only include companies that are currently active and operating. Do NOT include companies that have shut down, filed for bankruptcy, been liquidated, or permanently exited the market.`;
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst. Return ONLY valid JSON arrays. No commentary. ${getRecencyDirective()}`;
 
@@ -1181,7 +1187,12 @@ Rules:
 - ${getRecencyDirective()}
 - ${WRITING_DIRECTIVE}`;
 
-  const userPrompt = `Produce a financial profile for private company "${input.companyName}".
+  const domainContextPrivate = input.companyDomain
+    ? `\n- COMPANY IDENTITY: "${input.companyName}" is identified by domain ${input.companyDomain}. If multiple companies share this name, focus ONLY on the one at ${input.companyDomain}. Do NOT use data from any other company with a similar or identical name — this is a common failure mode you must actively guard against.`
+    : `\n- WARNING: No domain was provided to disambiguate this company. If you are not highly confident which specific company "${input.companyName}" refers to (e.g. the name is generic or shared by multiple unrelated companies), state this uncertainty explicitly in privateInsights rather than confidently profiling the wrong company.`;
+
+  const userPrompt = `Produce a financial profile for private company "${input.companyName}"${input.companyDomain ? ` (domain: ${input.companyDomain})` : ''}.
+${domainContextPrivate}
 
 ${hasResearch ? `RESEARCH:\n${research.slice(0, 50000)}` : `[No live research — use training knowledge. Label all estimates as "(est.)"]`}
 
