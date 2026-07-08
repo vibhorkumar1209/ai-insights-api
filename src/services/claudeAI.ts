@@ -1647,7 +1647,7 @@ export async function extractScopeWithWizard(
     market_opportunities: 'Market Opportunities',
     swot: 'SWOT Analysis',
     porters_five_forces: "Porter's Five Forces",
-    tei_analysis: 'Technology, Economy & Innovation Analysis',
+    tei_analysis: 'Total Economic Impact',
   };
   const userSelectedSections = input.selectedSections?.length
     ? input.selectedSections
@@ -2010,19 +2010,19 @@ const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string;
     title: 'SWOT Analysis',
     tableHint: 'No table needed. Set keyTable to null.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant. Focus on being concise — each item should be 1-2 sentences. Prioritise observations from the last 12 months.',
+    subsectionHint: 'Still include the top-level "id" and "title" fields exactly as specified in the object structure — only bodyParagraphs/keyTable/tables/chartSpec/charts/subsections are empty or null for this section. Set bodyParagraphs to empty array [], and populate "swotData": { "strengths": [{"title": "...", "description": "...", "impact": "high|medium|low"}], "weaknesses": [...], "opportunities": [...], "threats": [...] }. 4-6 items per quadrant. Focus on being concise — each item should be 1-2 sentences. Prioritise observations from the last 12 months.',
   },
   porters_five_forces: {
     title: "Porter's Five Forces",
     tableHint: 'No table needed. Set keyTable to null.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }. Each force needs rating + 3-5 factors + 1-2 sentence description.',
+    subsectionHint: 'Still include the top-level "id" and "title" fields exactly as specified in the object structure — only bodyParagraphs/keyTable/tables/chartSpec/charts/subsections are empty or null for this section. Set bodyParagraphs to empty array [], and populate "portersData": { "competitiveRivalry": {"rating": "high|medium|low", "factors": ["..."], "description": "..."}, "supplierPower": {...}, "buyerPower": {...}, "threatOfSubstitution": {...}, "threatOfNewEntry": {...} }. Each force needs rating + 3-5 factors + 1-2 sentence description.',
   },
   tei_analysis: {
-    title: 'Technology, Economy & Innovation Analysis',
+    title: 'Total Economic Impact',
     tableHint: 'No traditional keyTable. Set keyTable to null.',
     chartHint: 'No chart needed. Set chartSpec to null.',
-    subsectionHint: 'No subsections. No bodyParagraphs needed (set to empty array []). ONLY return "macroTeiData": { "items": [{"trigger": "Macroeconomic or technology/innovation trigger name", "impactLevel": "high|medium|low", "description": "Description of the trigger and its relevance to this industry", "examples": "Real-world examples, recent events, data points", "marketSizeImpact": "+X.X% or -X.X% impact on market size"}, ...] }. Include 6-10 triggers spanning macroeconomic factors (interest rates, inflation, trade policy, currency, GDP growth, commodity prices) AND technology/innovation factors (AI adoption, automation, digital transformation, emerging tech disruption) most relevant to this industry.',
+    subsectionHint: 'Still include the top-level "id" and "title" fields exactly as specified in the object structure — only bodyParagraphs/keyTable/tables/chartSpec/charts/subsections are empty or null for this section. Set bodyParagraphs to empty array [], and populate "macroTeiData": { "items": [{"trigger": "Macroeconomic or technology/innovation trigger name", "impactLevel": "high|medium|low", "description": "Description of the trigger and its relevance to this industry", "examples": "Real-world examples, recent events, data points", "marketSizeImpact": "+X.X% or -X.X% impact on market size"}, ...] }. Include 6-10 triggers spanning macroeconomic factors (interest rates, inflation, trade policy, currency, GDP growth, commodity prices) AND technology/innovation factors (AI adoption, automation, digital transformation, emerging tech disruption) most relevant to this industry.',
   },
 };
 
@@ -2132,7 +2132,7 @@ CRITICAL RULES:
 - For ma_jv_partnerships: use "tables" array only. Only include deals from the last 12 months. Do NOT fabricate deals.
 - For market_innovation: use "tables" array only, exactly 5 columns (no Source column). Weight rows toward startups active in the specific target industry and target geography — search for local/regional startup activity, not just global players.
 - For market_opportunities: use "tables" array only, exactly 3 columns (no Source or Analyst Firm columns). Do NOT attribute rows to any named research/analyst firm.
-- For swot/porters_five_forces/tei_analysis: include ONLY the specialized data field (swotData / portersData / macroTeiData respectively). bodyParagraphs, keyTable, tables, chartSpec, charts, and subsections should all be null or empty for these three sections.
+- For swot/porters_five_forces/tei_analysis: the object MUST still include "id" and "title", plus the specialized data field (swotData / portersData / macroTeiData respectively). bodyParagraphs, keyTable, tables, chartSpec, charts, and subsections should all be null or empty for these three sections.
 - For market_size_by_segment: Ensure that for each year shown in the table, the sum of all sub-segment market sizes equals the total market size from Market Overview (tolerance: ±2% for rounding). This maintains consistency across sections.
 - Be specific: cite figures, company names, percentages, dates.
 - EVERY subsection MUST have a non-empty "content" string with substantive bullet-point analysis. Never leave subsection content as "" or null.
@@ -2207,6 +2207,16 @@ CRITICAL RULES:
 
   // Debug: log what was parsed
   console.log(`[draftV2] Parsed ${parsed.length} sections: ${(parsed as any[]).map((s: any) => s.id || '?').join(', ')}`);
+
+  // Backfill missing id/title positionally against the requested sectionIds — some
+  // sections (swot/porters_five_forces/tei_analysis) instruct Claude to return "only"
+  // the specialized data field, which can cause it to drop id/title entirely even
+  // though the object is otherwise a valid, populated section.
+  (parsed as any[]).forEach((s, idx) => {
+    if (!s || typeof s !== 'object') return;
+    if (!s.id && sectionIds[idx]) s.id = sectionIds[idx];
+    if (!s.title && SECTION_DEFINITIONS_V2[s.id]) s.title = SECTION_DEFINITIONS_V2[s.id].title;
+  });
 
   const valid = (parsed as ReportSection[]).filter((s) => {
     if (!s.id || !s.title) return false;
