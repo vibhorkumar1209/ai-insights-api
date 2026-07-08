@@ -124,6 +124,69 @@ function formatWithCurrency(raw: number | null, currency = 'USD'): string {
   return `${sign}${sym}${raw.toLocaleString()}`;
 }
 
+// ── USD-normalised revenue formatting (Firmographic module) ──────────────────
+// Static approximate FX-to-USD rates. Good enough for the Firmographic
+// module's "USD Million unless >= $1B" display rule — this is a scale
+// indicator, not a precision financial conversion.
+const FX_TO_USD: Record<string, number> = {
+  USD: 1, GBP: 1.27, EUR: 1.08, JPY: 0.0067, CAD: 0.73, AUD: 0.65,
+  INR: 0.012, CHF: 1.13, CNY: 0.14, HKD: 0.128, SGD: 0.74, KRW: 0.00073,
+};
+
+/** Format a raw revenue figure (in its native currency) per the Firmographic
+ *  module rule: USD Millions if under $1B, USD Billions if $1B or more.
+ *  If the native currency isn't USD, append the native-currency figure in
+ *  brackets, e.g. "$485M (₹4,020 Cr)" or "$12.4B ($12.4B)" → no bracket if USD. */
+export function formatRevenueUSD(raw: number | null, currency = 'USD'): string {
+  if (raw == null || isNaN(raw)) return 'N/A';
+  const cur = currency.toUpperCase();
+  const rate = FX_TO_USD[cur] ?? 1;
+  const usd = raw * rate;
+  const sign = usd < 0 ? '-' : '';
+  const absUsd = Math.abs(usd);
+
+  // Below $1M, M would round to "$0M" — fall back to K (or plain dollars under $1K).
+  let usdStr: string;
+  if (absUsd >= 1e9) {
+    usdStr = `${sign}$${(absUsd / 1e9).toFixed(2)}B`;
+  } else if (absUsd >= 1e6) {
+    usdStr = `${sign}$${(absUsd / 1e6).toFixed(0)}M`;
+  } else if (absUsd >= 1e3) {
+    usdStr = `${sign}$${(absUsd / 1e3).toFixed(0)}K`;
+  } else {
+    usdStr = `${sign}$${absUsd.toFixed(0)}`;
+  }
+
+  if (cur === 'USD') return usdStr;
+
+  // Native-currency figure in brackets, formatted with the same scale rule
+  // using the native currency's own symbol.
+  const nativeAbs = Math.abs(raw);
+  const nativeSign = raw < 0 ? '-' : '';
+  const sym = CURRENCY_SYMBOLS[cur] ?? (cur + ' ');
+  let nativeStr: string;
+  if (cur === 'INR') {
+    // India reports in Crore (1 Cr = 10,000,000) or Lakh (1 Lakh = 100,000) for smaller figures.
+    if (nativeAbs >= 1e7) {
+      nativeStr = `${nativeSign}${sym}${(nativeAbs / 1e7).toLocaleString(undefined, { maximumFractionDigits: 0 })} Cr`;
+    } else if (nativeAbs >= 1e5) {
+      nativeStr = `${nativeSign}${sym}${(nativeAbs / 1e5).toLocaleString(undefined, { maximumFractionDigits: 1 })} Lakh`;
+    } else {
+      nativeStr = `${nativeSign}${sym}${nativeAbs.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    }
+  } else if (nativeAbs >= 1e9) {
+    nativeStr = `${nativeSign}${sym}${(nativeAbs / 1e9).toFixed(2)}B`;
+  } else if (nativeAbs >= 1e6) {
+    nativeStr = `${nativeSign}${sym}${(nativeAbs / 1e6).toFixed(0)}M`;
+  } else if (nativeAbs >= 1e3) {
+    nativeStr = `${nativeSign}${sym}${(nativeAbs / 1e3).toFixed(0)}K`;
+  } else {
+    nativeStr = `${nativeSign}${sym}${nativeAbs.toFixed(0)}`;
+  }
+
+  return `${usdStr} (${nativeStr})`;
+}
+
 function calcYoy(current: number | null, previous: number | null): string | undefined {
   if (current == null || previous == null || previous === 0) return undefined;
   const pct = ((current - previous) / Math.abs(previous)) * 100;
