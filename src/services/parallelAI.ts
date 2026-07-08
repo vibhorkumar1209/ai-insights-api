@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import { Readable } from 'stream';
 import { Competitor } from '@ai-insights/types';
+import { formatRevenueUSD } from './yahooFinance';
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
@@ -563,10 +564,12 @@ async function fetchCompanyWebpage(domain: string): Promise<string> {
 
 export interface GeminiRevenueResult {
   latestRevenue: string;       // formatted, e.g. "$94.83B"
+  latestRevenueRaw?: number;   // raw numeric amount, in native currency units
   revenueYear: string;
   currency?: string;
   yoyGrowth?: number;
   previousRevenue?: string;
+  previousRevenueRaw?: number; // raw numeric amount, in native currency units
   previousYear?: string;
   source?: string;             // publication / filing cited
 }
@@ -576,25 +579,40 @@ function buildRevenuePrompt(companyName: string, domainHint: string, isPublic: b
     ? 'This is a privately-held company — look for news coverage, funding announcements, industry reports, or press releases that cite a revenue figure.'
     : 'This is a publicly-traded company — look for its latest annual revenue as reported in its financial statements (10-K / annual report), Yahoo Finance, or Google Finance.';
 
+  // Ask for the raw native-currency number rather than trusting the model to do
+  // USD conversion/formatting itself — that step is done deterministically in
+  // code afterwards via formatRevenueUSD(), since LLM-formatted USD figures were
+  // observed to skip conversion entirely (e.g. returning "₹9.0 Lakh" unconverted).
+  const rawAmountRule = `RAW AMOUNT RULE (critical — apply to latestRevenueRaw AND previousRevenueRaw):
+- These must be the PLAIN NUMBER in the company's NATIVE reporting currency's base unit (e.g. dollars, rupees, euros) — NOT abbreviated, NOT in millions/billions/lakhs/crore, and NOT converted to USD.
+- Example: if revenue is "₹9 Lakh", latestRevenueRaw is 900000 (not 9, not "9L"). If revenue is "$485 million", latestRevenueRaw is 485000000.
+- latestRevenue/previousRevenue (the display strings) can be a human-readable figure in the native currency for reference, but latestRevenueRaw/previousRevenueRaw MUST be the precise unabbreviated number.`;
+
   if (simplified) {
     // Fallback prompt: fewer constraints, in case the structured version made the
     // model over-cautious about qualifying as a "credible" search result.
     return `What was ${companyName}'s${domainHint} latest reported annual revenue? ${scopeHint}
 
-Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<formatted figure with currency symbol>", "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure or null>", "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>"}`;
+${rawAmountRule}
+
+Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<human-readable figure in native currency>", "latestRevenueRaw": <plain unabbreviated number in native currency, per the rule above>, "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code of the company's NATIVE reporting currency>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure in native currency, or null>", "previousRevenueRaw": <plain unabbreviated number or null>, "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>"}`;
   }
 
   return `Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
 
 ${scopeHint}
 
+${rawAmountRule}
+
 Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
-  "latestRevenue": "formatted figure with currency symbol, e.g. $94.83B or ₹1,20,000 Cr",
+  "latestRevenue": "human-readable figure in the company's native currency, e.g. ₹9 Lakh or $485 million",
+  "latestRevenueRaw": <plain unabbreviated number in native currency, per the RAW AMOUNT RULE above>,
   "revenueYear": "fiscal year label, e.g. FY2025 or 2025",
-  "currency": "3-letter ISO code, e.g. USD",
+  "currency": "3-letter ISO code of the company's NATIVE reporting currency, e.g. INR",
   "yoyGrowth": <number, year-over-year growth percent, or null if unknown>,
-  "previousRevenue": "prior year formatted figure, or null",
+  "previousRevenue": "prior year figure in native currency, or null",
+  "previousRevenueRaw": <plain unabbreviated number in native currency, or null>,
   "previousYear": "prior fiscal year label, or null",
   "source": "the publication, filing, or site the figure came from"
 }
@@ -646,12 +664,24 @@ export async function geminiRevenueLookup(
         continue;
       }
 
+      // Deterministically reformat to USD per the Firmographic module rule
+      // (USD Millions unless >= $1B, native-currency figure in brackets) rather
+      // than trusting the model's own USD conversion — it was observed to
+      // sometimes skip conversion entirely and return the native figure as-is.
+      const currency = parsed.currency || 'USD';
+      const latestRevenue = typeof parsed.latestRevenueRaw === 'number'
+        ? formatRevenueUSD(parsed.latestRevenueRaw, currency)
+        : parsed.latestRevenue;
+      const previousRevenue = typeof parsed.previousRevenueRaw === 'number'
+        ? formatRevenueUSD(parsed.previousRevenueRaw, currency)
+        : parsed.previousRevenue || undefined;
+
       return {
-        latestRevenue: parsed.latestRevenue,
+        latestRevenue,
         revenueYear: parsed.revenueYear || '',
         currency: parsed.currency || undefined,
         yoyGrowth: typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined,
-        previousRevenue: parsed.previousRevenue || undefined,
+        previousRevenue,
         previousYear: parsed.previousYear || undefined,
         source: parsed.source || undefined,
       };
