@@ -620,6 +620,28 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 If you cannot find a credible, sourced revenue figure, return exactly: {"latestRevenue": null}`;
 }
 
+// Parses a human-readable revenue string (e.g. "₹9.0 Lakh", "$485 million",
+// "₹4,020 Cr", "€11.6B") into a plain unabbreviated number, for cases where
+// the model didn't supply the requested raw numeric field directly.
+function parseNativeRevenueString(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const cleaned = value.replace(/[,₹$€£¥]/g, '').trim();
+  const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*([a-zA-Z]*)/);
+  if (!match) return null;
+  const num = parseFloat(match[1]);
+  if (isNaN(num)) return null;
+  const unit = match[2].toLowerCase();
+  const multipliers: Record<string, number> = {
+    lakh: 1e5, lac: 1e5,
+    crore: 1e7, cr: 1e7,
+    thousand: 1e3, k: 1e3,
+    million: 1e6, mn: 1e6, m: 1e6,
+    billion: 1e9, bn: 1e9, b: 1e9,
+  };
+  const mult = multipliers[unit] ?? 1;
+  return num * mult;
+}
+
 function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();
@@ -668,13 +690,13 @@ export async function geminiRevenueLookup(
       // (USD Millions unless >= $1B, native-currency figure in brackets) rather
       // than trusting the model's own USD conversion — it was observed to
       // sometimes skip conversion entirely and return the native figure as-is.
+      // Falls back to parsing the human-readable string if the model omitted
+      // the requested raw numeric field.
       const currency = parsed.currency || 'USD';
-      const latestRevenue = typeof parsed.latestRevenueRaw === 'number'
-        ? formatRevenueUSD(parsed.latestRevenueRaw, currency)
-        : parsed.latestRevenue;
-      const previousRevenue = typeof parsed.previousRevenueRaw === 'number'
-        ? formatRevenueUSD(parsed.previousRevenueRaw, currency)
-        : parsed.previousRevenue || undefined;
+      const latestRaw = typeof parsed.latestRevenueRaw === 'number' ? parsed.latestRevenueRaw : parseNativeRevenueString(parsed.latestRevenue);
+      const previousRaw = typeof parsed.previousRevenueRaw === 'number' ? parsed.previousRevenueRaw : parseNativeRevenueString(parsed.previousRevenue);
+      const latestRevenue = latestRaw != null ? formatRevenueUSD(latestRaw, currency) : parsed.latestRevenue;
+      const previousRevenue = previousRaw != null ? formatRevenueUSD(previousRaw, currency) : parsed.previousRevenue || undefined;
 
       return {
         latestRevenue,
