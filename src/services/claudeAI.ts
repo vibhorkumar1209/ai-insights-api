@@ -2452,25 +2452,35 @@ export async function synthesizeBusinessSegments(
 }> {
   const hasResearch = !isEmptyResearch(research);
 
-  const systemPrompt = `You are a market research professional summarizing the reportable business segments of "${companyName}" based on its latest annual report.
+  const systemPrompt = `You are a market research professional summarizing the business segments of "${companyName}".
 Rules:
-- Identify the company's CURRENT reportable business segments exactly as named in its latest annual report/10-K
-- Use official segment names where available
+- STRONGLY PREFER Financial & Revenue Segmentation: the official segments the company uses in its investor relations (IR), annual reports (e.g., 10-K, Form 20-F), or financial statements to report revenue, named exactly as in those filings
+- ONLY if no financial/revenue segmentation is available (e.g., private company with no public filings), fall back to Operational Segmentation: group offerings into logical business units based on the actual products, software, hardware, or services sold
 - Every segment must be distinct and non-overlapping
 - If the company operates under a single reportable segment, present that one segment with the same level of detail
 - Output ONLY valid JSON. No markdown fences.
 - ${getRecencyDirective()}
 - ${WRITING_DIRECTIVE}`;
 
-  const userPrompt = `Summarize the reportable business segments of "${companyName}" based on its latest annual report.
+  const userPrompt = `Summarize the business segments of "${companyName}" using ONE of the two approaches below — try approach 1 first, and use approach 2 only if approach 1 is not possible.
 
 ${hasResearch ? `RESEARCH (10-K, annual reports, earnings calls, presentations):\n${research.slice(0, 25000)}` : `[No live research — use training knowledge about ${companyName}.]`}
 
-For EACH reportable segment, write an 80-90 word segment overview in paragraph format covering:
+APPROACH 1 — Financial & Revenue Segmentation (PREFERRED):
+- Present the official segments the company uses in its investor relations (IR), annual reports (e.g., 10-K, Form 20-F), or financial statements to report revenue
+- If exact recent revenue percentages are known, include them in the segment description (e.g., "Accounts for ~40% of total fiscal revenue"). If precise numbers are unavailable, characterise the primary vs. secondary revenue drivers based on market data
+- Note any recent major segment reorganizations or strategic shifts (fold these into the strategicEvolution bullets)
+
+APPROACH 2 — Operational Segmentation (Products & Services) — ONLY if no financial/revenue segmentation exists:
+- Group the company's offerings into logical business units based on the actual products, software, hardware, or services they sell to consumers or enterprises
+- For each unit, describe what it does, who the target customer is (e.g., B2B, B2C, Government), and key flagship offerings
+
+For EACH segment, write an 80-90 word segment overview in paragraph format covering:
 - Products and services offered
 - Types of customers catered to
 - Geographic regions served
-- The primary role or value delivered through the segment (what it offers, supports, enables, or helps with; tools or platforms used)
+- The primary role or value delivered through the segment
+- (Approach 1 only) Approximate share of total revenue, if known
 
 If "${companyName}" operates under a single reportable segment, capture all of the above under that one segment rather than forcing multiple segments.
 
@@ -2478,23 +2488,23 @@ Return a JSON object:
 {
   "segments": [
     {
-      "name": "Official segment name (exactly as reported in the latest annual report)",
-      "description": "80-90 word paragraph covering products/services, customer types, geographic regions, and primary role/value delivered",
-      "source": "Source attribution (e.g., '10-K 2024', 'Annual Report FY2024')"
+      "name": "Official segment name (exactly as reported in filings for approach 1; logical business-unit name for approach 2)",
+      "description": "80-90 word paragraph covering products/services, customer types, geographic regions, primary role/value delivered, and revenue share when known",
+      "source": "Source attribution (e.g., '10-K 2024', 'Annual Report FY2024', or 'Company website / market analysis' for operational segmentation)"
     }
   ],
   "strategicEvolution": [
     {
-      "point": "Single-sentence strategic insight about how the business model evolved (e.g., acquisitions, pivots, integration)"
+      "point": "Single-sentence strategic insight about how the business model evolved (e.g., acquisitions, pivots, segment reorganizations, integration)"
     }
   ]
 }
 
 Requirements:
-- List every reportable segment from the latest annual report (or the single segment, if that is how the company reports)
-- Segment names should match official filings exactly
+- Use approach 1 (financial/revenue segments) whenever the company publicly reports segments; use approach 2 (operational segments) only as a fallback — never mix the two
+- For approach 1, segment names must match official filings exactly
 - Each segment description must be 80-90 words, in paragraph form (not bullet points)
-- Strategic Evolution: 5-6 bullets explaining business model shifts
+- Strategic Evolution: 5-6 bullets explaining business model shifts, including any recent segment reorganizations
 - Do NOT write "(est.)" or any estimate qualifier anywhere in the output. State facts directly and confidently.`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, 2000, SYNTHESIS_MODEL);
