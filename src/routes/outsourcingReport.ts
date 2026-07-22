@@ -14,17 +14,19 @@ const router = Router();
 router.post('/', aiLimiter, (req: Request, res: Response) => {
   const { vendorName, targetIndustry, geoFocus, focusTech, focusSegment } = req.body;
 
-  if (!vendorName?.trim() || !targetIndustry?.trim() || !geoFocus?.trim() || !focusTech?.trim() || !focusSegment?.trim()) {
-    res.status(400).json({ error: 'vendorName, targetIndustry, geoFocus, focusTech, and focusSegment are all required' });
+  if (!vendorName?.trim() || !targetIndustry?.trim() || !geoFocus?.trim()) {
+    res.status(400).json({ error: 'vendorName, targetIndustry, and geoFocus are required' });
     return;
   }
 
+  // focusTech/focusSegment are optional — when omitted, let Claude use its own
+  // judgement to pick the single most relevant one for this vendor/industry/geo.
   const input = {
     vendorName: vendorName.trim(),
     targetIndustry: targetIndustry.trim(),
     geoFocus: geoFocus.trim(),
-    focusTech: focusTech.trim(),
-    focusSegment: focusSegment.trim(),
+    focusTech: focusTech?.trim() || 'the most transformative technology for this vertical (use your own judgement to select the single most relevant one)',
+    focusSegment: focusSegment?.trim() || 'the most attractive target segment for this vertical (use your own judgement to select the single most relevant one)',
   };
 
   const jobId = createOutsourcingReportJob(input);
