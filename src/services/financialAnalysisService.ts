@@ -157,7 +157,7 @@ async function runPublicPath(
 
   if (ticker) {
     // ── Primary: yahoo-finance2 quoteSummary ───────────────────────────────────
-    let quoteSummaryDone = false;
+    let dataSource: 'Yahoo Finance' | 'Google Finance' | undefined;
     try {
       console.log('[financialAnalysis] Trying yahoo-finance2 quoteSummary for:', ticker);
       const qs = await fetchYahooQuoteSummaryFinancials(ticker);
@@ -172,40 +172,51 @@ async function runPublicPath(
           cashFlow:         qs.cashFlow,
           quarterlyHistory: qs.quarterlyHistory,
         };
-        quoteSummaryDone = true;
+        dataSource = 'Yahoo Finance';
         console.log('[financialAnalysis] yahoo-finance2 quoteSummary succeeded:', qs.revenueHistory.length, 'years');
       }
     } catch (err) {
       console.warn('[financialAnalysis] yahoo-finance2 quoteSummary failed:', err instanceof Error ? err.message : err);
     }
 
-    // ── Fallback: Puppeteer scraper (Google Finance) ───────────────────────────
-    if (!quoteSummaryDone) {
+    // ── Fallback / backfill: Puppeteer scraper (Google Finance) ────────────────
+    // Runs whenever Yahoo failed outright OR left specific fields empty (e.g.
+    // revenue came through but quarterly didn't) — merges in only the missing
+    // pieces rather than discarding whatever Yahoo did successfully return.
+    const needsRevenue   = !apiData.revenueHistory?.length;
+    const needsQuarterly = !apiData.quarterlyHistory?.length;
+    if (needsRevenue || needsQuarterly) {
       const searchString = buildSearchString(ticker, exchange || '');
-      console.log('[financialAnalysis] Puppeteer scraper fallback, search string:', searchString);
+      console.log('[financialAnalysis] Google Finance backfill (needsRevenue:', needsRevenue, ', needsQuarterly:', needsQuarterly, '), search string:', searchString);
 
       const [annualResult, quarterlyResult] = await Promise.allSettled([
-        fetchAnnualFinancials(searchString),
-        fetchQuarterlyFinancials(searchString),
+        needsRevenue ? fetchAnnualFinancials(searchString) : Promise.resolve(null),
+        needsQuarterly ? fetchQuarterlyFinancials(searchString) : Promise.resolve(null),
       ]);
 
-      if (annualResult.status === 'fulfilled') {
+      if (needsRevenue && annualResult.status === 'fulfilled' && annualResult.value) {
         const a = annualResult.value;
         apiData = {
-          companyInfo:    a.companyInfo,
-          currency:       a.currency,
+          ...apiData,
+          companyInfo:    apiData.companyInfo    ?? a.companyInfo,
+          currency:       apiData.currency        ?? a.currency,
           revenueHistory: a.revenueHistory,
           marginHistory:  a.marginHistory,
-          plStatement:    a.plStatement,
+          plStatement:    apiData.plStatement     ?? a.plStatement,
         };
-      } else {
-        console.error('[financialAnalysis] Puppeteer annual fetch failed:', annualResult.reason);
+        dataSource = dataSource ?? 'Google Finance';
+      } else if (needsRevenue) {
+        console.error('[financialAnalysis] Google Finance annual backfill failed:', annualResult.status === 'rejected' ? annualResult.reason : 'no data');
       }
 
-      if (quarterlyResult.status === 'fulfilled') {
+      if (needsQuarterly && quarterlyResult.status === 'fulfilled' && quarterlyResult.value) {
         apiData.quarterlyHistory = quarterlyResult.value;
+      } else if (needsQuarterly) {
+        console.warn('[financialAnalysis] Google Finance quarterly backfill failed:', quarterlyResult.status === 'rejected' ? quarterlyResult.reason : 'no data');
       }
     }
+
+    if (dataSource) apiData.dataSource = dataSource;
 
     // ── Segment/geo research via Parallel.AI (non-blocking) ───────────────────
     // Runs when Yahoo doesn't provide segment breakdown (which is almost always)
@@ -283,7 +294,7 @@ async function runPublicPath(
     progress:        100,
     currentStep:     'Complete',
     completedAt,
-    dataSource:      'Yahoo Finance',
+    dataSource:      apiData.dataSource ?? 'Yahoo Finance',
     companyInfo:     apiData.companyInfo,
     currency:        apiData.currency,
     quarterlyHistory: apiData.quarterlyHistory?.length ? apiData.quarterlyHistory : undefined,
