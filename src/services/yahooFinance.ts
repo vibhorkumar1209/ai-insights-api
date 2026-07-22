@@ -333,9 +333,19 @@ export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<
   const r: any = await (yahooFinance as any).quoteSummary(ticker, {
     modules: [
       'incomeStatementHistory', 'financialData', 'summaryDetail', 'summaryProfile', 'price',
-      'balanceSheetHistory', 'cashflowStatementHistory', 'incomeStatementHistoryQuarterly',
+      'incomeStatementHistoryQuarterly',
     ],
   }, { validateResult: false });
+
+  // balanceSheetHistory/cashflowStatementHistory (quoteSummary submodules) have
+  // returned almost no data since Nov 2024 — Yahoo's replacement is
+  // fundamentalsTimeSeries. Fetched separately (non-fatal if it fails).
+  const period1 = new Date();
+  period1.setFullYear(period1.getFullYear() - 3);
+  const [bsSeries, cfSeries] = await Promise.all([
+    (yahooFinance as any).fundamentalsTimeSeries(ticker, { period1, module: 'balance-sheet', type: 'annual' }, { validateResult: false }).catch(() => []),
+    (yahooFinance as any).fundamentalsTimeSeries(ticker, { period1, module: 'cash-flow', type: 'annual' }, { validateResult: false }).catch(() => []),
+  ]);
 
   const priceCurrency: string = (r.price?.currency || 'USD').toUpperCase();
   const currency = priceCurrency;
@@ -425,39 +435,39 @@ export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<
     return { label, value: formatWithCurrency(cur, currency), previousValue: formatWithCurrency(prev, currency), yoy: calcYoy(cur, prev), isBold };
   };
 
-  const bsRows: any[] = r.balanceSheetHistory?.balanceSheetStatements || [];
-  bsRows.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  const bsRows: any[] = Array.isArray(bsSeries) ? bsSeries : [];
+  bsRows.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const lastBs = bsRows[bsRows.length - 1];
   const prevBs = bsRows.length > 1 ? bsRows[bsRows.length - 2] : null;
   const balanceSheet: FinancialStatementRow[] = lastBs
     ? [
         { label: 'ASSETS', value: '', isSection: true },
-        statementRow(lastBs, prevBs, 'Cash & Equivalents', 'cash'),
-        statementRow(lastBs, prevBs, 'Total Current Assets', 'totalCurrentAssets', true),
+        statementRow(lastBs, prevBs, 'Cash & Equivalents', 'cashAndCashEquivalents'),
+        statementRow(lastBs, prevBs, 'Total Current Assets', 'currentAssets', true),
         statementRow(lastBs, prevBs, 'Total Assets', 'totalAssets', true),
         { label: 'LIABILITIES', value: '', isSection: true },
-        statementRow(lastBs, prevBs, 'Total Current Liabilities', 'totalCurrentLiabilities', true),
-        statementRow(lastBs, prevBs, 'Total Liabilities', 'totalLiab', true),
+        statementRow(lastBs, prevBs, 'Total Current Liabilities', 'currentLiabilities', true),
+        statementRow(lastBs, prevBs, 'Total Liabilities', 'totalLiabilitiesNetMinorityInterest', true),
         { label: 'EQUITY', value: '', isSection: true },
-        statementRow(lastBs, prevBs, 'Total Stockholder Equity', 'totalStockholderEquity', true),
+        statementRow(lastBs, prevBs, 'Total Stockholder Equity', 'stockholdersEquity', true),
       ].filter((x): x is FinancialStatementRow => x != null)
     : [];
 
-  const cfRows: any[] = r.cashflowStatementHistory?.cashflowStatements || [];
-  cfRows.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  const cfRows: any[] = Array.isArray(cfSeries) ? cfSeries : [];
+  cfRows.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const lastCf = cfRows[cfRows.length - 1];
   const prevCf = cfRows.length > 1 ? cfRows[cfRows.length - 2] : null;
   const cashFlow: FinancialStatementRow[] = lastCf
     ? [
         { label: 'OPERATING ACTIVITIES', value: '', isSection: true },
-        statementRow(lastCf, prevCf, 'Cash from Operations', 'totalCashFromOperatingActivities', true),
+        statementRow(lastCf, prevCf, 'Cash from Operations', 'operatingCashFlow', true),
         { label: 'INVESTING ACTIVITIES', value: '', isSection: true },
-        statementRow(lastCf, prevCf, 'Capital Expenditures', 'capitalExpenditures'),
-        statementRow(lastCf, prevCf, 'Cash from Investing', 'totalCashflowsFromInvestingActivities', true),
+        statementRow(lastCf, prevCf, 'Capital Expenditures', 'capitalExpenditure'),
+        statementRow(lastCf, prevCf, 'Cash from Investing', 'investingCashFlow', true),
         { label: 'FINANCING ACTIVITIES', value: '', isSection: true },
-        statementRow(lastCf, prevCf, 'Cash from Financing', 'totalCashFromFinancingActivities', true),
+        statementRow(lastCf, prevCf, 'Cash from Financing', 'financingCashFlow', true),
         { label: 'NET CHANGE', value: '', isSection: true },
-        statementRow(lastCf, prevCf, 'Net Change in Cash', 'changeInCash', true),
+        statementRow(lastCf, prevCf, 'Net Change in Cash', 'changesInCash', true),
       ].filter((x): x is FinancialStatementRow => x != null)
     : [];
 
