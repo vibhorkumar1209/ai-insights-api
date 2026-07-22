@@ -163,11 +163,14 @@ async function runPublicPath(
       const qs = await fetchYahooQuoteSummaryFinancials(ticker);
       if (qs.revenueHistory.length > 0) {
         apiData = {
-          companyInfo:    qs.companyInfo,
-          currency:       qs.currency,
-          revenueHistory: qs.revenueHistory,
-          marginHistory:  qs.marginHistory,
-          plStatement:    qs.plStatement,
+          companyInfo:      qs.companyInfo,
+          currency:         qs.currency,
+          revenueHistory:   qs.revenueHistory,
+          marginHistory:    qs.marginHistory,
+          plStatement:      qs.plStatement,
+          balanceSheet:     qs.balanceSheet,
+          cashFlow:         qs.cashFlow,
+          quarterlyHistory: qs.quarterlyHistory,
         };
         quoteSummaryDone = true;
         console.log('[financialAnalysis] yahoo-finance2 quoteSummary succeeded:', qs.revenueHistory.length, 'years');

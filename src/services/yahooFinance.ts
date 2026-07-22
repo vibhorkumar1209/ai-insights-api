@@ -245,11 +245,14 @@ function fetchWithTimeout(url: string, timeoutMs: number): Promise<import('node-
 // ── Fetch annual data ──────────────────────────────────────────────────────────
 
 export interface AnnualFinancialsResult {
-  companyInfo:    CompanyInfo;
-  currency:       string;
-  revenueHistory: RevenueDataPoint[];
-  marginHistory:  MarginDataPoint[];
-  plStatement:    FinancialStatementRow[];
+  companyInfo:      CompanyInfo;
+  currency:         string;
+  revenueHistory:   RevenueDataPoint[];
+  marginHistory:    MarginDataPoint[];
+  plStatement:      FinancialStatementRow[];
+  balanceSheet?:    FinancialStatementRow[];
+  cashFlow?:        FinancialStatementRow[];
+  quarterlyHistory?: QuarterlyDataPoint[];
 }
 
 export async function fetchAnnualFinancials(searchString: string): Promise<AnnualFinancialsResult> {
@@ -328,7 +331,10 @@ export async function fetchAnnualFinancials(searchString: string): Promise<Annua
 export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<AnnualFinancialsResult> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r: any = await (yahooFinance as any).quoteSummary(ticker, {
-    modules: ['incomeStatementHistory', 'financialData', 'summaryDetail', 'summaryProfile', 'price'],
+    modules: [
+      'incomeStatementHistory', 'financialData', 'summaryDetail', 'summaryProfile', 'price',
+      'balanceSheetHistory', 'cashflowStatementHistory', 'incomeStatementHistoryQuarterly',
+    ],
   }, { validateResult: false });
 
   const priceCurrency: string = (r.price?.currency || 'USD').toUpperCase();
@@ -409,7 +415,79 @@ export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<
     );
   }
 
-  return { companyInfo, currency, revenueHistory, marginHistory, plStatement };
+  // ── Balance Sheet & Cash Flow (most recent period vs. prior, for comparison) ──
+  const statementRow = (
+    curPeriod: any, prevPeriod: any, label: string, key: string, isBold = false
+  ): FinancialStatementRow | null => {
+    const cur  = typeof curPeriod?.[key] === 'number' ? curPeriod[key] : null;
+    const prev = typeof prevPeriod?.[key] === 'number' ? prevPeriod[key] : null;
+    if (cur == null) return null;
+    return { label, value: formatWithCurrency(cur, currency), previousValue: formatWithCurrency(prev, currency), yoy: calcYoy(cur, prev), isBold };
+  };
+
+  const bsRows: any[] = r.balanceSheetHistory?.balanceSheetStatements || [];
+  bsRows.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  const lastBs = bsRows[bsRows.length - 1];
+  const prevBs = bsRows.length > 1 ? bsRows[bsRows.length - 2] : null;
+  const balanceSheet: FinancialStatementRow[] = lastBs
+    ? [
+        { label: 'ASSETS', value: '', isSection: true },
+        statementRow(lastBs, prevBs, 'Cash & Equivalents', 'cash'),
+        statementRow(lastBs, prevBs, 'Total Current Assets', 'totalCurrentAssets', true),
+        statementRow(lastBs, prevBs, 'Total Assets', 'totalAssets', true),
+        { label: 'LIABILITIES', value: '', isSection: true },
+        statementRow(lastBs, prevBs, 'Total Current Liabilities', 'totalCurrentLiabilities', true),
+        statementRow(lastBs, prevBs, 'Total Liabilities', 'totalLiab', true),
+        { label: 'EQUITY', value: '', isSection: true },
+        statementRow(lastBs, prevBs, 'Total Stockholder Equity', 'totalStockholderEquity', true),
+      ].filter((x): x is FinancialStatementRow => x != null)
+    : [];
+
+  const cfRows: any[] = r.cashflowStatementHistory?.cashflowStatements || [];
+  cfRows.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  const lastCf = cfRows[cfRows.length - 1];
+  const prevCf = cfRows.length > 1 ? cfRows[cfRows.length - 2] : null;
+  const cashFlow: FinancialStatementRow[] = lastCf
+    ? [
+        { label: 'OPERATING ACTIVITIES', value: '', isSection: true },
+        statementRow(lastCf, prevCf, 'Cash from Operations', 'totalCashFromOperatingActivities', true),
+        { label: 'INVESTING ACTIVITIES', value: '', isSection: true },
+        statementRow(lastCf, prevCf, 'Capital Expenditures', 'capitalExpenditures'),
+        statementRow(lastCf, prevCf, 'Cash from Investing', 'totalCashflowsFromInvestingActivities', true),
+        { label: 'FINANCING ACTIVITIES', value: '', isSection: true },
+        statementRow(lastCf, prevCf, 'Cash from Financing', 'totalCashFromFinancingActivities', true),
+        { label: 'NET CHANGE', value: '', isSection: true },
+        statementRow(lastCf, prevCf, 'Net Change in Cash', 'changeInCash', true),
+      ].filter((x): x is FinancialStatementRow => x != null)
+    : [];
+
+  // ── Quarterly income history ───────────────────────────────────────────────
+  const qRows: any[] = r.incomeStatementHistoryQuarterly?.incomeStatementHistory || [];
+  qRows.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  const quarterlyHistory: QuarterlyDataPoint[] = qRows
+    .filter((row: any) => typeof row.totalRevenue === 'number')
+    .map((row: any) => {
+      const rev  = row.totalRevenue as number;
+      const ni   = typeof row.netIncome === 'number' ? row.netIncome : undefined;
+      const opEx = typeof row.totalOperatingExpenses === 'number' ? row.totalOperatingExpenses : undefined;
+      const d = new Date(row.endDate);
+      const period = `${d.toLocaleString('en-US', { month: 'short' }).toUpperCase()} ${d.getFullYear()}`;
+      return {
+        period,
+        revenue: rev,
+        revenueFormatted: formatWithCurrency(rev, currency),
+        operatingExpense: opEx,
+        netIncome: ni,
+        netProfitMargin: ni != null && rev > 0 ? parseFloat(((ni / rev) * 100).toFixed(2)) : undefined,
+      };
+    });
+
+  return {
+    companyInfo, currency, revenueHistory, marginHistory, plStatement,
+    balanceSheet: balanceSheet.length ? balanceSheet : undefined,
+    cashFlow: cashFlow.length ? cashFlow : undefined,
+    quarterlyHistory: quarterlyHistory.length ? quarterlyHistory : undefined,
+  };
 }
 
 // ── Fetch quarterly data ───────────────────────────────────────────────────────
