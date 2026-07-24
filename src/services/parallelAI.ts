@@ -690,11 +690,15 @@ export async function geminiRevenueLookup(
       // (USD Millions unless >= $1B, native-currency figure in brackets) rather
       // than trusting the model's own USD conversion — it was observed to
       // sometimes skip conversion entirely and return the native figure as-is.
-      // Falls back to parsing the human-readable string if the model omitted
-      // the requested raw numeric field.
+      // Prefer parsing the human-readable string (e.g. "₹1,98,639 Cr") over the
+      // model-computed latestRevenueRaw field — stating a figure it already read
+      // is far more reliable for an LLM than doing the raw multiplication itself;
+      // large Indian-numbering conversions (lakh/crore) were observed to come back
+      // off by 10x-1000x when trusting the raw field. Only fall back to the raw
+      // field if the string doesn't parse.
       const currency = parsed.currency || 'USD';
-      const latestRaw = typeof parsed.latestRevenueRaw === 'number' ? parsed.latestRevenueRaw : parseNativeRevenueString(parsed.latestRevenue);
-      const previousRaw = typeof parsed.previousRevenueRaw === 'number' ? parsed.previousRevenueRaw : parseNativeRevenueString(parsed.previousRevenue);
+      const latestRaw = parseNativeRevenueString(parsed.latestRevenue) ?? (typeof parsed.latestRevenueRaw === 'number' ? parsed.latestRevenueRaw : null);
+      const previousRaw = parseNativeRevenueString(parsed.previousRevenue) ?? (typeof parsed.previousRevenueRaw === 'number' ? parsed.previousRevenueRaw : null);
       const latestRevenue = latestRaw != null ? formatRevenueUSD(latestRaw, currency) : parsed.latestRevenue;
       const previousRevenue = previousRaw != null ? formatRevenueUSD(previousRaw, currency) : parsed.previousRevenue || undefined;
 
