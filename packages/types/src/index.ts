@@ -1200,6 +1200,39 @@ export interface FirmographicResult {
   completedAt?: string;
 }
 
+// ── Spend Module ──────────────────────────────────────────────────────────────
+
+export interface SpendInput {
+  companyName: string;
+  companyDomain?: string;
+  geography?: string; // HQ geography, e.g. "United States"
+}
+
+export interface SpendLineItem {
+  found: boolean;
+  value?: string;          // formatted in USD Million/Billion, e.g. "$1,200M" or "$19.8B" — only set if found
+  valueRaw?: number;        // raw USD value, in dollars (not millions) — only set if found
+  fiscalYear?: string;      // e.g. "FY2026"
+  sourceType?: string;      // "Company Disclosure" or the analyst firm name, e.g. "Gartner"
+  sourceContext?: string;   // 1-2 sentence quote/description proving validity, OR the bundling explanation when not disclosed
+}
+
+export interface SpendResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName: string;
+  companyDomain?: string;
+  geography?: string;
+  itSpend?: SpendLineItem;
+  rdSpend?: SpendLineItem;
+  aiSpend?: SpendLineItem;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Industry Outsourcing Report ──────────────────────────────────────────────
 
 export interface OutsourcingReportInput {

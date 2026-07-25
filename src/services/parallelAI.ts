@@ -665,6 +665,14 @@ function parseNativeRevenueString(value: string | null | undefined): number | nu
   return num * mult;
 }
 
+// Formats a raw USD amount as "$X,XXXM" — always in millions (per the Spend
+// module's display rule), never switching to Billions like formatRevenueUSD.
+function formatUSDMillion(raw: number): string {
+  const sign = raw < 0 ? '-' : '';
+  const millions = Math.abs(raw) / 1e6;
+  return `${sign}$${millions.toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
+}
+
 function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();
@@ -830,6 +838,110 @@ export async function geminiFirmographicLookup(
   }
 
   return null;
+}
+
+// ── Spend Module — IT / R&D / AI spend research ───────────────────────────────
+
+export interface GeminiSpendLineResult {
+  found: boolean;
+  value?: string;
+  valueRaw?: number;   // plain unabbreviated USD amount (e.g. 19800000000 for $19.8B) — see RAW AMOUNT RULE
+  fiscalYear?: string;
+  sourceType?: string;
+  sourceContext?: string;
+}
+
+export interface GeminiSpendResult {
+  itSpend: GeminiSpendLineResult;
+  rdSpend: GeminiSpendLineResult;
+  aiSpend: GeminiSpendLineResult;
+}
+
+function buildSpendPrompt(companyName: string, domainHint: string, geoHint: string): string {
+  return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract three specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: IT Spend/Budget, R&D Spend/Budget, and AI Spend/Budget.
+
+CRITICAL CONSTRAINT: You must only report a value if it is explicitly published by the company itself or by a top-tier analyst firm. Do NOT estimate, guess, or extrapolate.
+
+PERMITTED SOURCES:
+- Official company disclosures (Annual Reports/10-K, Investor Relations presentations, earnings call transcripts, or senior executive interviews).
+- Top-tier analyst firms (e.g., Gartner, IDC, Forrester, Everest Group).
+
+DATA CATEGORIES:
+- IT Spend/Budget: Total annual corporate spend on information technology, software, cloud infrastructure, and digital systems.
+- R&D Spend/Budget: Total annual expense allocated to Research, Development, and Product Engineering.
+- AI Spend/Budget: The specific subset of budget allocated to Artificial Intelligence, Machine Learning, or generative AI initiatives.
+
+RAW AMOUNT RULE (critical — applies whenever found=true): "valueRaw" must be the PLAIN UNABBREVIATED number in US Dollars (not millions, not billions, not any other currency). Example: if IT spend is "$19.8 billion", valueRaw is 19800000000. If a company reports in a non-USD currency, convert to USD at a recent exchange rate before setting valueRaw. "value" can be a human-readable figure for reference (in the currency you found it in), but valueRaw must always be the precise USD number.
+
+Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
+{
+  "itSpend": { "found": true|false, "value": "<human-readable figure with currency and fiscal year, e.g. '$19.8 billion for FY2026', or omit if not found>", "valueRaw": <plain unabbreviated USD number per the rule above, or omit if not found>, "fiscalYear": "<e.g. FY2026, or omit if not found>", "sourceType": "<'Company Disclosure' OR the exact analyst firm name, or omit if not found>", "sourceContext": "<if found: a 1-2 sentence description or quote of how/where it was reported, proving validity. If NOT found: a brief explanation of how the company bundles this cost under standard accounting, e.g. 'The company does not break out IT spend as a separate line item; it is bundled inside Selling, General, and Administrative (SG&A) expenses.'>" },
+  "rdSpend": { same shape as itSpend, for R&D Spend/Budget },
+  "aiSpend": { same shape as itSpend, for AI Spend/Budget }
+}
+
+If a category is not explicitly reported by a permitted source, set "found": false, omit "value"/"valueRaw"/"fiscalYear"/"sourceType", and use "sourceContext" to explain the accounting treatment. Do NOT fabricate a value under any circumstances.`;
+}
+
+export async function geminiSpendLookup(
+  companyName: string,
+  domain?: string,
+  geography?: string
+): Promise<GeminiSpendResult | null> {
+  const domainHint = domain ? ` (${domain})` : '';
+  const geoHint = geography ? `, headquartered in ${geography}` : '';
+  const prompt = buildSpendPrompt(companyName, domainHint, geoHint);
+
+  try {
+    const { text } = await runGeminiGroundedSearch(prompt);
+    if (!text) {
+      console.warn(`[gemini] Spend lookup for ${companyName} returned empty text`);
+      return null;
+    }
+
+    const parsed = parseGeminiJson<GeminiSpendResult>(text);
+    if (!parsed || !parsed.itSpend || !parsed.rdSpend || !parsed.aiSpend) {
+      console.warn(`[gemini] Spend lookup for ${companyName} — unparseable or incomplete response: ${text.slice(0, 200)}`);
+      return null;
+    }
+
+    // Deterministically reformat each found value to USD Million/Billion — same
+    // pattern as Firmographic revenue: prefer parsing the human-readable string
+    // over trusting the model's own raw-number arithmetic, since large-figure
+    // conversions were observed to be unreliable when trusted directly.
+    const normalize = (line: GeminiSpendLineResult): SpendLineItemInternal => {
+      if (!line.found) {
+        return { found: false, sourceContext: line.sourceContext };
+      }
+      const raw = parseNativeRevenueString(line.value) ?? (typeof line.valueRaw === 'number' ? line.valueRaw : null);
+      return {
+        found: true,
+        value: raw != null ? formatUSDMillion(raw) : line.value,
+        valueRaw: raw ?? undefined,
+        fiscalYear: line.fiscalYear,
+        sourceType: line.sourceType,
+        sourceContext: line.sourceContext,
+      };
+    };
+
+    return {
+      itSpend: normalize(parsed.itSpend),
+      rdSpend: normalize(parsed.rdSpend),
+      aiSpend: normalize(parsed.aiSpend),
+    };
+  } catch (err) {
+    console.warn(`[gemini] Spend lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+interface SpendLineItemInternal {
+  found: boolean;
+  value?: string;
+  valueRaw?: number;
+  fiscalYear?: string;
+  sourceType?: string;
+  sourceContext?: string;
 }
 
 // ── Vendor ↔ Target existing relationship research ───────────────────────────

@@ -27,6 +27,7 @@ import contentGenerationRouter from './routes/contentGeneration';
 import consultingIntelligenceRouter from './routes/consultingIntelligence';
 import vucaAnalysisRouter from './routes/vucaAnalysis';
 import firmographicRouter from './routes/firmographic';
+import spendRouter from './routes/spend';
 import outsourcingReportRouter from './routes/outsourcingReport';
 import gccSalesPlayRouter from './routes/gccSalesPlay';
 
@@ -77,6 +78,7 @@ app.use('/api/consulting-intelligence', memoryGuard, consultingIntelligenceRoute
 app.use('/api/vuca-analysis', memoryGuard, vucaAnalysisRouter);
 app.use('/api/objection-handling', memoryGuard, objectionHandlingRouter);
 app.use('/api/firmographic', memoryGuard, firmographicRouter);
+app.use('/api/spend', memoryGuard, spendRouter);
 app.use('/api/industry-outsourcing-report', memoryGuard, outsourcingReportRouter);
 app.use('/api/gcc-sales-play', memoryGuard, gccSalesPlayRouter);
 
