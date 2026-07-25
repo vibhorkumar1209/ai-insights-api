@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FirmographicInput, FirmographicResult } from '@ai-insights/types';
-import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString } from './yahooFinance';
+import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString, formatRevenueUSD } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
 import { geminiRevenueLookup, geminiFirmographicLookup } from './parallelAI';
 
@@ -168,11 +168,11 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
           dataSource:      source,
           companyInfo:     data?.companyInfo,
           currency:        data?.currency,
-          latestRevenue:   latest.revenueFormatted,
+          latestRevenue:   formatRevenueUSD(latest.revenue, data?.currency),
           latestRevenueRaw: latest.revenue,
           revenueYear:     latest.year,
           yoyGrowth:       latest.yoyGrowth,
-          previousRevenue: previous?.revenueFormatted,
+          previousRevenue: previous ? formatRevenueUSD(previous.revenue, data?.currency) : undefined,
           previousYear:    previous?.year,
         });
         return;
