@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { VucaAnalysisJob } from '@ai-insights/types';
 import { runVucaSynthesis } from './claudeAI.js';
-import { runResearchQuery } from './parallelAI.js';
+import { runResearchQuery, getSearchRecencyInstruction } from './parallelAI.js';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 
@@ -105,9 +105,10 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
     let combinedResearch = '';
 
     try {
+      const recency = getSearchRecencyInstruction();
       const industryQueries = [
-        `${industry} ${geography} VUCA risks volatility uncertainty geopolitical disruption supply chain wars tariffs 2024 2025`,
-        `${industry} ${geography} IT spend technology investment digital transformation forecast 2025 2026 Gartner IDC Forrester McKinsey`,
+        `${recency}${industry} ${geography} VUCA risks volatility uncertainty geopolitical disruption supply chain wars tariffs ${new Date().getFullYear() - 1} ${new Date().getFullYear()}`,
+        `${recency}${industry} ${geography} IT spend technology investment digital transformation forecast ${new Date().getFullYear()} ${new Date().getFullYear() + 1} Gartner IDC Forrester McKinsey`,
       ];
 
       current = update(jobId, { progress: 10, currentStep: 'Running VUCA & IT spend queries in parallel…' });
@@ -133,8 +134,9 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
 
       const companyHB = startHeartbeat(jobId, 43, 50, `Analysing ${companyName} portfolio…`);
       try {
-        const q1 = `site:${companyDomain} products solutions services technology offerings`;
-        const q2 = `"${companyName}" IT products software services portfolio customers case studies 2024 2025`;
+        const recencyC = getSearchRecencyInstruction();
+        const q1 = `${recencyC}site:${companyDomain} products solutions services technology offerings`;
+        const q2 = `${recencyC}"${companyName}" IT products software services portfolio customers case studies ${new Date().getFullYear() - 1} ${new Date().getFullYear()}`;
 
         const t0 = Date.now();
         const [r1, r2] = await Promise.all([

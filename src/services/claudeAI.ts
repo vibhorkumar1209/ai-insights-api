@@ -1453,7 +1453,7 @@ IMPORTANT:
 - Cover DIVERSE themes: technology strategy, operations, growth, sustainability, talent, M&A, innovation, customer experience, cost optimisation, digital transformation, AI/ML, cybersecurity, etc.
 - Include executives from DIFFERENT functions (CEO, CFO, CTO, CIO, CDO, CMO, COO, SVP/VP levels).
 - If multiple executives speak to the same theme, include both — this shows organisational alignment.
-- Prioritise recent sources (2024-2025).
+- Prioritise recent sources (${new Date().getFullYear() - 1}-${new Date().getFullYear()}).
 - Each row should represent a unique, actionable insight for sales pitching.
 - The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting 2024", "NASSCOM Technology Leadership Forum", "Q2 FY2025 Earnings Call", "Banking Technology Summit, Feb 2025". NOT: "LinkedIn post", "Company website", "Press release".
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
@@ -2901,7 +2901,7 @@ CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Sta
 export async function discoverTopPlayersByIndustryQuick(
   industry: string
 ): Promise<Array<{ name: string; headquarters: string; estimatedRevenue: string; relevanceScore: number }>> {
-  const text = await claudeCreateDirect('', `Identify the top 10 key players (major companies by revenue/market share) in the "${industry}" industry as of 2025.
+  const text = await claudeCreateDirect('', `Identify the top 10 key players (major companies by revenue/market share) in the "${industry}" industry as of ${new Date().getFullYear()}.
 
 Return ONLY a valid JSON array with exactly 10 companies. No other text. Each item must have: name, headquarters, estimatedRevenue, relevanceScore (1-10).
 
@@ -2924,7 +2924,7 @@ export async function discoverEmergingTechsQuick(
 ): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
   const systemPrompt = `You are a technology analyst. You MUST always respond with a valid JSON array — never prose, never "no technologies found", never refusals. If the industry is niche or regional, use your knowledge of that sector's technology landscape and return the most relevant technologies. Output ONLY the raw JSON array, no markdown fences, no other text.`;
 
-  const text = await claudeCreateDirect(systemPrompt, `List the top 10 emerging and strategic technologies used by companies in the "${industry}" sector as of 2025. Include technologies relevant to this specific industry and geography (if regional). Each entry must have: name, category, maturityLevel ("emerging", "growth", or "mainstream").
+  const text = await claudeCreateDirect(systemPrompt, `List the top 10 emerging and strategic technologies used by companies in the "${industry}" sector as of ${new Date().getFullYear()}. Include technologies relevant to this specific industry and geography (if regional). Each entry must have: name, category, maturityLevel ("emerging", "growth", or "mainstream").
 
 Return ONLY a valid JSON array:
 [

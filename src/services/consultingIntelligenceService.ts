@@ -91,17 +91,18 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     const researchHB = startHeartbeat(jobId, 11, 64, 'Researching thought leadership…');
     let researchBatches: Array<{ label: string; rawText: string }> = [];
     try {
+      const { runResearchQuery, getSearchRecencyInstruction } = await import('./parallelAI.js');
+      const recency = getSearchRecencyInstruction();
       const batchDefs = [
-        { label: 'reports', query: `"${topic}" ${geography} research report analysis 2024 2025 site:mckinsey.com OR site:bcg.com OR site:bain.com OR site:deloitte.com OR site:pwc.com OR site:ey.com OR site:accenture.com OR site:kpmg.com` },
-        { label: 'analysts', query: `"${topic}" ${geography} forecast outlook trends 2024 2025 site:gartner.com OR site:forrester.com OR site:idc.com OR site:everestgrp.com OR site:hbr.org OR site:weforum.org` },
-        { label: 'insights', query: `"${topic}" ${geography} strategy insights statistics market size 2024 2025 consulting firm report` },
-        { label: 'trends', query: `"${topic}" ${geography} trends challenges opportunities recommendations industry 2025` },
+        { label: 'reports', query: `${recency}"${topic}" ${geography} research report analysis ${new Date().getFullYear() - 1} ${new Date().getFullYear()} site:mckinsey.com OR site:bcg.com OR site:bain.com OR site:deloitte.com OR site:pwc.com OR site:ey.com OR site:accenture.com OR site:kpmg.com` },
+        { label: 'analysts', query: `${recency}"${topic}" ${geography} forecast outlook trends ${new Date().getFullYear() - 1} ${new Date().getFullYear()} site:gartner.com OR site:forrester.com OR site:idc.com OR site:everestgrp.com OR site:hbr.org OR site:weforum.org` },
+        { label: 'insights', query: `${recency}"${topic}" ${geography} strategy insights statistics market size ${new Date().getFullYear() - 1} ${new Date().getFullYear()} consulting firm report` },
+        { label: 'trends', query: `${recency}"${topic}" ${geography} trends challenges opportunities recommendations industry ${new Date().getFullYear()}` },
       ];
 
       current = update(jobId, { progress: 14, currentStep: 'Running 4 research queries in parallel…' });
       emit(jobId, 'progress', current);
 
-      const { runResearchQuery } = await import('./parallelAI.js');
       const settled = await Promise.allSettled(batchDefs.map(({ query }) => runResearchQuery(query)));
       researchBatches = settled.map((r, i) => ({
         label: batchDefs[i].label,

@@ -3,6 +3,29 @@ import { Readable } from 'stream';
 import { Competitor } from '@ai-insights/types';
 import { formatRevenueUSD } from './yahooFinance';
 
+// Returns a natural-language recency instruction to prepend to every research
+// query/prompt sent to a search or research engine (Parallel.AI, Gemini grounded
+// search), so the engine prioritizes the most current window before falling
+// back to older data. Window: Jan 1 of last calendar year through today.
+// Kept local to this file (rather than imported from claudeAI.ts's
+// getRecencyDirective, which governs the Claude synthesis stage) to avoid a
+// circular import — this only needs minimal date logic.
+export function getSearchRecencyInstruction(): string {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const todayLabel = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const windowStart = `January 1, ${currentYear - 1}`;
+  return `RECENCY PRIORITY: Today's date is ${todayLabel}. First search for and prioritize information, data, events, and examples from ${windowStart} through today (${todayLabel}). Only if insufficient recent information is found, expand the search to the past 2-3 years. Always prefer the most recent verifiable data.\n\n`;
+}
+
+// Dynamic "last year-this year" label (e.g. "2025-2026") for inline use in query
+// text that used to hardcode a fixed year range like "2024-2025" — those went
+// stale the moment the calendar rolled over, silently undermining recency.
+function currentYearRangeLabel(): string {
+  const year = new Date().getFullYear();
+  return `${year - 1}-${year}`;
+}
+
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
 const TASK_TIMEOUT_MS = 90000;  // 90 seconds — Render Pro has more headroom
@@ -181,12 +204,12 @@ async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'):
 
 export async function discoverTopPlayersByIndustry(industry: string): Promise<Competitor[]> {
   const query = `
-Research and identify the top 10 key players (major companies) in the "${industry}" industry.
+${getSearchRecencyInstruction()}Research and identify the top 10 key players (major companies) in the "${industry}" industry.
 
 Focus on companies that are:
 - Market leaders by revenue or market share
 - Well-known and established in the industry
-- Actively operating and relevant as of 2025
+- Actively operating and relevant as of ${new Date().getFullYear()}
 
 For each company provide:
 1. Company name (exact legal or commonly known name)
@@ -213,7 +236,7 @@ Return ONLY the JSON array, no additional text. Ensure 10 companies are returned
 
 export async function discoverEmergingTechnologiesByIndustry(industry: string): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
   const query = `
-Research and identify the top 10 emerging and strategic technologies in the "${industry}" industry as of 2025.
+${getSearchRecencyInstruction()}Research and identify the top 10 emerging and strategic technologies in the "${industry}" industry as of ${new Date().getFullYear()}.
 
 For each technology provide:
 1. Technology name
@@ -265,7 +288,7 @@ function parseEmergingTechs(raw: string): Array<{ name: string; category: string
 
 export async function discoverIndustrySegmentsByIndustry(industry: string): Promise<string[]> {
   const query = `
-Research and identify the top 10 major segments or subsectors within the "${industry}" industry as of 2025.
+${getSearchRecencyInstruction()}Research and identify the top 10 major segments or subsectors within the "${industry}" industry as of ${new Date().getFullYear()}.
 
 Segments should represent distinct business areas, customer types, or value chains within the industry. Examples:
 - For banking: Retail Banking, Corporate Banking, Investment Banking, Wealth Management, etc.
@@ -337,7 +360,7 @@ export async function discoverCompetitors(
     : `(first determine the primary industry/sector that "${targetCompany}" operates in, then identify competitors within that space)`;
 
   const query = `
-Research and identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
+${getSearchRecencyInstruction()}Research and identify the top 8-10 direct competitors of "${targetCompany}" ${industryLine}.
 
 For each competitor provide:
 1. Company name (exact legal or commonly known name)
@@ -411,7 +434,7 @@ export async function researchCompany(
     ? `in the ${industryContext} sector`
     : '(determine the relevant industry sector from the companies involved)';
   const query = `
-Conduct detailed research on "${companyName}" for a competitive benchmarking analysis against "${targetCompany}" ${sectorLine}.
+${getSearchRecencyInstruction()}Conduct detailed research on "${companyName}" for a competitive benchmarking analysis against "${targetCompany}" ${sectorLine}.
 
 Research and report on the following dimensions. For each, cite the specific source (press release, annual report, earnings call, job postings, news article):
 
@@ -591,14 +614,14 @@ function buildRevenuePrompt(companyName: string, domainHint: string, isPublic: b
   if (simplified) {
     // Fallback prompt: fewer constraints, in case the structured version made the
     // model over-cautious about qualifying as a "credible" search result.
-    return `What was ${companyName}'s${domainHint} latest reported annual revenue? ${scopeHint}
+    return `${getSearchRecencyInstruction()}What was ${companyName}'s${domainHint} latest reported annual revenue? ${scopeHint}
 
 ${rawAmountRule}
 
 Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<human-readable figure in native currency>", "latestRevenueRaw": <plain unabbreviated number in native currency, per the rule above>, "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code of the company's NATIVE reporting currency>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure in native currency, or null>", "previousRevenueRaw": <plain unabbreviated number or null>, "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>"}`;
   }
 
-  return `Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
+  return `${getSearchRecencyInstruction()}Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
 
 ${scopeHint}
 
@@ -734,12 +757,12 @@ export interface GeminiFirmographicResult {
 
 function buildFirmographicPrompt(companyName: string, domainHint: string, simplified: boolean): string {
   if (simplified) {
-    return `Look up basic company profile facts for ${companyName}${domainHint}: founding year, headquarters location, employee count, official website, and LinkedIn company page URL.
+    return `${getSearchRecencyInstruction()}Look up basic company profile facts for ${companyName}${domainHint}: founding year, headquarters location, employee count, official website, and LinkedIn company page URL.
 
 Reply with ONLY this JSON object, nothing else: {"foundedYear": "<year or null>", "headquartersCity": "<city or null>", "headquartersState": "<state/province or null>", "headquartersCountry": "<country or null>", "employeeRange": "<range or null>", "website": "<url or null>", "linkedinUrl": "<url or null>", "source": "<where this came from>"}`;
   }
 
-  return `Using Google Search, find firmographic profile information for "${companyName}"${domainHint}.
+  return `${getSearchRecencyInstruction()}Using Google Search, find firmographic profile information for "${companyName}"${domainHint}.
 
 Look for:
 1. Founded year — the year the company was established
@@ -818,7 +841,7 @@ export async function researchVendorRelationship(
 ): Promise<string> {
   const sectorLine = industryContext ? ` in the ${industryContext} sector` : '';
 
-  const prompt = `Using Google Search, determine whether "${vendorName}" already has an existing business relationship, deployment, or implementation at "${targetCompany}"${sectorLine}.
+  const prompt = `${getSearchRecencyInstruction()}Using Google Search, determine whether "${vendorName}" already has an existing business relationship, deployment, or implementation at "${targetCompany}"${sectorLine}.
 
 Look for case studies, partnership announcements, press releases, customer references, or deployment evidence.
 
@@ -828,7 +851,7 @@ Summarize what you find in 3-5 sentences, citing specifics (dates, project names
     const { text, sources } = await runGeminiGroundedSearch(prompt);
     if (!text) {
       // Fallback to Parallel.AI if Gemini unavailable or returned nothing
-      const fallbackQuery = `"${vendorName}" "${targetCompany}" existing deployment implementation partnership case study${sectorLine}`.trim();
+      const fallbackQuery = `${getSearchRecencyInstruction()}"${vendorName}" "${targetCompany}" existing deployment implementation partnership case study${sectorLine}`.trim();
       return runResearch(fallbackQuery, 'base');
     }
     const sourceLines = sources
@@ -873,7 +896,7 @@ export async function researchCompanyThemes(
 ): Promise<string> {
   const queries: Record<string, string> = {
     business: `
-Research the strategic business priorities and growth initiatives of "${companyName}" for 2024-2025.
+${getSearchRecencyInstruction()}Research the strategic business priorities and growth initiatives of "${companyName}" for ${currentYearRangeLabel()}.
 
 Report on the following areas, citing specific sources (annual reports, earnings calls, investor days, press releases, news):
 1. Revenue growth strategy and key markets or geographies being pursued
@@ -889,7 +912,7 @@ State "Not publicly disclosed" for anything unavailable. Cite every factual clai
 `.trim(),
 
     technology: `
-Research the technology strategy and digital transformation priorities of "${companyName}" for 2024-2025.
+${getSearchRecencyInstruction()}Research the technology strategy and digital transformation priorities of "${companyName}" for ${currentYearRangeLabel()}.
 
 Report on the following areas, citing specific sources (annual reports, CIO interviews, conference presentations, job postings, vendor press releases):
 1. Digital transformation programmes and key initiatives underway
@@ -905,7 +928,7 @@ State "Not publicly disclosed" for anything unavailable. Cite every factual clai
 `.trim(),
 
     sustainability: `
-Research the sustainability, ESG and environmental strategy of "${companyName}" for 2024-2025.
+${getSearchRecencyInstruction()}Research the sustainability, ESG and environmental strategy of "${companyName}" for ${currentYearRangeLabel()}.
 
 Report on the following areas, citing specific sources (sustainability reports, ESG disclosures, press releases, CDP submissions, news):
 1. Net Zero and carbon reduction targets — scope 1/2/3, timelines, progress to date
@@ -939,7 +962,7 @@ export async function researchCompanyChallengesGrowth(
     ? `IMPORTANT: The company is identified by its website domain "${domain}". Research ONLY this specific company — do NOT confuse it with other companies that share a similar name. Start your research from ${domain}.`
     : '';
   const query = `
-Research the major challenges and key growth opportunities facing "${companyName}"${domain ? ` (website: ${domain})` : ''} in 2024-2025.
+${getSearchRecencyInstruction()}Research the major challenges and key growth opportunities facing "${companyName}"${domain ? ` (website: ${domain})` : ''} in ${currentYearRangeLabel()}.
 
 ${domainLine}
 
@@ -982,7 +1005,7 @@ export async function researchCompanySegments(
   currency: string
 ): Promise<string> {
   const query = `
-Research the latest annual revenue breakdown for "${companyName}" (ticker: ${ticker}, reporting currency: ${currency}).
+${getSearchRecencyInstruction()}Research the latest annual revenue breakdown for "${companyName}" (ticker: ${ticker}, reporting currency: ${currency}).
 
 Find and report:
 1. REVENUE BY BUSINESS SEGMENT — list each segment with:
@@ -1018,7 +1041,7 @@ export async function researchPrivateCompany(
     : `COMPANY TO RESEARCH: "${companyName}" (no domain provided — if this name is ambiguous or shared by multiple companies, state that explicitly rather than blending data from unrelated companies).\n\n`;
   const domainNote = domain ? ` (domain: ${domain})` : '';
   const query = `
-${identityAnchor}Research the financial profile and business intelligence for private company "${companyName}"${domainNote}.
+${getSearchRecencyInstruction()}${identityAnchor}Research the financial profile and business intelligence for private company "${companyName}"${domainNote}.
 
 Gather data from Crunchbase, Tracxn, Pitchbook references, LinkedIn, news articles, and press releases:
 
@@ -1068,7 +1091,7 @@ export async function researchBusinessSegments(
 ): Promise<string> {
   const domainNote = domain ? ` (website: ${domain})` : '';
   const query = `
-Research the business segments and corporate structure of "${companyName}"${domainNote}.
+${getSearchRecencyInstruction()}Research the business segments and corporate structure of "${companyName}"${domainNote}.
 
 Report on the following using annual reports, 10-K filings, investor presentations, and press releases:
 
@@ -1109,7 +1132,7 @@ export async function researchCompanyOverview(
     : `COMPANY TO RESEARCH: "${companyName}" (no domain provided — if this name is ambiguous or shared by multiple companies, state that explicitly rather than blending data from unrelated companies).\n\n`;
   const domainNote = domain ? ` (website: ${domain})` : '';
   const query = `
-${identityAnchor}Research factual, current company-overview data for "${companyName}"${domainNote}.
+${getSearchRecencyInstruction()}${identityAnchor}Research factual, current company-overview data for "${companyName}"${domainNote}.
 
 Report on the following, citing the source and year for each fact:
 
@@ -1169,7 +1192,7 @@ export async function researchSalesPlayContext(
     : `- Selling Company's Key Solution Areas: NOT PROVIDED — you MUST identify and list ${yourCompany}'s key solution portfolio for ${targetIndustry} in SECTION C item 1.`;
 
   const query = `
-B2B sales intelligence brief — be concise, bullet points only, max 800 words total.
+${getSearchRecencyInstruction()}B2B sales intelligence brief — be concise, bullet points only, max 800 words total.
 
 Context: ${yourCompany} selling to ${targetAccount} (${targetIndustry}), displacing ${competitorName}.
 ${prioritySection}
@@ -1206,7 +1229,7 @@ export async function researchKeyBuyers(
     ? `IMPORTANT: The company is identified by its website domain "${domain}". Research ONLY this specific company — do NOT confuse it with other companies that share a similar name. Start your research from ${domain}.`
     : '';
   const query = `
-Research the key senior executives of "${companyName}"${domain ? ` (website: ${domain})` : ''} and their publicly expressed business priorities, strategic focus areas, and thought leadership.
+${getSearchRecencyInstruction()}Research the key senior executives of "${companyName}"${domain ? ` (website: ${domain})` : ''} and their publicly expressed business priorities, strategic focus areas, and thought leadership.
 
 ${domainLine}
 
@@ -1232,7 +1255,7 @@ FOR EACH INSIGHT FOUND, provide:
 IMPORTANT RULES:
 - Focus on C-suite and SVP/VP level executives — the decision-makers
 - Each insight should surface a different business focus area or angle
-- Prioritise recent statements (2024-2025)
+- Prioritise recent statements (${currentYearRangeLabel()})
 - Include the executive's EXACT title as listed on LinkedIn or the company website
 - If a direct quote is available, use it verbatim in quotation marks
 - Cover a diverse range of themes: technology, operations, growth, sustainability, talent, M&A, innovation, customer experience, cost optimisation, etc.
@@ -1267,7 +1290,7 @@ export async function researchIndustryTrends(
     : `\n\nGEOGRAPHIC FOCUS: ${geography}\nAll trends, data, and examples should be specifically relevant to the ${geography} market. Discuss how global trends manifest specifically in ${geography}.`;
 
   const query = `
-Research the major Business Trends and Technology Trends shaping the "${industrySegment}" industry in 2024-2025.${geographyContext}
+${getSearchRecencyInstruction()}Research the major Business Trends and Technology Trends shaping the "${industrySegment}" industry in ${currentYearRangeLabel()}.${geographyContext}
 
 PART A — BUSINESS TRENDS
 Research trends across ALL of the following dimensions. For each, provide specific data, named examples, and evidence:
@@ -1321,7 +1344,13 @@ export async function researchIndustryReport(
   onQueryDone?: (completedIdx: number, total: number) => void
 ): Promise<string[]> {
   const limited = queries.slice(0, 4);
-  const settled = await Promise.allSettled(limited.map((q) => runResearch(q, 'base')));
+  // The queries themselves come from Claude's scope-extraction step (see
+  // extractScopeWithWizard in claudeAI.ts) and do not carry any recency
+  // instruction of their own, so prepend it here before dispatching to the
+  // research engine — same treatment as every other query built in this file.
+  const settled = await Promise.allSettled(
+    limited.map((q) => runResearch(`${getSearchRecencyInstruction()}${q}`, 'base'))
+  );
   const results = settled.map((r, idx) => {
     if (r.status === 'fulfilled') {
       onQueryDone?.(idx + 1, limited.length);
@@ -1371,7 +1400,7 @@ export async function researchNicheIndustries(
     : '';
 
   const query = `
-You are a senior market intelligence strategist specializing in syndicated research report topic identification, with deep expertise in how firms like MarketsandMarkets, GlobalData, Grand View Research, Global Market Insights, Market Research Future, Wise Guy Reports, IMARC, and Research&Markets select and validate niche high-growth topics.
+${getSearchRecencyInstruction()}You are a senior market intelligence strategist specializing in syndicated research report topic identification, with deep expertise in how firms like MarketsandMarkets, GlobalData, Grand View Research, Global Market Insights, Market Research Future, Wise Guy Reports, IMARC, and Research&Markets select and validate niche high-growth topics.
 
 INDUSTRY VERTICAL: ${input.industryVertical}${themeLine}
 GEOGRAPHY FOCUS: ${input.geography}
@@ -1458,7 +1487,7 @@ export async function researchMarketingStrategy(
     : '';
 
   const query = `
-You are a seasoned McKinsey senior partner conducting a strategic analysis for a Fortune 500 client.${productLine}${companyLine}${domainLine}${techLine}${otherLine}
+${getSearchRecencyInstruction()}You are a seasoned McKinsey senior partner conducting a strategic analysis for a Fortune 500 client.${productLine}${companyLine}${domainLine}${techLine}${otherLine}
 
 INDUSTRY: ${industryOrSegment}
 FRAMEWORK: ${framework}
@@ -1501,19 +1530,19 @@ export async function researchConsultingTLTopicBatches(
   const queries = [
     {
       label: 'strategy-consulting',
-      query: `What are the latest strategic insights, frameworks, and reports on "${topic}" in ${geography} from McKinsey, BCG, Bain, Accenture, Oliver Wyman, Kearney, Roland Berger? Include report titles, key findings, statistics, market outlook, strategic recommendations, executive quotes, and URLs from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are the latest strategic insights, frameworks, and reports on "${topic}" in ${geography} from McKinsey, BCG, Bain, Accenture, Oliver Wyman, Kearney, Roland Berger? Include report titles, key findings, statistics, market outlook, strategic recommendations, executive quotes, and URLs from 2022-2025.`,
     },
     {
       label: 'big4-advisory',
-      query: `What are Deloitte, PwC, EY, KPMG, IBM Consulting, and Capgemini saying about "${topic}" in ${geography}? Include their published reports, white papers, industry outlooks, transformation studies, digital surveys, and key data points from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are Deloitte, PwC, EY, KPMG, IBM Consulting, and Capgemini saying about "${topic}" in ${geography}? Include their published reports, white papers, industry outlooks, transformation studies, digital surveys, and key data points from 2022-2025.`,
     },
     {
       label: 'tech-analysts',
-      query: `What are Gartner, Forrester, IDC, Everest Group, HFS Research, and ISG saying about "${topic}" in ${geography}? Include analyst predictions, market forecasts, hype cycles, Wave reports, technology assessments, adoption statistics, and vendor positioning from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are Gartner, Forrester, IDC, Everest Group, HFS Research, and ISG saying about "${topic}" in ${geography}? Include analyst predictions, market forecasts, hype cycles, Wave reports, technology assessments, adoption statistics, and vendor positioning from 2022-2025.`,
     },
     {
       label: 'market-research',
-      query: `What are the latest market size, investment trends, startup activity, and economic research findings on "${topic}" in ${geography}? Include reports from CB Insights, PitchBook, World Economic Forum, Oxford Economics, MIT Sloan, HBR, S&P Global — key statistics, growth rates, investment volumes, and strategic outlooks from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are the latest market size, investment trends, startup activity, and economic research findings on "${topic}" in ${geography}? Include reports from CB Insights, PitchBook, World Economic Forum, Oxford Economics, MIT Sloan, HBR, S&P Global — key statistics, growth rates, investment volumes, and strategic outlooks from 2022-2025.`,
     },
   ];
 
@@ -1551,7 +1580,7 @@ export async function researchObjectionHandling(
     : '';
 
   const query = `
-B2B competitive intelligence for objection handling — bullet points only, max 900 words.
+${getSearchRecencyInstruction()}B2B competitive intelligence for objection handling — bullet points only, max 900 words.
 
 Context: ${yourCompany} displacing ${competitorName} at ${targetAccount} (${targetIndustry}).
 ${incumbentLine}
