@@ -3516,6 +3516,39 @@ If you are not confident about any ticker, reply: {"tickers":[]}`,
   }
 }
 
+// ── Industry classifier for the IT/ERD Spend calculator ────────────────────────
+// Fixed 37-industry list — must match src/data/itErdSpendData.ts exactly (the
+// benchmark tables are keyed by these names, an unmatched string breaks the lookup).
+const SPEND_CALCULATOR_INDUSTRIES = [
+  'Aerospace & Defence', 'Agriculture', 'Automotive', 'Business / Professional Services',
+  'Construction', 'Consumer Products', 'Consumer Services', 'Ecommerce', 'Education',
+  'Energy (Oil & Gas)', 'Financial Markets / Capital Markets', 'Healthcare Insurance (Payers)',
+  'Healthcare Providers', 'High Tech / Technology', 'Hospitality / Travel',
+  'Industrial Manufacturing – Discrete', 'Industrial Manufacturing – Process', 'IT Hardware',
+  'IT Services', 'Life Insurance', 'Media & Entertainment', 'Medical Devices',
+  'Mineral / Mining / Natural Resources', 'Non Profit / NGO', 'P&C Insurance',
+  'Pharmaceuticals / Life Sciences', 'Public Sector & Government', 'Real Estate', 'Reinsurance',
+  'Retail', 'Retail Banking / Commercial Banking', 'Software', 'Supply Chain / Logistics',
+  'Telecommunications', 'Transportation', 'Utilities', 'Wholesale / Distribution',
+];
+
+export async function claudeClassifyIndustry(companyName: string, domain?: string): Promise<string | null> {
+  const domainHint = domain ? ` (website: ${domain})` : '';
+  try {
+    const text = await claudeCreateDirect(
+      'You are a corporate classification expert. Reply with ONLY the exact industry name from the provided list, nothing else.',
+      `Classify "${companyName}"${domainHint} into exactly ONE of the following industries (reply with the exact string, verbatim, no explanation):\n${SPEND_CALCULATOR_INDUSTRIES.map((i) => `- ${i}`).join('\n')}`,
+      50,
+      FAST_MODEL
+    );
+    const cleaned = text.trim().replace(/^[-•]\s*/, '');
+    return SPEND_CALCULATOR_INDUSTRIES.includes(cleaned) ? cleaned : null;
+  } catch (err) {
+    console.warn('[claudeAI] Industry classification failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 // ── Objection Handling ────────────────────────────────────────────────────────
 
 import {

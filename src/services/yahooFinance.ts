@@ -133,6 +133,12 @@ const FX_TO_USD: Record<string, number> = {
   INR: 0.012, CHF: 1.13, CNY: 0.14, HKD: 0.128, SGD: 0.74, KRW: 0.00073,
 };
 
+/** Converts a raw amount in its native currency to a raw USD number (no formatting). */
+export function convertToUsd(raw: number, currency = 'USD'): number {
+  const rate = FX_TO_USD[currency.toUpperCase()] ?? 1;
+  return raw * rate;
+}
+
 /** Format a raw revenue figure (in its native currency) per the Firmographic
  *  module rule: USD Millions if under $1B, USD Billions if $1B or more.
  *  If the native currency isn't USD, append the native-currency figure in

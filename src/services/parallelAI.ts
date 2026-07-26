@@ -858,7 +858,11 @@ export interface GeminiSpendResult {
 }
 
 function buildSpendPrompt(companyName: string, domainHint: string, geoHint: string): string {
+  const identityLine = domainHint || geoHint
+    ? `\nCOMPANY IDENTITY: "${companyName}"${domainHint}${geoHint}. Company names are frequently shared by unrelated businesses — verify you are researching the specific company identified by this domain/geography before reporting any figure, not a similarly-named company elsewhere.\n`
+    : '';
   return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract three specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: IT Spend/Budget, R&D Spend/Budget, and AI Spend/Budget.
+${identityLine}
 
 CRITICAL CONSTRAINT: You must only report a value if it is explicitly published by the company itself or by a top-tier analyst firm. Do NOT estimate, guess, or extrapolate.
 

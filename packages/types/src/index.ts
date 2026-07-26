@@ -1217,6 +1217,28 @@ export interface SpendLineItem {
   sourceContext?: string;   // 1-2 sentence quote/description proving validity, OR the bundling explanation when not disclosed
 }
 
+export interface SpendLevel3Row {
+  level1: string;
+  level2: string;
+  level3: string;
+  pctOfBudget: number;
+  usdMillion: number;
+}
+
+export interface SpendErdCategoryRow {
+  category: string;
+  basePct: number;
+  adjPct: number;
+  finalPct: number;
+  usdMillion: number;
+}
+
+export interface SpendEmergingTechRow {
+  tech: string;
+  pctOfIt: number;
+  usdMillion: number;
+}
+
 export interface SpendResult {
   jobId: string;
   status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
@@ -1228,6 +1250,16 @@ export interface SpendResult {
   itSpend?: SpendLineItem;
   rdSpend?: SpendLineItem;
   aiSpend?: SpendLineItem;
+  // ── Calculator-derived fields (base value = disclosed if found, else industry benchmark formula) ──
+  resolvedIndustry?: string;         // classified into one of 37 fixed industries, or undefined if unresolved
+  resolvedRegion?: string;           // US | EU | APAC | ROW1 | ROW2
+  itBaseUsdMillion?: number;        // the resolved IT Spend base value used for the breakdown below
+  itBreakdown?: SpendLevel3Row[];   // 45-line Level-3 IT category breakdown
+  erdApplicable?: boolean;          // false for the 23 industries with no ERD benchmark data
+  erdBaseUsdMillion?: number;       // resolved ERD/R&D Spend base value
+  erdBreakdown?: SpendErdCategoryRow[]; // 14-category ERD breakdown
+  emergingTechBreakdown?: SpendEmergingTechRow[]; // 8-category Emerging Tech (incl. AI) breakdown
+  emergingTechTotalUsdMillion?: number; // sum of emergingTechBreakdown — reflects disclosed AI override if found
   error?: string;
   createdAt: string;
   completedAt?: string;

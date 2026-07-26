@@ -1,6 +1,18 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SpendInput, SpendResult } from '@ai-insights/types';
-import { geminiSpendLookup } from './parallelAI';
+import { geminiSpendLookup, geminiRevenueLookup } from './parallelAI';
+import { claudeClassifyIndustry } from './claudeAI';
+import { convertToUsd } from './yahooFinance';
+import {
+  resolveRegion,
+  resolveRevenueTier,
+  isErdEligible,
+  computeItBaseSpend,
+  computeErdBaseSpend,
+  computeItLevel3Breakdown,
+  computeErdBreakdown,
+  computeEmergingTechBreakdown,
+} from './itErdSpendCalculator';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -61,20 +73,36 @@ export function getSpendJob(jobId: string): SpendResult | undefined {
   return jobs.get(jobId);
 }
 
-// ── Main runner ────────────────────────────────────────────────────────────────
+// ── Main runner ──────────────────────────────────────────────────────────────
+// Flow: research disclosed IT/R&D/AI spend (Gemini) in parallel with revenue +
+// industry classification, then:
+//   - IT base value  = disclosed IT spend if found, else Revenue × industry IT
+//     benchmark % (region + revenue-tier adjusted).
+//   - ERD base value = disclosed R&D spend if found, else Revenue × industry ERD
+//     benchmark % (only for the 14 ERD-eligible industries).
+//   - Category breakdowns (IT Level-3, ERD categories, Emerging Tech) are always
+//     computed from the benchmark formula, applied to whichever base value above
+//     was used.
+//   - AI: if disclosed AI spend is found, it REPLACES the formula-computed AI line
+//     inside the Emerging Tech breakdown, and the Emerging Tech total is
+//     recalculated to reflect the real figure instead of the formula estimate.
 
 export async function runSpendJob(jobId: string, input: SpendInput): Promise<void> {
   try {
     let job = update(jobId, {
       status: 'researching',
-      progress: 25,
+      progress: 15,
       currentStep: `Researching ${input.companyName}'s IT, R&D, and AI spend…`,
     });
     emit(jobId, 'progress', job);
 
-    const result = await geminiSpendLookup(input.companyName, input.companyDomain, input.geography);
+    const [spendResult, revenueResult, industry] = await Promise.all([
+      geminiSpendLookup(input.companyName, input.companyDomain, input.geography),
+      geminiRevenueLookup(input.companyName, input.companyDomain).catch(() => null),
+      claudeClassifyIndustry(input.companyName, input.companyDomain).catch(() => null),
+    ]);
 
-    if (!result) {
+    if (!spendResult) {
       job = update(jobId, {
         status: 'error',
         error: `Could not research spend data for ${input.companyName}.`,
@@ -85,19 +113,80 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
 
     job = update(jobId, {
       status: 'synthesizing',
-      progress: 75,
-      currentStep: 'Finalising spend breakdown…',
+      progress: 60,
+      currentStep: 'Calculating category breakdown…',
     });
     emit(jobId, 'progress', job);
+
+    const region = resolveRegion(input.geography);
+    // geminiRevenueLookup's *Raw fields are in the company's NATIVE currency units —
+    // convert to USD before using as the revenue base for the benchmark formula.
+    const revenueRawUsd = typeof revenueResult?.latestRevenueRaw === 'number'
+      ? convertToUsd(revenueResult.latestRevenueRaw, revenueResult.currency)
+      : undefined;
+
+    let itBreakdown: SpendResult['itBreakdown'];
+    let erdBreakdown: SpendResult['erdBreakdown'];
+    let emergingTechBreakdown: SpendResult['emergingTechBreakdown'];
+    let itBaseUsdMillion: number | undefined;
+    let erdBaseUsdMillion: number | undefined;
+    let erdApplicable = false;
+
+    const revenueUsdM = revenueRawUsd != null ? revenueRawUsd / 1_000_000 : undefined;
+    const tier = revenueUsdM != null ? resolveRevenueTier(revenueUsdM) : undefined;
+
+    // ── IT base value: disclosed if found, else formula ──────────────────────
+    if (spendResult.itSpend.found && spendResult.itSpend.valueRaw) {
+      itBaseUsdMillion = spendResult.itSpend.valueRaw / 1_000_000;
+    } else if (industry && revenueUsdM != null && tier) {
+      const formula = computeItBaseSpend(industry, revenueUsdM, region, tier);
+      if (formula) itBaseUsdMillion = formula.usdMillion;
+    }
+    if (itBaseUsdMillion != null && industry) {
+      itBreakdown = computeItLevel3Breakdown(industry, itBaseUsdMillion);
+    }
+
+    // ── ERD base value: disclosed R&D if found, else formula (ERD-eligible only) ──
+    if (industry && isErdEligible(industry)) {
+      erdApplicable = true;
+      if (spendResult.rdSpend.found && spendResult.rdSpend.valueRaw) {
+        erdBaseUsdMillion = spendResult.rdSpend.valueRaw / 1_000_000;
+      } else if (revenueUsdM != null && tier) {
+        const formula = computeErdBaseSpend(industry, revenueUsdM, region, tier);
+        if (formula) erdBaseUsdMillion = formula.usdMillion;
+      }
+      if (erdBaseUsdMillion != null && tier) {
+        erdBreakdown = computeErdBreakdown(industry, erdBaseUsdMillion, tier);
+      }
+    }
+
+    // ── Emerging Tech (incl. AI) breakdown — AI overridden by disclosed value if found ──
+    if (industry && itBaseUsdMillion != null && tier) {
+      const aiOverride = spendResult.aiSpend.found && spendResult.aiSpend.valueRaw
+        ? spendResult.aiSpend.valueRaw / 1_000_000
+        : undefined;
+      emergingTechBreakdown = computeEmergingTechBreakdown(industry, itBaseUsdMillion, region, tier, aiOverride);
+    }
+
+    const emergingTechTotalUsdMillion = emergingTechBreakdown?.reduce((sum, row) => sum + row.usdMillion, 0);
 
     job = update(jobId, {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
       completedAt: new Date().toISOString(),
-      itSpend: result.itSpend,
-      rdSpend: result.rdSpend,
-      aiSpend: result.aiSpend,
+      itSpend: spendResult.itSpend,
+      rdSpend: spendResult.rdSpend,
+      aiSpend: spendResult.aiSpend,
+      resolvedIndustry: industry ?? undefined,
+      resolvedRegion: region,
+      itBaseUsdMillion,
+      itBreakdown,
+      erdApplicable,
+      erdBaseUsdMillion,
+      erdBreakdown,
+      emergingTechBreakdown,
+      emergingTechTotalUsdMillion,
     });
     emit(jobId, 'result', job);
 
