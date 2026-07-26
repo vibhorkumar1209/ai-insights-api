@@ -12,6 +12,7 @@ import {
   IT_LEVEL3_TAXONOMY,
   IT_LEVEL3_PCT,
   ERD_ELIGIBLE_INDUSTRIES,
+  ERD_LEVEL3_MAP,
 } from '../data/itErdSpendData';
 
 // ── Base year (Jan-Sep -> last year, Oct-Dec -> this year — same convention used elsewhere) ──
@@ -103,13 +104,17 @@ export function computeItLevel3Breakdown(industry: string, baseUsdMillion: numbe
 }
 
 export interface ErdBreakdownRow {
-  category: string;
+  level1: string;
+  level2: string;
+  category: string; // Level 3
   basePct: number;
   adjPct: number;
   finalPct: number; // renormalized
   usdMillion: number;
 }
 
+/** ERD Spend breakdown — 14 Level-3 categories, grouped into the Level-1/Level-2
+ *  hierarchy provided 2026-07-26 (ERD_LEVEL3_MAP), mirroring the IT breakdown's shape. */
 export function computeErdBreakdown(industry: string, baseUsdMillion: number, tier: RevenueTier): ErdBreakdownRow[] {
   const split = ERD_CATEGORY_SPLIT[industry];
   const adj = ERD_CATEGORY_TIER_ADJ[industry];
@@ -122,13 +127,28 @@ export function computeErdBreakdown(industry: string, baseUsdMillion: number, ti
   });
   const total = tilted.reduce((sum, t) => sum + t.tiltedPct, 0);
   if (total <= 0) return [];
-  return tilted.map((t) => ({
-    category: t.category,
-    basePct: t.basePct,
-    adjPct: t.adjPct,
-    finalPct: t.tiltedPct / total,
-    usdMillion: baseUsdMillion * (t.tiltedPct / total),
-  }));
+  return tilted.map((t) => {
+    const hierarchy = ERD_LEVEL3_MAP[t.category] ?? { level1: 'Other', level2: 'Other' };
+    return {
+      level1: hierarchy.level1,
+      level2: hierarchy.level2,
+      category: t.category,
+      basePct: t.basePct,
+      adjPct: t.adjPct,
+      finalPct: t.tiltedPct / total,
+      usdMillion: baseUsdMillion * (t.tiltedPct / total),
+    };
+  });
+}
+
+/** Looks up a single Level-3 line item's $ value from an already-computed IT breakdown. */
+export function findItLevel3Value(breakdown: Level3BreakdownRow[], level1: string, level2: string, level3: string): number | undefined {
+  return breakdown.find((r) => r.level1 === level1 && r.level2 === level2 && r.level3 === level3)?.usdMillion;
+}
+
+/** Looks up a single ERD Level-3 category's $ value from an already-computed ERD breakdown. */
+export function findErdCategoryValue(breakdown: ErdBreakdownRow[], category: string): number | undefined {
+  return breakdown.find((r) => r.category === category)?.usdMillion;
 }
 
 export interface EmergingTechRow {
@@ -139,16 +159,29 @@ export interface EmergingTechRow {
 
 /**
  * 8-category Emerging Tech breakdown (AI, Blockchain, Cloud & Edge, Connectivity,
- * Quantum, Robotics, Spatial, Big Data). `aiOverrideUsdMillion` lets a disclosed
- * AI-spend figure replace the formula-computed AI line — the remaining 7 lines stay
- * as computed, and the caller should sum this array for the adjusted overall total.
+ * Quantum, Robotics, Spatial, Big Data).
+ *
+ * Overrides (2026-07-26):
+ * - `aiOverrideUsdMillion`: AI line is replaced by, in priority order, (1) a disclosed
+ *   AI-spend research figure if found, (2) the ERD breakdown's "AI/ML & Data
+ *   Engineering" line if the industry is ERD-eligible — the caller resolves this
+ *   priority and passes in whichever value wins.
+ * - `blockchainOverrideUsdMillion`: Blockchain line is always replaced by the IT
+ *   Level-3 breakdown's Services → Digital Enterprise → Blockchain line item value
+ *   (not formula-computed) — the caller passes this in from the IT breakdown.
+ *
+ * Region/revenue-tier adjustments can drive a technology's % deeply negative for
+ * small/niche combinations (e.g. Quantum Computing at the smallest revenue tier) —
+ * negative results are clamped to exactly 0 ("not warranted for this tier/industry")
+ * rather than left as a nonsensical negative spend figure.
  */
 export function computeEmergingTechBreakdown(
   industry: string,
   itBaseUsdMillion: number,
   region: Region,
   tier: RevenueTier,
-  aiOverrideUsdMillion?: number
+  aiOverrideUsdMillion?: number,
+  blockchainOverrideUsdMillion?: number
 ): EmergingTechRow[] {
   const base = EMERGING_TECH_BASE_PCT[industry];
   if (!base) return [];
@@ -156,9 +189,41 @@ export function computeEmergingTechBreakdown(
     if (tech === 'AI (ML/DL/GenAI & Safety)' && aiOverrideUsdMillion != null) {
       return { tech, pctOfIt: aiOverrideUsdMillion / itBaseUsdMillion, usdMillion: aiOverrideUsdMillion };
     }
+    if (tech === 'Blockchain' && blockchainOverrideUsdMillion != null) {
+      return { tech, pctOfIt: blockchainOverrideUsdMillion / itBaseUsdMillion, usdMillion: blockchainOverrideUsdMillion };
+    }
     const regionAdj = (TECH_REGION_ADJ[tech]?.[region] ?? 0) / 100;
     const tierAdj = (TECH_TIER_ADJ[tech]?.[tier] ?? 0) / 100;
-    const pctOfIt = (basePct / 100) * (1 + regionAdj) * (1 + tierAdj);
+    const pctOfIt = Math.max(0, (basePct / 100) * (1 + regionAdj) * (1 + tierAdj));
     return { tech, pctOfIt, usdMillion: itBaseUsdMillion * pctOfIt };
+  });
+}
+
+export interface TrendPoint {
+  year: number;
+  usdMillion: number;
+}
+
+/** 2022-2030 IT Spend trend, region+revenue-tier adjusted, for the trend chart. */
+export function computeItSpendTrend(industry: string, revenueUsdMillion: number, region: Region, tier: RevenueTier): TrendPoint[] {
+  const yearly = IT_BASE_PCT_BY_YEAR[industry];
+  if (!yearly) return [];
+  const regionAdj = REGION_ADJ[region] ?? 0;
+  const tierAdj = REVENUE_TIER_ADJ[tier] ?? 0;
+  return YEARS.map((year, idx) => {
+    const pct = (yearly[idx] * (1 + regionAdj) * (1 + tierAdj)) / 100;
+    return { year, usdMillion: revenueUsdMillion * pct };
+  });
+}
+
+/** 2022-2030 ERD Spend trend — only for ERD-eligible industries. */
+export function computeErdSpendTrend(industry: string, revenueUsdMillion: number, region: Region, tier: RevenueTier): TrendPoint[] {
+  const yearly = ERD_BASE_PCT_BY_YEAR[industry];
+  if (!yearly) return [];
+  const regionAdj = REGION_ADJ[region] ?? 0;
+  const tierAdj = REVENUE_TIER_ADJ[tier] ?? 0;
+  return YEARS.map((year, idx) => {
+    const pct = (yearly[idx] * (1 + regionAdj) * (1 + tierAdj)) / 100;
+    return { year, usdMillion: revenueUsdMillion * pct };
   });
 }

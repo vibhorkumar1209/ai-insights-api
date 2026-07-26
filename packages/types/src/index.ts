@@ -1226,7 +1226,9 @@ export interface SpendLevel3Row {
 }
 
 export interface SpendErdCategoryRow {
-  category: string;
+  level1: string;
+  level2: string;
+  category: string; // Level 3
   basePct: number;
   adjPct: number;
   finalPct: number;
@@ -1236,6 +1238,11 @@ export interface SpendErdCategoryRow {
 export interface SpendEmergingTechRow {
   tech: string;
   pctOfIt: number;
+  usdMillion: number;
+}
+
+export interface SpendTrendPoint {
+  year: number;
   usdMillion: number;
 }
 
@@ -1254,11 +1261,13 @@ export interface SpendResult {
   resolvedIndustry?: string;         // classified into one of 37 fixed industries, or undefined if unresolved
   resolvedRegion?: string;           // US | EU | APAC | ROW1 | ROW2
   itBaseUsdMillion?: number;        // the resolved IT Spend base value used for the breakdown below
-  itBreakdown?: SpendLevel3Row[];   // 45-line Level-3 IT category breakdown
+  itBreakdown?: SpendLevel3Row[];   // 117-line Level-3 IT category breakdown
+  itSpendTrend?: SpendTrendPoint[]; // 2022-2030 IT Spend $ trend
   erdApplicable?: boolean;          // false for the 23 industries with no ERD benchmark data
   erdBaseUsdMillion?: number;       // resolved ERD/R&D Spend base value
-  erdBreakdown?: SpendErdCategoryRow[]; // 14-category ERD breakdown
-  emergingTechBreakdown?: SpendEmergingTechRow[]; // 8-category Emerging Tech (incl. AI) breakdown
+  erdBreakdown?: SpendErdCategoryRow[]; // 14-category ERD breakdown (with Level 1/2 hierarchy)
+  erdSpendTrend?: SpendTrendPoint[]; // 2022-2030 ERD Spend $ trend
+  emergingTechBreakdown?: SpendEmergingTechRow[]; // 8-category Emerging Tech (incl. AI, Blockchain) breakdown
   emergingTechTotalUsdMillion?: number; // sum of emergingTechBreakdown — reflects disclosed AI override if found
   error?: string;
   createdAt: string;

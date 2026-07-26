@@ -12,6 +12,10 @@ import {
   computeItLevel3Breakdown,
   computeErdBreakdown,
   computeEmergingTechBreakdown,
+  computeItSpendTrend,
+  computeErdSpendTrend,
+  findItLevel3Value,
+  findErdCategoryValue,
 } from './itErdSpendCalculator';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
@@ -131,6 +135,8 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     let itBaseUsdMillion: number | undefined;
     let erdBaseUsdMillion: number | undefined;
     let erdApplicable = false;
+    let itSpendTrend: SpendResult['itSpendTrend'];
+    let erdSpendTrend: SpendResult['erdSpendTrend'];
 
     const revenueUsdM = revenueRawUsd != null ? revenueRawUsd / 1_000_000 : undefined;
     const tier = revenueUsdM != null ? resolveRevenueTier(revenueUsdM) : undefined;
@@ -145,6 +151,9 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     if (itBaseUsdMillion != null && industry) {
       itBreakdown = computeItLevel3Breakdown(industry, itBaseUsdMillion);
     }
+    if (industry && revenueUsdM != null && tier) {
+      itSpendTrend = computeItSpendTrend(industry, revenueUsdM, region, tier);
+    }
 
     // ── ERD base value: disclosed R&D if found, else formula (ERD-eligible only) ──
     if (industry && isErdEligible(industry)) {
@@ -158,14 +167,27 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       if (erdBaseUsdMillion != null && tier) {
         erdBreakdown = computeErdBreakdown(industry, erdBaseUsdMillion, tier);
       }
+      if (revenueUsdM != null && tier) {
+        erdSpendTrend = computeErdSpendTrend(industry, revenueUsdM, region, tier);
+      }
     }
 
-    // ── Emerging Tech (incl. AI) breakdown — AI overridden by disclosed value if found ──
+    // ── Emerging Tech (incl. AI, Blockchain) breakdown ────────────────────────
+    // AI priority: disclosed research figure > ERD's "AI/ML & Data Engineering" line > formula.
+    // Blockchain: always sourced from the IT breakdown's Services → Digital Enterprise →
+    // Blockchain line item (never the formula-computed Emerging Tech value).
     if (industry && itBaseUsdMillion != null && tier) {
-      const aiOverride = spendResult.aiSpend.found && spendResult.aiSpend.valueRaw
+      const disclosedAi = spendResult.aiSpend.found && spendResult.aiSpend.valueRaw
         ? spendResult.aiSpend.valueRaw / 1_000_000
         : undefined;
-      emergingTechBreakdown = computeEmergingTechBreakdown(industry, itBaseUsdMillion, region, tier, aiOverride);
+      const erdAiLine = erdBreakdown ? findErdCategoryValue(erdBreakdown, 'AI/ML & Data Engineering') : undefined;
+      const aiOverride = disclosedAi ?? erdAiLine;
+
+      const blockchainOverride = itBreakdown
+        ? findItLevel3Value(itBreakdown, 'Services', 'Digital Enterprise', 'Blockchain')
+        : undefined;
+
+      emergingTechBreakdown = computeEmergingTechBreakdown(industry, itBaseUsdMillion, region, tier, aiOverride, blockchainOverride);
     }
 
     const emergingTechTotalUsdMillion = emergingTechBreakdown?.reduce((sum, row) => sum + row.usdMillion, 0);
@@ -182,9 +204,11 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       resolvedRegion: region,
       itBaseUsdMillion,
       itBreakdown,
+      itSpendTrend,
       erdApplicable,
       erdBaseUsdMillion,
       erdBreakdown,
+      erdSpendTrend,
       emergingTechBreakdown,
       emergingTechTotalUsdMillion,
     });
