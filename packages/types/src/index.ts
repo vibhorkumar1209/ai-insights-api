@@ -1206,6 +1206,7 @@ export interface SpendInput {
   companyName: string;
   companyDomain?: string;
   geography?: string; // HQ geography, e.g. "United States"
+  industry?: string;  // one of the 37 fixed benchmark industries; auto-classified if omitted
 }
 
 export interface SpendLineItem {

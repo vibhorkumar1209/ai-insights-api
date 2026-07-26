@@ -6,21 +6,19 @@ const router = Router();
 
 // POST /api/spend — create and start a spend research job
 router.post('/', aiLimiter, (req: Request, res: Response) => {
-  const { companyName, companyDomain, geography } = req.body;
+  const { companyName, companyDomain, geography, industry } = req.body;
   if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
     res.status(400).json({ error: 'companyName is required (min 2 characters)' });
     return;
   }
-  const jobId = createSpendJob({
+  const input = {
     companyName: companyName.trim(),
     companyDomain: companyDomain?.trim(),
     geography: geography?.trim(),
-  });
-  runSpendJob(jobId, {
-    companyName: companyName.trim(),
-    companyDomain: companyDomain?.trim(),
-    geography: geography?.trim(),
-  }).catch(() => {});
+    industry: typeof industry === 'string' && industry.trim() ? industry.trim() : undefined,
+  };
+  const jobId = createSpendJob(input);
+  runSpendJob(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });
 

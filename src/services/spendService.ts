@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SpendInput, SpendResult } from '@ai-insights/types';
 import { geminiSpendLookup, geminiRevenueLookup } from './parallelAI';
-import { claudeClassifyIndustry } from './claudeAI';
+import { claudeClassifyIndustry, SPEND_CALCULATOR_INDUSTRIES } from './claudeAI';
 import { convertToUsd } from './yahooFinance';
 import {
   resolveRegion,
@@ -100,11 +100,18 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     });
     emit(jobId, 'progress', job);
 
-    const [spendResult, revenueResult, industry] = await Promise.all([
+    // User-selected industry takes priority over auto-classification (skips the
+    // extra Claude call entirely when a valid selection is provided).
+    const userIndustry = input.industry && SPEND_CALCULATOR_INDUSTRIES.includes(input.industry)
+      ? input.industry
+      : undefined;
+
+    const [spendResult, revenueResult, classifiedIndustry] = await Promise.all([
       geminiSpendLookup(input.companyName, input.companyDomain, input.geography),
       geminiRevenueLookup(input.companyName, input.companyDomain).catch(() => null),
-      claudeClassifyIndustry(input.companyName, input.companyDomain).catch(() => null),
+      userIndustry ? Promise.resolve(null) : claudeClassifyIndustry(input.companyName, input.companyDomain).catch(() => null),
     ]);
+    const industry = userIndustry ?? classifiedIndustry;
 
     if (!spendResult) {
       job = update(jobId, {

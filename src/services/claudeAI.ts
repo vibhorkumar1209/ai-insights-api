@@ -3519,10 +3519,10 @@ If you are not confident about any ticker, reply: {"tickers":[]}`,
 // ── Industry classifier for the IT/ERD Spend calculator ────────────────────────
 // Fixed 37-industry list — must match src/data/itErdSpendData.ts exactly (the
 // benchmark tables are keyed by these names, an unmatched string breaks the lookup).
-const SPEND_CALCULATOR_INDUSTRIES = [
-  'Aerospace & Defence', 'Agriculture', 'Automotive', 'Business / Professional Services',
+export const SPEND_CALCULATOR_INDUSTRIES = [
+  'Aerospace & Defence', 'Agriculture', 'Automotive', 'Business Services / Professional Services',
   'Construction', 'Consumer Products', 'Consumer Services', 'Ecommerce', 'Education',
-  'Energy (Oil & Gas)', 'Financial Markets / Capital Markets', 'Healthcare Insurance (Payers)',
+  'Energy (Oil & Gas)', 'Financial Markets / Capital Markets / Investments', 'Healthcare Insurance (Payers)',
   'Healthcare Providers', 'High Tech / Technology', 'Hospitality / Travel',
   'Industrial Manufacturing – Discrete', 'Industrial Manufacturing – Process', 'IT Hardware',
   'IT Services', 'Life Insurance', 'Media & Entertainment', 'Medical Devices',
