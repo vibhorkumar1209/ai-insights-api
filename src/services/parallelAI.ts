@@ -735,10 +735,12 @@ export async function geminiRevenueLookup(
 
       return {
         latestRevenue,
+        latestRevenueRaw: latestRaw ?? undefined,
         revenueYear: parsed.revenueYear || '',
         currency: parsed.currency || undefined,
         yoyGrowth: typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined,
         previousRevenue,
+        previousRevenueRaw: previousRaw ?? undefined,
         previousYear: parsed.previousYear || undefined,
         source: parsed.source || undefined,
       };
