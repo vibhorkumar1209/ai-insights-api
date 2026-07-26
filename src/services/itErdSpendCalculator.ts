@@ -83,10 +83,12 @@ export interface Level3BreakdownRow {
 }
 
 /**
- * IT Level-3 category breakdown. Renormalizes the raw allocation %s (which sum to
- * 84-98% in the source data, never exactly 100%) to a clean 100% so the rows fully
- * exhaust `baseUsdMillion` — see build-notes §13, Q7 (resolved this way for this
- * implementation: full renormalization, no separate "Other/Unclassified" line).
+ * IT Level-3 category breakdown — 117 line items across 4 Level-1 categories
+ * (Communications, Hardware, Services, Software), matching the live UI reference.
+ * Source data (`IT Spend.xlsx` v2, "IT Spend L3 by Industry" sheet) already sums to
+ * exactly 100% per industry; the /rawTotal division below is a harmless safety net
+ * for rounding drift, not a real renormalization (build-notes §13, Q7 is now moot —
+ * the earlier 84-98%-sum data source this note referred to has been superseded).
  */
 export function computeItLevel3Breakdown(industry: string, baseUsdMillion: number): Level3BreakdownRow[] {
   const rawPct = IT_LEVEL3_PCT[industry];
