@@ -1,8 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SpendInput, SpendResult } from '@ai-insights/types';
-import { geminiSpendLookup, geminiRevenueLookup } from './parallelAI';
-import { claudeClassifyIndustry, SPEND_CALCULATOR_INDUSTRIES } from './claudeAI';
-import { convertToUsd } from './yahooFinance';
+import { geminiSpendLookup } from './parallelAI';
 import {
   resolveRegion,
   resolveRevenueTier,
@@ -68,6 +66,7 @@ export function createSpendJob(input: SpendInput): string {
     companyName: input.companyName,
     companyDomain: input.companyDomain,
     geography: input.geography,
+    revenueUsdMillion: input.revenueUsdMillion,
     createdAt: new Date().toISOString(),
   });
   return jobId;
@@ -78,18 +77,22 @@ export function getSpendJob(jobId: string): SpendResult | undefined {
 }
 
 // ── Main runner ──────────────────────────────────────────────────────────────
-// Flow: research disclosed IT/R&D/AI spend (Gemini) in parallel with revenue +
-// industry classification, then:
+// All four inputs (companyName, companyDomain, geography, industry, revenueUsdMillion)
+// are mandatory (enforced in routes/spend.ts) — this is deliberate: domain/geography
+// are rooted into the research query to disambiguate same-name companies, industry
+// and revenue drive the benchmark formula deterministically instead of depending on
+// live auto-classification/auto-lookup calls that can miss (as geminiRevenueLookup
+// occasionally did for some companies).
+//
+// Flow: research disclosed IT/R&D/AI spend (Gemini), then:
 //   - IT base value  = disclosed IT spend if found, else Revenue × industry IT
 //     benchmark % (region + revenue-tier adjusted).
 //   - ERD base value = disclosed R&D spend if found, else Revenue × industry ERD
 //     benchmark % (only for the 14 ERD-eligible industries).
-//   - Category breakdowns (IT Level-3, ERD categories, Emerging Tech) are always
-//     computed from the benchmark formula, applied to whichever base value above
-//     was used.
-//   - AI: if disclosed AI spend is found, it REPLACES the formula-computed AI line
-//     inside the Emerging Tech breakdown, and the Emerging Tech total is
-//     recalculated to reflect the real figure instead of the formula estimate.
+//   - IT Level-3 breakdown applies the exclusion + equal-redistribution rules
+//     (IT_LEVEL3_EXCLUSION) based on revenue tier + industry.
+//   - AI: disclosed research figure > ERD's "AI/ML & Data Engineering" line > formula.
+//   - Blockchain: always sourced from the IT breakdown's Digital Enterprise line.
 
 export async function runSpendJob(jobId: string, input: SpendInput): Promise<void> {
   try {
@@ -100,18 +103,12 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     });
     emit(jobId, 'progress', job);
 
-    // User-selected industry takes priority over auto-classification (skips the
-    // extra Claude call entirely when a valid selection is provided).
-    const userIndustry = input.industry && SPEND_CALCULATOR_INDUSTRIES.includes(input.industry)
-      ? input.industry
-      : undefined;
+    const industry = input.industry;
+    const region = resolveRegion(input.geography);
+    const revenueUsdM = input.revenueUsdMillion;
+    const tier = resolveRevenueTier(revenueUsdM);
 
-    const [spendResult, revenueResult, classifiedIndustry] = await Promise.all([
-      geminiSpendLookup(input.companyName, input.companyDomain, input.geography),
-      geminiRevenueLookup(input.companyName, input.companyDomain).catch(() => null),
-      userIndustry ? Promise.resolve(null) : claudeClassifyIndustry(input.companyName, input.companyDomain).catch(() => null),
-    ]);
-    const industry = userIndustry ?? classifiedIndustry;
+    const spendResult = await geminiSpendLookup(input.companyName, input.companyDomain, input.geography, industry, revenueUsdM);
 
     if (!spendResult) {
       job = update(jobId, {
@@ -129,61 +126,46 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     });
     emit(jobId, 'progress', job);
 
-    const region = resolveRegion(input.geography);
-    // geminiRevenueLookup's *Raw fields are in the company's NATIVE currency units —
-    // convert to USD before using as the revenue base for the benchmark formula.
-    const revenueRawUsd = typeof revenueResult?.latestRevenueRaw === 'number'
-      ? convertToUsd(revenueResult.latestRevenueRaw, revenueResult.currency)
-      : undefined;
-
     let itBreakdown: SpendResult['itBreakdown'];
     let erdBreakdown: SpendResult['erdBreakdown'];
     let emergingTechBreakdown: SpendResult['emergingTechBreakdown'];
     let itBaseUsdMillion: number | undefined;
     let erdBaseUsdMillion: number | undefined;
     let erdApplicable = false;
-    let itSpendTrend: SpendResult['itSpendTrend'];
-    let erdSpendTrend: SpendResult['erdSpendTrend'];
-
-    const revenueUsdM = revenueRawUsd != null ? revenueRawUsd / 1_000_000 : undefined;
-    const tier = revenueUsdM != null ? resolveRevenueTier(revenueUsdM) : undefined;
 
     // ── IT base value: disclosed if found, else formula ──────────────────────
     if (spendResult.itSpend.found && spendResult.itSpend.valueRaw) {
       itBaseUsdMillion = spendResult.itSpend.valueRaw / 1_000_000;
-    } else if (industry && revenueUsdM != null && tier) {
+    } else {
       const formula = computeItBaseSpend(industry, revenueUsdM, region, tier);
       if (formula) itBaseUsdMillion = formula.usdMillion;
     }
-    if (itBaseUsdMillion != null && industry) {
-      itBreakdown = computeItLevel3Breakdown(industry, itBaseUsdMillion);
+    if (itBaseUsdMillion != null) {
+      itBreakdown = computeItLevel3Breakdown(industry, itBaseUsdMillion, revenueUsdM);
     }
-    if (industry && revenueUsdM != null && tier) {
-      itSpendTrend = computeItSpendTrend(industry, revenueUsdM, region, tier);
-    }
+    const itSpendTrend = computeItSpendTrend(industry, revenueUsdM, region, tier);
 
     // ── ERD base value: disclosed R&D if found, else formula (ERD-eligible only) ──
-    if (industry && isErdEligible(industry)) {
+    let erdSpendTrend: SpendResult['erdSpendTrend'];
+    if (isErdEligible(industry)) {
       erdApplicable = true;
       if (spendResult.rdSpend.found && spendResult.rdSpend.valueRaw) {
         erdBaseUsdMillion = spendResult.rdSpend.valueRaw / 1_000_000;
-      } else if (revenueUsdM != null && tier) {
+      } else {
         const formula = computeErdBaseSpend(industry, revenueUsdM, region, tier);
         if (formula) erdBaseUsdMillion = formula.usdMillion;
       }
-      if (erdBaseUsdMillion != null && tier) {
+      if (erdBaseUsdMillion != null) {
         erdBreakdown = computeErdBreakdown(industry, erdBaseUsdMillion, tier);
       }
-      if (revenueUsdM != null && tier) {
-        erdSpendTrend = computeErdSpendTrend(industry, revenueUsdM, region, tier);
-      }
+      erdSpendTrend = computeErdSpendTrend(industry, revenueUsdM, region, tier);
     }
 
     // ── Emerging Tech (incl. AI, Blockchain) breakdown ────────────────────────
     // AI priority: disclosed research figure > ERD's "AI/ML & Data Engineering" line > formula.
     // Blockchain: always sourced from the IT breakdown's Services → Digital Enterprise →
     // Blockchain line item (never the formula-computed Emerging Tech value).
-    if (industry && itBaseUsdMillion != null && tier) {
+    if (itBaseUsdMillion != null) {
       const disclosedAi = spendResult.aiSpend.found && spendResult.aiSpend.valueRaw
         ? spendResult.aiSpend.valueRaw / 1_000_000
         : undefined;
@@ -207,7 +189,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       itSpend: spendResult.itSpend,
       rdSpend: spendResult.rdSpend,
       aiSpend: spendResult.aiSpend,
-      resolvedIndustry: industry ?? undefined,
+      resolvedIndustry: industry,
       resolvedRegion: region,
       itBaseUsdMillion,
       itBreakdown,

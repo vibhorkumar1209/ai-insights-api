@@ -1204,9 +1204,10 @@ export interface FirmographicResult {
 
 export interface SpendInput {
   companyName: string;
-  companyDomain?: string;
-  geography?: string; // HQ geography, e.g. "United States"
-  industry?: string;  // one of the 37 fixed benchmark industries; auto-classified if omitted
+  companyDomain: string;
+  geography: string;         // HQ geography, e.g. "United States"
+  industry: string;          // one of the 37 fixed benchmark industries
+  revenueUsdMillion: number; // annual revenue, USD millions
 }
 
 export interface SpendLineItem {
@@ -1255,6 +1256,7 @@ export interface SpendResult {
   companyName: string;
   companyDomain?: string;
   geography?: string;
+  revenueUsdMillion?: number; // as provided by the user
   itSpend?: SpendLineItem;
   rdSpend?: SpendLineItem;
   aiSpend?: SpendLineItem;

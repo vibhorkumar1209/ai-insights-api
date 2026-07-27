@@ -13,6 +13,7 @@ import {
   IT_LEVEL3_PCT,
   ERD_ELIGIBLE_INDUSTRIES,
   ERD_LEVEL3_MAP,
+  IT_LEVEL3_EXCLUSION,
 } from '../data/itErdSpendData';
 
 // ── Base year (Jan-Sep -> last year, Oct-Dec -> this year — same convention used elsewhere) ──
@@ -39,6 +40,20 @@ export function resolveRevenueTier(revenueUsdMillion: number): RevenueTier {
   if (revenueUsdMillion >= 100) return '$100M-$500M';
   if (revenueUsdMillion >= 10) return '$10M-$100M';
   return '<$10M';
+}
+
+// 7-tier scheme used only by the IT Level-3 exclusion matrix (2026-07-27 source file) —
+// distinct boundaries from the 6-tier RevenueTier above, which drives the base %
+// region/tier adjustment and is unrelated to this exclusion feature.
+export type ExclusionTier = 0 | 1 | 2 | 3 | 4 | 5 | 6; // index into the 7-element flag array
+export function resolveExclusionTierIndex(revenueUsdMillion: number): ExclusionTier {
+  if (revenueUsdMillion < 25) return 0;      // T1 <$25M
+  if (revenueUsdMillion < 100) return 1;     // T2 $25M-$100M
+  if (revenueUsdMillion < 500) return 2;     // T3 $100M-$500M
+  if (revenueUsdMillion < 1000) return 3;    // T4 $500M-$1B
+  if (revenueUsdMillion < 5000) return 4;    // T5 $1B-$5B
+  if (revenueUsdMillion < 10000) return 5;   // T6 $5B-$10B
+  return 6;                                   // T7 >$10B
 }
 
 export function isErdEligible(industry: string): boolean {
@@ -90,16 +105,59 @@ export interface Level3BreakdownRow {
  * exactly 100% per industry; the /rawTotal division below is a harmless safety net
  * for rounding drift, not a real renormalization (build-notes §13, Q7 is now moot —
  * the earlier 84-98%-sum data source this note referred to has been superseded).
+ *
+ * Exclusion + redistribution (2026-07-27): if `revenueUsdMillion` is provided, any
+ * Level-3 item flagged excluded for this industry/revenue-tier (per
+ * IT_LEVEL3_EXCLUSION — e.g. "MPLS & Dedicated Transport Core" is not warranted below
+ * $500M revenue) is forced to 0%, and its % is redistributed EQUALLY among the other
+ * still-active items in the same Level-2 group (not proportionally — a flat split).
+ * If every item in a Level-2 group is excluded, that group's total simply drops to 0
+ * (nothing to redistribute into).
  */
-export function computeItLevel3Breakdown(industry: string, baseUsdMillion: number): Level3BreakdownRow[] {
+export function computeItLevel3Breakdown(industry: string, baseUsdMillion: number, revenueUsdMillion?: number): Level3BreakdownRow[] {
   const rawPct = IT_LEVEL3_PCT[industry];
   if (!rawPct) return [];
   const rawTotal = IT_LEVEL3_TAXONOMY.reduce((sum, item) => sum + (rawPct[item.level3] ?? 0), 0);
   if (rawTotal <= 0) return [];
-  return IT_LEVEL3_TAXONOMY.map((item) => {
-    const raw = rawPct[item.level3] ?? 0;
-    const pctOfBudget = raw / rawTotal;
-    return { level1: item.level1, level2: item.level2, level3: item.level3, pctOfBudget, usdMillion: baseUsdMillion * pctOfBudget };
+
+  // Base normalized % per item, before any exclusion.
+  const normalized = IT_LEVEL3_TAXONOMY.map((item) => ({
+    level1: item.level1,
+    level2: item.level2,
+    level3: item.level3,
+    pct: (rawPct[item.level3] ?? 0) / rawTotal,
+  }));
+
+  if (revenueUsdMillion == null) {
+    return normalized.map((r) => ({ ...r, pctOfBudget: r.pct, usdMillion: baseUsdMillion * r.pct }));
+  }
+
+  const tierIdx = resolveExclusionTierIndex(revenueUsdMillion);
+  const excluded = new Set(
+    normalized.filter((r) => (IT_LEVEL3_EXCLUSION[r.level3]?.[industry]?.[tierIdx] ?? 0) === 1).map((r) => r.level3)
+  );
+
+  // Redistribute each excluded item's % equally among the other active items in the same Level-2 group.
+  const adjustedPct = new Map<string, number>(normalized.map((r) => [r.level3, excluded.has(r.level3) ? 0 : r.pct]));
+  const level2Groups = new Map<string, typeof normalized>();
+  for (const r of normalized) {
+    if (!level2Groups.has(r.level2)) level2Groups.set(r.level2, []);
+    level2Groups.get(r.level2)!.push(r);
+  }
+  for (const [, items] of level2Groups) {
+    const excludedInGroup = items.filter((r) => excluded.has(r.level3));
+    const activeInGroup = items.filter((r) => !excluded.has(r.level3));
+    if (excludedInGroup.length === 0 || activeInGroup.length === 0) continue;
+    const freedPct = excludedInGroup.reduce((sum, r) => sum + r.pct, 0);
+    const share = freedPct / activeInGroup.length;
+    for (const r of activeInGroup) {
+      adjustedPct.set(r.level3, (adjustedPct.get(r.level3) ?? 0) + share);
+    }
+  }
+
+  return normalized.map((r) => {
+    const pctOfBudget = adjustedPct.get(r.level3) ?? 0;
+    return { level1: r.level1, level2: r.level2, level3: r.level3, pctOfBudget, usdMillion: baseUsdMillion * pctOfBudget };
   });
 }
 

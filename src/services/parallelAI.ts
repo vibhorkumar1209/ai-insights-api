@@ -859,9 +859,9 @@ export interface GeminiSpendResult {
   aiSpend: GeminiSpendLineResult;
 }
 
-function buildSpendPrompt(companyName: string, domainHint: string, geoHint: string): string {
-  const identityLine = domainHint || geoHint
-    ? `\nCOMPANY IDENTITY: "${companyName}"${domainHint}${geoHint}. Company names are frequently shared by unrelated businesses — verify you are researching the specific company identified by this domain/geography before reporting any figure, not a similarly-named company elsewhere.\n`
+function buildSpendPrompt(companyName: string, domainHint: string, geoHint: string, industry?: string, revenueUsdMillion?: number): string {
+  const identityLine = domainHint || geoHint || industry || revenueUsdMillion != null
+    ? `\nCOMPANY IDENTITY: "${companyName}"${domainHint}${geoHint}${industry ? `, operating in the ${industry} industry` : ''}${revenueUsdMillion != null ? ` with annual revenue of approximately $${revenueUsdMillion.toLocaleString()}M` : ''}. Company names are frequently shared by unrelated businesses — verify you are researching the specific company matching this domain/geography/industry/revenue scale before reporting any figure, not a similarly-named company elsewhere. If the company you find has a materially different revenue or industry than stated here, flag that discrepancy in the sourceContext rather than silently reporting mismatched data.\n`
     : '';
   return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract three specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: IT Spend/Budget, R&D Spend/Budget, and AI Spend/Budget.
 ${identityLine}
@@ -892,11 +892,13 @@ If a category is not explicitly reported by a permitted source, set "found": fal
 export async function geminiSpendLookup(
   companyName: string,
   domain?: string,
-  geography?: string
+  geography?: string,
+  industry?: string,
+  revenueUsdMillion?: number
 ): Promise<GeminiSpendResult | null> {
   const domainHint = domain ? ` (${domain})` : '';
   const geoHint = geography ? `, headquartered in ${geography}` : '';
-  const prompt = buildSpendPrompt(companyName, domainHint, geoHint);
+  const prompt = buildSpendPrompt(companyName, domainHint, geoHint, industry, revenueUsdMillion);
 
   try {
     const { text } = await runGeminiGroundedSearch(prompt);

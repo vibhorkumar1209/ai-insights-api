@@ -3532,22 +3532,6 @@ export const SPEND_CALCULATOR_INDUSTRIES = [
   'Telecommunications', 'Transportation', 'Utilities', 'Wholesale / Distribution',
 ];
 
-export async function claudeClassifyIndustry(companyName: string, domain?: string): Promise<string | null> {
-  const domainHint = domain ? ` (website: ${domain})` : '';
-  try {
-    const text = await claudeCreateDirect(
-      'You are a corporate classification expert. Reply with ONLY the exact industry name from the provided list, nothing else.',
-      `Classify "${companyName}"${domainHint} into exactly ONE of the following industries (reply with the exact string, verbatim, no explanation):\n${SPEND_CALCULATOR_INDUSTRIES.map((i) => `- ${i}`).join('\n')}`,
-      50,
-      FAST_MODEL
-    );
-    const cleaned = text.trim().replace(/^[-•]\s*/, '');
-    return SPEND_CALCULATOR_INDUSTRIES.includes(cleaned) ? cleaned : null;
-  } catch (err) {
-    console.warn('[claudeAI] Industry classification failed:', err instanceof Error ? err.message : err);
-    return null;
-  }
-}
 
 // ── Objection Handling ────────────────────────────────────────────────────────
 
