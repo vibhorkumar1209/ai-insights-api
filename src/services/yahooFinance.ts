@@ -690,6 +690,29 @@ function normalizeName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/**
+ * Sanity-check that a fetched company name (from Yahoo/Google Finance) actually
+ * corresponds to the requested company name, before its financials are trusted.
+ * Needed because ticker sources like claudeLookupTicker (an LLM guess) carry no
+ * built-in verification — unlike detectTicker's own scoreQuote() matching — so a
+ * hallucinated or wrong-company ticker would otherwise silently return someone
+ * else's real financials with no indication anything was off.
+ * Deliberately loose (normalized substring/prefix/acronym match) to tolerate
+ * legal-suffix and formatting differences ("Alphabet Inc." vs "Alphabet"),
+ * not a precision check.
+ */
+export function companyNameLooselyMatches(requestedName: string, fetchedName: string | undefined): boolean {
+  if (!fetchedName) return false;
+  const reqNorm = normalizeName(requestedName);
+  const fetchedNorm = normalizeName(fetchedName);
+  if (!reqNorm || !fetchedNorm) return false;
+  if (fetchedNorm.includes(reqNorm) || reqNorm.includes(fetchedNorm)) return true;
+  const reqFirstWordNorm = normalizeName(requestedName.trim().split(/\s+/)[0] || '');
+  if (reqFirstWordNorm.length >= 3 && fetchedNorm.includes(reqFirstWordNorm)) return true;
+  if (acronymMatchesName(requestedName, fetchedName)) return true;
+  return false;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function scoreQuote(q: any, companyName: string, domainHint: string): number {
   const fullName = ((q.shortname || q.longname || '') as string);

@@ -733,12 +733,24 @@ export async function geminiRevenueLookup(
       const latestRevenue = latestRaw != null ? formatRevenueUSD(latestRaw, currency) : parsed.latestRevenue;
       const previousRevenue = previousRaw != null ? formatRevenueUSD(previousRaw, currency) : parsed.previousRevenue || undefined;
 
+      // Compute YoY ourselves from the raw figures above rather than trusting the
+      // model's own percentage — same reasoning as the USD reformat above: LLM
+      // arithmetic on financial figures is unreliable, and we already have the
+      // two numbers needed to compute it exactly. Only fall back to the model's
+      // stated yoyGrowth if one of the raw figures didn't parse.
+      const computedYoy = latestRaw != null && previousRaw != null && previousRaw !== 0
+        ? ((latestRaw - previousRaw) / Math.abs(previousRaw)) * 100
+        : undefined;
+      const yoyGrowth = computedYoy != null
+        ? parseFloat(computedYoy.toFixed(1))
+        : (typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined);
+
       return {
         latestRevenue,
         latestRevenueRaw: latestRaw ?? undefined,
         revenueYear: parsed.revenueYear || '',
         currency: parsed.currency || undefined,
-        yoyGrowth: typeof parsed.yoyGrowth === 'number' ? parsed.yoyGrowth : undefined,
+        yoyGrowth,
         previousRevenue,
         previousRevenueRaw: previousRaw ?? undefined,
         previousYear: parsed.previousYear || undefined,

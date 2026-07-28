@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FirmographicInput, FirmographicResult } from '@ai-insights/types';
-import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString, formatRevenueUSD } from './yahooFinance';
+import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString, formatRevenueUSD, companyNameLooselyMatches } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
 import { geminiRevenueLookup, geminiFirmographicLookup } from './parallelAI';
 
@@ -156,6 +156,18 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
           return null;
         });
         source = 'Google Finance';
+      }
+
+      // Verify the fetched company actually matches the request before trusting
+      // its financials. claudeLookupTicker (the primary ticker source, tried
+      // first above) carries no built-in verification — it's an LLM guess — so
+      // without this check a hallucinated or wrong-company ticker would silently
+      // surface someone else's real revenue/margins as if they were the
+      // requested company's. If it doesn't match, discard and fall through to
+      // the Gemini search fallback below, which searches by name directly.
+      if (data?.companyInfo?.name && !companyNameLooselyMatches(input.companyName, data.companyInfo.name)) {
+        console.warn(`[firmographic] Fetched company "${data.companyInfo.name}" for ticker ${ticker} doesn't match requested "${input.companyName}" — discarding and falling back to Gemini search`);
+        data = null;
       }
 
       const history = data?.revenueHistory ?? [];
