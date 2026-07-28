@@ -14,6 +14,7 @@ import {
   ERD_ELIGIBLE_INDUSTRIES,
   ERD_LEVEL3_MAP,
   IT_LEVEL3_EXCLUSION,
+  EMERGING_TECH_EXCLUSION,
 } from '../data/itErdSpendData';
 
 // ── Base year (Jan-Sep -> last year, Oct-Dec -> this year — same convention used elsewhere) ──
@@ -232,6 +233,15 @@ export interface EmergingTechRow {
  * small/niche combinations (e.g. Quantum Computing at the smallest revenue tier) —
  * negative results are clamped to exactly 0 ("not warranted for this tier/industry")
  * rather than left as a nonsensical negative spend figure.
+ *
+ * Exclusion + redistribution (2026-07-28): if `revenueUsdMillion` is provided, any
+ * Emerging Tech category flagged excluded for this industry/revenue-tier (per
+ * EMERGING_TECH_EXCLUSION, same 7-tier scheme as the IT Level-3 exclusion feature) is
+ * forced to 0%, and its % is redistributed EQUALLY among the other still-active
+ * categories (flat split across all 8 — Emerging Tech has no Level-2 grouping to
+ * redistribute within, unlike the IT Level-3 breakdown). Overridden lines (AI,
+ * Blockchain) are excluded from the redistribution pool since their value is sourced
+ * externally, not from the base %.
  */
 export function computeEmergingTechBreakdown(
   industry: string,
@@ -239,21 +249,48 @@ export function computeEmergingTechBreakdown(
   region: Region,
   tier: RevenueTier,
   aiOverrideUsdMillion?: number,
-  blockchainOverrideUsdMillion?: number
+  blockchainOverrideUsdMillion?: number,
+  revenueUsdMillion?: number
 ): EmergingTechRow[] {
   const base = EMERGING_TECH_BASE_PCT[industry];
   if (!base) return [];
-  return Object.entries(base).map(([tech, basePct]) => {
+
+  const rows = Object.entries(base).map(([tech, basePct]) => {
     if (tech === 'AI (ML/DL/GenAI & Safety)' && aiOverrideUsdMillion != null) {
-      return { tech, pctOfIt: aiOverrideUsdMillion / itBaseUsdMillion, usdMillion: aiOverrideUsdMillion };
+      return { tech, pctOfIt: aiOverrideUsdMillion / itBaseUsdMillion, usdMillion: aiOverrideUsdMillion, overridden: true };
     }
     if (tech === 'Blockchain' && blockchainOverrideUsdMillion != null) {
-      return { tech, pctOfIt: blockchainOverrideUsdMillion / itBaseUsdMillion, usdMillion: blockchainOverrideUsdMillion };
+      return { tech, pctOfIt: blockchainOverrideUsdMillion / itBaseUsdMillion, usdMillion: blockchainOverrideUsdMillion, overridden: true };
     }
     const regionAdj = (TECH_REGION_ADJ[tech]?.[region] ?? 0) / 100;
     const tierAdj = (TECH_TIER_ADJ[tech]?.[tier] ?? 0) / 100;
     const pctOfIt = Math.max(0, (basePct / 100) * (1 + regionAdj) * (1 + tierAdj));
-    return { tech, pctOfIt, usdMillion: itBaseUsdMillion * pctOfIt };
+    return { tech, pctOfIt, usdMillion: itBaseUsdMillion * pctOfIt, overridden: false };
+  });
+
+  if (revenueUsdMillion == null) {
+    return rows.map(({ tech, pctOfIt, usdMillion }) => ({ tech, pctOfIt, usdMillion }));
+  }
+
+  const tierIdx = resolveExclusionTierIndex(revenueUsdMillion);
+  const excluded = new Set(
+    rows.filter((r) => !r.overridden && (EMERGING_TECH_EXCLUSION[r.tech]?.[industry]?.[tierIdx] ?? 0) === 1).map((r) => r.tech)
+  );
+  if (excluded.size === 0) {
+    return rows.map(({ tech, pctOfIt, usdMillion }) => ({ tech, pctOfIt, usdMillion }));
+  }
+
+  const activePool = rows.filter((r) => !r.overridden && !excluded.has(r.tech));
+  const freedPct = rows.filter((r) => excluded.has(r.tech)).reduce((sum, r) => sum + r.pctOfIt, 0);
+  const share = activePool.length > 0 ? freedPct / activePool.length : 0;
+
+  return rows.map((r) => {
+    if (excluded.has(r.tech)) return { tech: r.tech, pctOfIt: 0, usdMillion: 0 };
+    if (!r.overridden) {
+      const pctOfIt = r.pctOfIt + share;
+      return { tech: r.tech, pctOfIt, usdMillion: itBaseUsdMillion * pctOfIt };
+    }
+    return { tech: r.tech, pctOfIt: r.pctOfIt, usdMillion: r.usdMillion };
   });
 }
 

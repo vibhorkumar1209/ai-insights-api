@@ -176,7 +176,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
         ? findItLevel3Value(itBreakdown, 'Services', 'Digital Enterprise', 'Blockchain')
         : undefined;
 
-      emergingTechBreakdown = computeEmergingTechBreakdown(industry, itBaseUsdMillion, region, tier, aiOverride, blockchainOverride);
+      emergingTechBreakdown = computeEmergingTechBreakdown(industry, itBaseUsdMillion, region, tier, aiOverride, blockchainOverride, revenueUsdM);
     }
 
     const emergingTechTotalUsdMillion = emergingTechBreakdown?.reduce((sum, row) => sum + row.usdMillion, 0);
