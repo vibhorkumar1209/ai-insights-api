@@ -9,6 +9,7 @@ import {
   synthesizeMarketSizing,
   draftSectionsBatchV2,
   synthesizeExecutiveSummary,
+  SECTION_DEFINITIONS_V2,
 } from './claudeAI';
 
 // ── In-memory job store ──────────────────────────────────────────────────────
@@ -257,6 +258,7 @@ export async function runIndustryReportV2(
     const draftStart = 60, draftEnd = 88;
     const draftStep = batches.length > 0 ? (draftEnd - draftStart) / batches.length : 0;
     let allSections: ReportSection[] = [];
+    const failedSections: { id: string; title: string; reason?: string }[] = [];
 
     for (let i = 0; i < batches.length; i++) {
       step(`Drafting report sections (${i + 1}/${batches.length})...`, Math.round(draftStart + i * draftStep), 'drafting');
@@ -266,9 +268,16 @@ export async function runIndustryReportV2(
         allSections = [...allSections, ...batchResult];
       } catch (batchErr) {
         console.warn(`[industryReport] Batch [${batches[i].join(', ')}] failed, retrying individually:`, batchErr instanceof Error ? batchErr.message : batchErr);
-        // Retry each section individually — up to 2 extra attempts with a short
-        // backoff, since failures here are typically transient (NDJSON parse
-        // truncation or momentary API rate limiting under sustained sequential load).
+        // Retry each section individually — up to 2 extra attempts with
+        // increasing backoff (5s, then 12s). Batches later in the sequence
+        // (swot/porters_five_forces/tei_analysis are always requested last,
+        // after 9+ prior Claude calls in the same report) are the most
+        // exposed to accumulated API rate-limiting, so a real wait between
+        // attempts matters far more here than for early batches — a fixed
+        // 3s gap was frequently too short to clear a rate-limit window,
+        // causing these three optional sections to fail silently and
+        // consistently in practice.
+        let lastErrForSection: unknown;
         for (const sectionId of batches[i]) {
           checkAbort(jobId);
           let succeeded = false;
@@ -279,16 +288,22 @@ export async function runIndustryReportV2(
               allSections = [...allSections, ...singleResult];
               succeeded = true;
             } catch (singleErr) {
+              lastErrForSection = singleErr;
               console.warn(`[industryReport] Section ${sectionId} retry ${attempt}/2 failed:`, singleErr instanceof Error ? singleErr.message : singleErr);
-              if (attempt < 2) await new Promise((r) => setTimeout(r, 3000));
+              if (attempt < 2) await new Promise((r) => setTimeout(r, attempt * 5000 + 2000));
             }
           }
           if (!succeeded) {
             console.error(`[industryReport] Section ${sectionId} failed after all retries — skipping.`);
+            failedSections.push({
+              id: sectionId,
+              title: SECTION_DEFINITIONS_V2[sectionId]?.title || sectionId,
+              reason: lastErrForSection instanceof Error ? lastErrForSection.message : String(lastErrForSection),
+            });
           }
         }
       }
-      updateJob(jobId, { sections: allSections });
+      updateJob(jobId, { sections: allSections, failedSections: failedSections.length ? failedSections : undefined });
       checkAbort(jobId);
     }
     step('All sections drafted', 88, 'drafting');

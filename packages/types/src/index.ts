@@ -569,6 +569,11 @@ export interface IndustryReportResult {
   error?: string;
   createdAt: string;
   completedAt?: string;
+  // Sections that were selected at the TOC stage but could not be generated
+  // after all retries (e.g. sustained API rate-limiting) — surfaced so the
+  // UI can show an explicit "failed to generate" state instead of the
+  // section silently vanishing from the report with no indication why.
+  failedSections?: { id: string; title: string; reason?: string }[];
 }
 
 // ── Industry Report Wizard Types ─────────────────────────────────────────────

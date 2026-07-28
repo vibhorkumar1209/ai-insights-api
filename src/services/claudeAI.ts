@@ -97,6 +97,16 @@ const client = new Proxy({} as Anthropic, {
 // "Premature close" on Render for some prompts — reproduces identically
 // across retries through the SDK client, streamed or not. Use this for any
 // call site that hits that error; retries once internally.
+class AnthropicApiError extends Error {
+  status: number;
+  retryAfterMs?: number;
+  constructor(status: number, message: string, retryAfterMs?: number) {
+    super(message);
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 export async function claudeCreateDirect(
   system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000, temperature?: number
 ): Promise<string> {
@@ -119,7 +129,9 @@ export async function claudeCreateDirect(
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        throw new Error(`Anthropic API ${res.status}: ${errText.slice(0, 300)}`);
+        const retryAfterHeader = res.headers.get('retry-after');
+        const retryAfterMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : undefined;
+        throw new AnthropicApiError(res.status, `Anthropic API ${res.status}: ${errText.slice(0, 300)}`, retryAfterMs);
       }
       const data = await res.json() as { content: Array<{ type: string; text?: string }> };
       return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text || '').join('');
@@ -131,7 +143,23 @@ export async function claudeCreateDirect(
   try {
     return await runOnce();
   } catch (err) {
-    console.warn('[claudeCreateDirect] call failed, retrying once:', err instanceof Error ? err.message : err);
+    // Rate limits (429) and transient server errors (5xx) need an actual wait
+    // before retrying — retrying instantly (the previous behavior) almost
+    // always hits the same limit again, which is exactly what starved the
+    // Industry Report module's last few sequential batches (swot/porters/tei
+    // are requested last, after 9+ prior calls in the same report, making
+    // them the most exposed to accumulated rate-limit pressure). A 429
+    // without a Retry-After header defaults to 5s; 5xx gets a shorter 1.5s
+    // backoff since those are usually momentary.
+    const isRateLimit = err instanceof AnthropicApiError && err.status === 429;
+    const isServerError = err instanceof AnthropicApiError && err.status >= 500;
+    if (isRateLimit || isServerError) {
+      const waitMs = (err as AnthropicApiError).retryAfterMs ?? (isRateLimit ? 5000 : 1500);
+      console.warn(`[claudeCreateDirect] call failed (${(err as AnthropicApiError).status}), waiting ${waitMs}ms before retry:`, err.message);
+      await new Promise((r) => setTimeout(r, waitMs));
+    } else {
+      console.warn('[claudeCreateDirect] call failed, retrying once:', err instanceof Error ? err.message : err);
+    }
     return await runOnce();
   }
 }
@@ -1946,7 +1974,7 @@ RULES:
 
 // ── V2 Section Definitions (enhanced report with SWOT, Porter's, TEI) ───────
 
-const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
+export const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
   market_overview: {
     title: 'Market Overview',
     tableHint: 'Include a table (in keyTable) with headers: ["Year", "Market Size (Value)", "Market Size (Volume)", "YoY Growth (%)", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years). Include both value (USD) and volume (units/tonnes/etc.) columns. If volume data not available, leave volume cells as "N/A".',
