@@ -653,30 +653,55 @@ If you cannot find a credible, sourced revenue figure, return exactly: {"latestR
 // Parses a human-readable revenue string (e.g. "₹9.0 Lakh", "$485 million",
 // "₹4,020 Cr", "€11.6B") into a plain unabbreviated number, for cases where
 // the model didn't supply the requested raw numeric field directly.
+const CJK_MAGNITUDE_UNITS: Record<string, number> = {
+  // 万/萬 = 10^4, 億/亿 = 10^8, 兆 = 10^12 (Japanese/Chinese)
+  '万': 1e4, '萬': 1e4, '億': 1e8, '亿': 1e8, '兆': 1e12,
+};
+
+const ASCII_MAGNITUDE_UNITS: Record<string, number> = {
+  lakh: 1e5, lac: 1e5,
+  crore: 1e7, cr: 1e7,
+  thousand: 1e3, k: 1e3,
+  million: 1e6, mn: 1e6, m: 1e6,
+  billion: 1e9, bn: 1e9, b: 1e9,
+  // Compound Indian magnitude phrases (order as commonly written)
+  'lakh crore': 1e12, 'lac crore': 1e12,
+  'thousand crore': 1e10,
+};
+
 function parseNativeRevenueString(value: string | null | undefined): number | null {
   if (!value) return null;
   const cleaned = value.replace(/[,₹$€£¥]/g, '').trim();
-  // Unit capture includes CJK magnitude characters (兆/億/亿/万) alongside
-  // [a-zA-Z] — a plain ASCII-only character class can't match them at all,
-  // so a figure like "50兆円" would silently fall through with an empty
-  // unit capture and be read as literal 50 instead of 50 trillion.
-  const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*([a-zA-Z一-鿿]*)/);
+
+  // CJK magnitude units are a single specific character immediately after
+  // the number, often directly abutting a currency-name character with no
+  // separator (e.g. "50兆円" = 50 trillion yen, where 円 means "yen"). Match
+  // only the known magnitude character itself — a greedy run of any CJK
+  // character would glom the trailing currency word into the "unit" too
+  // ("兆円"), which matches nothing and silently parses as unit-less.
+  const cjkMatch = cleaned.match(/(-?\d+(?:\.\d+)?)\s*([万萬億亿兆])/);
+  if (cjkMatch) {
+    const num = parseFloat(cjkMatch[1]);
+    if (!isNaN(num)) return num * CJK_MAGNITUDE_UNITS[cjkMatch[2]];
+  }
+
+  // ASCII/romanized units — capture up to two words so compound Indian
+  // magnitude phrases ("Lakh Crore" = 1e5 * 1e7 = 1e12, common for
+  // large-conglomerate revenue like Mahindra Group's ~₹2 Lakh Crore) are
+  // read as a single unit instead of only the first word — previously
+  // "₹2 Lakh Crore" silently dropped "Crore" entirely and parsed as literal
+  // 2 Lakh (1e5), producing a revenue figure ~1e7x too small ("$2K" instead
+  // of "$23.8B").
+  const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*([a-zA-Z]+(?:\s+[a-zA-Z]+)?)?/);
   if (!match) return null;
   const num = parseFloat(match[1]);
   if (isNaN(num)) return null;
-  const unit = match[2].toLowerCase();
-  const multipliers: Record<string, number> = {
-    lakh: 1e5, lac: 1e5,
-    crore: 1e7, cr: 1e7,
-    thousand: 1e3, k: 1e3,
-    million: 1e6, mn: 1e6, m: 1e6,
-    billion: 1e9, bn: 1e9, b: 1e9,
-    // CJK magnitude units (Japanese/Chinese): 万/萬 = 10^4, 億/亿 = 10^8, 兆 = 10^12
-    '万': 1e4, '萬': 1e4,
-    '億': 1e8, '亿': 1e8,
-    '兆': 1e12,
-  };
-  const mult = multipliers[unit] ?? 1;
+  const rawUnit = (match[2] || '').toLowerCase().trim();
+  // Try the full two-word capture first (handles compound phrases), then
+  // fall back to just its first word (handles the common single-unit case,
+  // where the regex may have opportunistically captured a trailing
+  // unrelated word like "annually").
+  const mult = ASCII_MAGNITUDE_UNITS[rawUnit] ?? ASCII_MAGNITUDE_UNITS[rawUnit.split(/\s+/)[0] || ''] ?? 1;
   return num * mult;
 }
 
