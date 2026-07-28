@@ -500,6 +500,13 @@ async function runGeminiGroundedSearch(prompt: string): Promise<{ text: string; 
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         tools: [{ google_search: {} }],
+        // temperature: 0 — these lookups (revenue figures, firmographic facts,
+        // spend estimates) are meant to be factual extraction, not creative
+        // generation. Without this, Gemini's default sampling temperature made
+        // the same company query return a different figure/ticker/source on
+        // different calls — the root cause of "different users get different
+        // results for the same company" in the Firmographic module.
+        generationConfig: { temperature: 0 },
       }),
     },
     GEMINI_TIMEOUT_MS

@@ -3501,7 +3501,9 @@ Priority order:
 
 If you are not confident about any ticker, reply: {"tickers":[]}`,
       200,
-      FAST_MODEL
+      FAST_MODEL,
+      undefined,
+      0 // deterministic — same company name must resolve to the same ticker every call, not vary by sampling
     );
     const parsed = JSON.parse(text.trim().replace(/```json|```/g, '').trim());
     const tickers: Array<{ ticker: string; exchange: string }> = parsed.tickers || [];
