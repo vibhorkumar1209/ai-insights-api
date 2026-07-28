@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
-import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials } from './yahooFinance';
+import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials, companyNameLooselyMatches } from './yahooFinance';
 import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker, generateBusinessDescription } from './claudeAI';
 
@@ -240,7 +240,11 @@ async function runPublicPath(
 
   // ── Ticker validation gate ─────────────────────────────────────────────────
   const hasMeaningfulData   = (apiData.revenueHistory?.some((r) => r.revenue && r.revenue !== 0)) ?? false;
-  const profileConfirmsName = !!apiData.companyInfo?.name;
+  // Checks the fetched name actually matches the requested company, not just
+  // that some name field is present — a hallucinated ticker (Claude is the
+  // last-resort source above) can resolve to a real, unrelated company whose
+  // data would otherwise sail through this gate as "confirmed".
+  const profileConfirmsName = companyNameLooselyMatches(input.companyName, apiData.companyInfo?.name);
   if (ticker && !hasMeaningfulData && !profileConfirmsName && input.isPublic !== true) {
     console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private path`);
     const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined });
