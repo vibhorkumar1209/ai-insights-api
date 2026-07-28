@@ -684,10 +684,14 @@ function acronymMatchesName(query: string, name: string): boolean {
   return initials === q || (initials.startsWith(q) && q.length >= 2);
 }
 
-// Strip everything except letters/digits so spacing/punctuation variants
-// ("JP Morgan" vs "JPMorgan", "Co." vs "Co") compare equal.
+// Strip everything except letters/digits (any script) so spacing/punctuation
+// variants ("JP Morgan" vs "JPMorgan", "Co." vs "Co") compare equal. Uses
+// Unicode property escapes rather than [a-z0-9] so non-Latin company names
+// (e.g. Japanese, Arabic, Cyrillic) aren't reduced to an empty string —
+// that would make companyNameLooselyMatches() always report "no match" and
+// reject perfectly valid data for any internationally-named company.
 function normalizeName(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 /**
@@ -749,11 +753,33 @@ function scoreQuote(q: any, companyName: string, domainHint: string): number {
   return s;
 }
 
+/**
+ * Normalize a user-supplied domain into a bare hostname: strips protocol,
+ * path/query/fragment, port, and leading "www." (case-insensitively),
+ * lowercased. Without this, inputs like "https://www.Example.com/about" fed
+ * straight into a naive `.replace(/^www\./, '')` produce garbage hints
+ * ("https://www") that silently degrade ticker matching rather than erroring
+ * loudly — worth normalizing once, centrally, rather than trusting every
+ * call site to handle raw user input.
+ */
+export function normalizeDomain(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  let d = raw.trim();
+  if (!d) return undefined;
+  d = d.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, ''); // strip protocol
+  d = d.split(/[/?#]/)[0];                              // strip path/query/fragment
+  d = d.replace(/^www\./i, '');                         // strip leading www (case-insensitive)
+  d = d.replace(/:\d+$/, '');                           // strip port
+  d = d.toLowerCase().replace(/\.$/, '');                // lowercase, strip trailing dot
+  return d || undefined;
+}
+
 export async function detectTicker(
   companyName: string,
   domain?: string
 ): Promise<{ ticker: string; exchange: string } | null> {
-  const domainHint = domain ? domain.replace(/^www\./, '').split('.')[0].toLowerCase() : '';
+  const normalizedDomain = normalizeDomain(domain);
+  const domainHint = normalizedDomain ? normalizedDomain.split('.')[0] : '';
   const words      = companyName.trim().split(/\s+/);
 
   const queries: string[] = [companyName];

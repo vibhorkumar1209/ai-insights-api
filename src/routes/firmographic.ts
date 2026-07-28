@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { createFirmographicJob, getFirmographicJob, runFirmographicJob, subscribeToJob, unsubscribeFromJob } from '../services/firmographicService';
+import { normalizeDomain } from '../services/yahooFinance';
 
 const router = Router();
 
@@ -11,8 +12,12 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     res.status(400).json({ error: 'companyName is required (min 2 characters)' });
     return;
   }
-  const jobId = createFirmographicJob({ companyName: companyName.trim(), companyDomain: companyDomain?.trim() });
-  runFirmographicJob(jobId, { companyName: companyName.trim(), companyDomain: companyDomain?.trim() }).catch(() => {});
+  // Normalize once here so every downstream consumer (ticker detection,
+  // Claude/Gemini prompts) gets a bare hostname regardless of whether the
+  // user pasted a full URL, included "www.", or mixed case.
+  const normalizedDomain = normalizeDomain(companyDomain);
+  const jobId = createFirmographicJob({ companyName: companyName.trim(), companyDomain: normalizedDomain });
+  runFirmographicJob(jobId, { companyName: companyName.trim(), companyDomain: normalizedDomain }).catch(() => {});
   res.status(202).json({ jobId });
 });
 
