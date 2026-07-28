@@ -707,6 +707,17 @@ function normalizeName(s: string): string {
  */
 export function companyNameLooselyMatches(requestedName: string, fetchedName: string | undefined): boolean {
   if (!fetchedName) return false;
+
+  // Yahoo/Google Finance company names are always Latin-script, even for
+  // companies whose name the user entered in another script (e.g. "トヨタ自動車"
+  // vs the fetched "Toyota Motor Corp") — no normalization can make those
+  // strings overlap. Rejecting on that basis would discard genuinely correct
+  // data purely because of the script mismatch, not because the ticker is
+  // wrong. Treat a non-Latin request as unverifiable-by-text and defer to
+  // whatever verification the ticker source itself already did, rather than
+  // failing closed.
+  if (!/[a-zA-Z]/.test(requestedName)) return true;
+
   const reqNorm = normalizeName(requestedName);
   const fetchedNorm = normalizeName(fetchedName);
   if (!reqNorm || !fetchedNorm) return false;

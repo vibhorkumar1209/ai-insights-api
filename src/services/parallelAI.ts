@@ -649,7 +649,11 @@ If you cannot find a credible, sourced revenue figure, return exactly: {"latestR
 function parseNativeRevenueString(value: string | null | undefined): number | null {
   if (!value) return null;
   const cleaned = value.replace(/[,₹$€£¥]/g, '').trim();
-  const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*([a-zA-Z]*)/);
+  // Unit capture includes CJK magnitude characters (兆/億/亿/万) alongside
+  // [a-zA-Z] — a plain ASCII-only character class can't match them at all,
+  // so a figure like "50兆円" would silently fall through with an empty
+  // unit capture and be read as literal 50 instead of 50 trillion.
+  const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*([a-zA-Z一-鿿]*)/);
   if (!match) return null;
   const num = parseFloat(match[1]);
   if (isNaN(num)) return null;
@@ -660,6 +664,10 @@ function parseNativeRevenueString(value: string | null | undefined): number | nu
     thousand: 1e3, k: 1e3,
     million: 1e6, mn: 1e6, m: 1e6,
     billion: 1e9, bn: 1e9, b: 1e9,
+    // CJK magnitude units (Japanese/Chinese): 万/萬 = 10^4, 億/亿 = 10^8, 兆 = 10^12
+    '万': 1e4, '萬': 1e4,
+    '億': 1e8, '亿': 1e8,
+    '兆': 1e12,
   };
   const mult = multipliers[unit] ?? 1;
   return num * mult;
