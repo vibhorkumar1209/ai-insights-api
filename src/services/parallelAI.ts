@@ -713,6 +713,31 @@ function formatUSDMillion(raw: number): string {
   return `${sign}$${millions.toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
 }
 
+// Currencies that use the lakh/crore (or equivalent regional) numbering
+// system, where large company-scale figures are conventionally stated with
+// a magnitude unit (Lakh/Crore) rather than as a bare number.
+const LAKH_CRORE_CURRENCIES = new Set(['INR', 'NPR', 'PKR', 'BDT', 'LKR']);
+
+/**
+ * Flags a parsed native-currency amount as implausible for a real company's
+ * annual revenue. Real companies researched via this lookup virtually always
+ * report at least several lakh in revenue — a raw value under that threshold
+ * almost always means the model stated a bare number without its magnitude
+ * unit (e.g. "₹9,971" meant "₹9,971 Crore" — Indian financial tables often
+ * state the unit once in a header rather than repeating it per value, and
+ * the model dropped that context when quoting the figure). No string parser
+ * can recover a magnitude that was never actually stated, so this must be
+ * caught as a validity check rather than a parsing fix — the fix for
+ * genuinely malformed strings (missing "Crore" suffix, CJK units, etc.) was
+ * already made in parseNativeRevenueString; this catches the case where the
+ * unit was never present in the source text at all (e.g. Taj Hotels
+ * resolving to "$120" instead of ~$1.2B).
+ */
+function isImplausibleNativeAmount(raw: number, currency: string): boolean {
+  if (!LAKH_CRORE_CURRENCIES.has(currency.toUpperCase())) return false;
+  return Math.abs(raw) > 0 && Math.abs(raw) < 1e6; // < 10 Lakh
+}
+
 function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();
@@ -768,9 +793,26 @@ export async function geminiRevenueLookup(
       // off by 10x-1000x when trusting the raw field. Only fall back to the raw
       // field if the string doesn't parse.
       const currency = parsed.currency || 'USD';
-      const latestRaw = parseNativeRevenueString(parsed.latestRevenue) ?? (typeof parsed.latestRevenueRaw === 'number' ? parsed.latestRevenueRaw : null);
-      const previousRaw = parseNativeRevenueString(parsed.previousRevenue) ?? (typeof parsed.previousRevenueRaw === 'number' ? parsed.previousRevenueRaw : null);
-      const latestRevenue = latestRaw != null ? formatRevenueUSD(latestRaw, currency) : parsed.latestRevenue;
+      let latestRaw = parseNativeRevenueString(parsed.latestRevenue) ?? (typeof parsed.latestRevenueRaw === 'number' ? parsed.latestRevenueRaw : null);
+      let previousRaw = parseNativeRevenueString(parsed.previousRevenue) ?? (typeof parsed.previousRevenueRaw === 'number' ? parsed.previousRevenueRaw : null);
+
+      // Both the string parse AND the model's own raw field can independently
+      // land on the same implausibly-small number when the model omits the
+      // magnitude unit entirely (see isImplausibleNativeAmount) — discard and
+      // retry with the alternate prompt rather than confidently displaying a
+      // figure known to be wrong (e.g. "$120" for a hotel chain).
+      if (latestRaw != null && isImplausibleNativeAmount(latestRaw, currency)) {
+        console.warn(`[gemini] Revenue lookup for ${companyName} (simplified=${simplified}) — implausible raw amount ${latestRaw} ${currency} (likely missing magnitude unit like Crore/Lakh), discarding`);
+        latestRaw = null;
+      }
+      if (previousRaw != null && isImplausibleNativeAmount(previousRaw, currency)) {
+        previousRaw = null;
+      }
+      if (latestRaw == null) {
+        continue;
+      }
+
+      const latestRevenue = formatRevenueUSD(latestRaw, currency);
       const previousRevenue = previousRaw != null ? formatRevenueUSD(previousRaw, currency) : parsed.previousRevenue || undefined;
 
       // Compute YoY ourselves from the raw figures above rather than trusting the
