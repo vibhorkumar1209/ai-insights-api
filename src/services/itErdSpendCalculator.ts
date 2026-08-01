@@ -322,3 +322,173 @@ export function computeErdSpendTrend(industry: string, revenueUsdMillion: number
     return { year, usdMillion: revenueUsdMillion * pct };
   });
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// V2 output-format builders (2026-07-29) — reshape the same underlying
+// calculations above into the IT_Spend.json / ERD_Spend.json reference shape
+// (nested breakdown tree for IT, flat breakdown list for ERD, itYoY/itPercent
+// trend points, and historical/forecast CAGR). These are pure transforms —
+// no new math beyond CAGR and YoY, which reuse the same trend series.
+// ══════════════════════════════════════════════════════════════════════════
+
+export interface BreakdownNodeV2 {
+  id: string;
+  name: string;
+  level: number;
+  value: number;
+  percentage: number;
+  children?: BreakdownNodeV2[];
+}
+
+/** Groups the flat 117-row IT Level-3 breakdown into a 3-level tree (L1 -> L2 -> L3).
+ *  percentage at every level is value / grand-total * 100 (not parent-relative). */
+export function buildItBreakdownTree(flat: Level3BreakdownRow[]): BreakdownNodeV2[] {
+  const l1Order: string[] = [];
+  const l1Map = new Map<string, Map<string, Level3BreakdownRow[]>>();
+  for (const row of flat) {
+    if (!l1Map.has(row.level1)) { l1Map.set(row.level1, new Map()); l1Order.push(row.level1); }
+    const l2Map = l1Map.get(row.level1)!;
+    if (!l2Map.has(row.level2)) l2Map.set(row.level2, []);
+    l2Map.get(row.level2)!.push(row);
+  }
+
+  return l1Order.map((l1Name) => {
+    const l2Map = l1Map.get(l1Name)!;
+    let l1Value = 0, l1Pct = 0;
+    const l2Nodes: BreakdownNodeV2[] = [...l2Map.entries()].map(([l2Name, rows]) => {
+      const l3Nodes: BreakdownNodeV2[] = rows.map((r) => ({
+        id: `L3-${l1Name}-${l2Name}-${r.level3}`,
+        name: r.level3,
+        level: 2,
+        value: r.usdMillion,
+        percentage: r.pctOfBudget * 100,
+      }));
+      const l2Value = rows.reduce((s, r) => s + r.usdMillion, 0);
+      const l2Pct = rows.reduce((s, r) => s + r.pctOfBudget, 0) * 100;
+      l1Value += l2Value; l1Pct += l2Pct;
+      return { id: `L2-${l1Name}-${l2Name}`, name: l2Name, level: 1, value: l2Value, percentage: l2Pct, children: l3Nodes };
+    });
+    return { id: `L1-${l1Name}`, name: l1Name, level: 0, value: l1Value, percentage: l1Pct, children: l2Nodes };
+  });
+}
+
+/** Flattens the 14-category ERD breakdown into a flat list (no L1/L2 grouping in the V2 shape). */
+export function buildErdBreakdownFlat(rows: ErdBreakdownRow[]): BreakdownNodeV2[] {
+  return rows.map((r) => ({ id: r.category, name: r.category, level: 0, value: r.usdMillion, percentage: r.finalPct * 100 }));
+}
+
+export interface ItTrendPointV2 { year: number; itYoY: number; itSpend: number; itPercent: number; }
+export interface ErdTrendPointV2 { year: number; erdYoY: number; erdSpend: number; erdPercent: number; }
+
+/** Same underlying series as computeItSpendTrend, reshaped with itYoY/itPercent per point. */
+export function computeItSpendTrendV2(industry: string, revenueUsdMillion: number, region: Region, tier: RevenueTier): ItTrendPointV2[] {
+  const yearly = IT_BASE_PCT_BY_YEAR[industry];
+  if (!yearly) return [];
+  const regionAdj = REGION_ADJ[region] ?? 0;
+  const tierAdj = REVENUE_TIER_ADJ[tier] ?? 0;
+  let prev: number | null = null;
+  return YEARS.map((year, idx) => {
+    const pct = (yearly[idx] * (1 + regionAdj) * (1 + tierAdj)) / 100;
+    const itSpend = revenueUsdMillion * pct;
+    const itYoY = prev != null && prev !== 0 ? ((itSpend - prev) / Math.abs(prev)) * 100 : 0;
+    prev = itSpend;
+    return { year, itYoY, itSpend, itPercent: pct * 100 };
+  });
+}
+
+/** Same underlying series as computeErdSpendTrend, reshaped with erdYoY/erdPercent per point. */
+export function computeErdSpendTrendV2(industry: string, revenueUsdMillion: number, region: Region, tier: RevenueTier): ErdTrendPointV2[] {
+  const yearly = ERD_BASE_PCT_BY_YEAR[industry];
+  if (!yearly) return [];
+  const regionAdj = REGION_ADJ[region] ?? 0;
+  const tierAdj = REVENUE_TIER_ADJ[tier] ?? 0;
+  let prev: number | null = null;
+  return YEARS.map((year, idx) => {
+    const pct = (yearly[idx] * (1 + regionAdj) * (1 + tierAdj)) / 100;
+    const erdSpend = revenueUsdMillion * pct;
+    const erdYoY = prev != null && prev !== 0 ? ((erdSpend - prev) / Math.abs(prev)) * 100 : 0;
+    prev = erdSpend;
+    return { year, erdYoY, erdSpend, erdPercent: pct * 100 };
+  });
+}
+
+function cagr(startValue: number, endValue: number, years: number): number {
+  if (startValue <= 0 || years <= 0) return 0;
+  return (Math.pow(endValue / startValue, 1 / years) - 1) * 100;
+}
+
+/** Historical CAGR = first trend year -> base year. Forecast CAGR = base year -> last trend year. */
+export function computeItCAGR(trend: ItTrendPointV2[]): { historical: number; forecast: number } {
+  if (trend.length === 0) return { historical: 0, forecast: 0 };
+  const baseYear = getBaseYear();
+  const baseIdx = Math.max(0, YEARS.indexOf(baseYear));
+  const lastIdx = trend.length - 1;
+  return {
+    historical: cagr(trend[0].itSpend, trend[baseIdx].itSpend, baseIdx),
+    forecast: cagr(trend[baseIdx].itSpend, trend[lastIdx].itSpend, lastIdx - baseIdx),
+  };
+}
+
+export function computeErdCAGR(trend: ErdTrendPointV2[]): { historical: number; forecast: number } {
+  if (trend.length === 0) return { historical: 0, forecast: 0 };
+  const baseYear = getBaseYear();
+  const baseIdx = Math.max(0, YEARS.indexOf(baseYear));
+  const lastIdx = trend.length - 1;
+  return {
+    historical: cagr(trend[0].erdSpend, trend[baseIdx].erdSpend, baseIdx),
+    forecast: cagr(trend[baseIdx].erdSpend, trend[lastIdx].erdSpend, lastIdx - baseIdx),
+  };
+}
+
+export interface EmergingTechNodeV2 { tech: string; value: number; adjTotal: number; }
+
+/** Same overrides/exclusion logic as computeEmergingTechBreakdown, but keeps the
+ *  pre-override region+tier-adjusted formula % (`adjTotal`) separately from the
+ *  override-aware $ value — the V2 shape reports both instead of collapsing them. */
+export function computeEmergingTechV2(
+  industry: string,
+  itBaseUsdMillion: number,
+  region: Region,
+  tier: RevenueTier,
+  aiOverrideUsdMillion?: number,
+  blockchainOverrideUsdMillion?: number,
+  revenueUsdMillion?: number
+): EmergingTechNodeV2[] {
+  const base = EMERGING_TECH_BASE_PCT[industry];
+  if (!base) return [];
+
+  const rows = Object.entries(base).map(([tech, basePct]) => {
+    const regionAdj = (TECH_REGION_ADJ[tech]?.[region] ?? 0) / 100;
+    const tierAdj = (TECH_TIER_ADJ[tech]?.[tier] ?? 0) / 100;
+    const formulaPctOfIt = Math.max(0, (basePct / 100) * (1 + regionAdj) * (1 + tierAdj));
+    if (tech === 'AI (ML/DL/GenAI & Safety)' && aiOverrideUsdMillion != null) {
+      return { tech, value: aiOverrideUsdMillion, formulaPctOfIt, overridden: true };
+    }
+    if (tech === 'Blockchain' && blockchainOverrideUsdMillion != null) {
+      return { tech, value: blockchainOverrideUsdMillion, formulaPctOfIt, overridden: true };
+    }
+    return { tech, value: itBaseUsdMillion * formulaPctOfIt, formulaPctOfIt, overridden: false };
+  });
+
+  if (revenueUsdMillion != null) {
+    const tierIdx = resolveExclusionTierIndex(revenueUsdMillion);
+    const excluded = new Set(
+      rows.filter((r) => !r.overridden && (EMERGING_TECH_EXCLUSION[r.tech]?.[industry]?.[tierIdx] ?? 0) === 1).map((r) => r.tech)
+    );
+    if (excluded.size > 0) {
+      const activePool = rows.filter((r) => !r.overridden && !excluded.has(r.tech));
+      const freedPct = rows.filter((r) => excluded.has(r.tech)).reduce((sum, r) => sum + r.formulaPctOfIt, 0);
+      const share = activePool.length > 0 ? freedPct / activePool.length : 0;
+      return rows.map((r) => {
+        if (excluded.has(r.tech)) return { tech: r.tech, value: 0, adjTotal: 0 };
+        if (!r.overridden) {
+          const adjPct = r.formulaPctOfIt + share;
+          return { tech: r.tech, value: itBaseUsdMillion * adjPct, adjTotal: adjPct * 100 };
+        }
+        return { tech: r.tech, value: r.value, adjTotal: r.formulaPctOfIt * 100 };
+      });
+    }
+  }
+
+  return rows.map((r) => ({ tech: r.tech, value: r.value, adjTotal: r.formulaPctOfIt * 100 }));
+}

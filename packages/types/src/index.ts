@@ -1253,6 +1253,75 @@ export interface SpendTrendPoint {
   usdMillion: number;
 }
 
+// ── V2 output format (2026-07-29) — matches the reference IT_Spend.json /
+// ERD_Spend.json shapes exactly. Field names below are intentionally
+// unprefixed/short (region, trends, country, revenue, ...) to mirror those
+// files 1:1; each is a self-contained payload (not merged into one object,
+// since both reference files independently use the field name "trends"
+// with different shapes for IT vs ERD). ────────────────────────────────────
+
+export interface SpendCurrencyInfo {
+  currency: string;          // 'USD' for now — no native-currency input/FX yet
+  revenueUSD: number;
+  exchangeRateToUSD: number; // always 1 for now
+}
+
+export interface ItSpendTrendPoint {
+  year: number;
+  itYoY: number;
+  itSpend: number;
+  itPercent: number;
+}
+
+export interface ErdSpendTrendPoint {
+  year: number;
+  erdYoY: number;
+  erdSpend: number;
+  erdPercent: number;
+}
+
+export interface SpendBreakdownNode {
+  id: string;
+  name: string;
+  level: number;
+  value: number;
+  percentage: number;
+  children?: SpendBreakdownNode[]; // IT breakdown only — ERD breakdown is flat (no children)
+}
+
+export interface SpendEmergingTechNode {
+  name: string;
+  value: number;    // $ figure — uses the AI/Blockchain overrides where applicable
+  adjTotal: number;  // region+tier-adjusted % of IT spend per the base formula (pre-override, for reference)
+}
+
+export interface ItSpendPayload {
+  region: string;
+  trends: ItSpendTrendPoint[];
+  country: string;
+  revenue: number;
+  industry: string;
+  companyName: string;
+  itBreakdown: SpendBreakdownNode[]; // nested L1 -> L2 -> L3 tree
+  currencyInfo: SpendCurrencyInfo;
+  emergingTech: SpendEmergingTechNode[];
+  itCAGR_Forecast: number;
+  itCAGR_Historical: number;
+}
+
+export interface ErdSpendPayload {
+  region: string;
+  trends: ErdSpendTrendPoint[];
+  country: string;
+  revenue: number;
+  industry: string;
+  companyName: string;
+  currencyInfo: SpendCurrencyInfo;
+  erdBreakdown: SpendBreakdownNode[]; // flat list, level 0 for every item
+  erdCAGR_Forecast: number;
+  erdCAGR_Historical: number;
+}
+
 export interface SpendResult {
   jobId: string;
   status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
@@ -1262,21 +1331,14 @@ export interface SpendResult {
   companyDomain?: string;
   geography?: string;
   revenueUsdMillion?: number; // as provided by the user
-  itSpend?: SpendLineItem;
-  rdSpend?: SpendLineItem;
-  aiSpend?: SpendLineItem;
-  // ── Calculator-derived fields (base value = disclosed if found, else industry benchmark formula) ──
+  itSpendDisclosed?: SpendLineItem; // disclosed-figure research result (renamed from itSpend to free that name for the V2 payload below)
+  rdSpendDisclosed?: SpendLineItem;
+  aiSpendDisclosed?: SpendLineItem;
+  // ── Calculator-derived fields ──
   resolvedIndustry?: string;         // classified into one of 37 fixed industries, or undefined if unresolved
   resolvedRegion?: string;           // US | EU | APAC | ROW1 | ROW2
-  itBaseUsdMillion?: number;        // the resolved IT Spend base value used for the breakdown below
-  itBreakdown?: SpendLevel3Row[];   // 117-line Level-3 IT category breakdown
-  itSpendTrend?: SpendTrendPoint[]; // 2022-2030 IT Spend $ trend
-  erdApplicable?: boolean;          // false for the 23 industries with no ERD benchmark data
-  erdBaseUsdMillion?: number;       // resolved ERD/R&D Spend base value
-  erdBreakdown?: SpendErdCategoryRow[]; // 14-category ERD breakdown (with Level 1/2 hierarchy)
-  erdSpendTrend?: SpendTrendPoint[]; // 2022-2030 ERD Spend $ trend
-  emergingTechBreakdown?: SpendEmergingTechRow[]; // 8-category Emerging Tech (incl. AI, Blockchain) breakdown
-  emergingTechTotalUsdMillion?: number; // sum of emergingTechBreakdown — reflects disclosed AI override if found
+  itSpend?: ItSpendPayload;          // undefined if the industry has no IT benchmark data
+  erdSpend?: ErdSpendPayload;        // undefined for the 23 industries with no ERD benchmark data
   error?: string;
   createdAt: string;
   completedAt?: string;

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { SpendInput, SpendResult } from '@ai-insights/types';
+import { SpendInput, SpendResult, ItSpendPayload, ErdSpendPayload } from '@ai-insights/types';
 import { geminiSpendLookup } from './parallelAI';
 import {
   resolveRegion,
@@ -9,11 +9,15 @@ import {
   computeErdBaseSpend,
   computeItLevel3Breakdown,
   computeErdBreakdown,
-  computeEmergingTechBreakdown,
-  computeItSpendTrend,
-  computeErdSpendTrend,
   findItLevel3Value,
   findErdCategoryValue,
+  buildItBreakdownTree,
+  buildErdBreakdownFlat,
+  computeItSpendTrendV2,
+  computeErdSpendTrendV2,
+  computeItCAGR,
+  computeErdCAGR,
+  computeEmergingTechV2,
 } from './itErdSpendCalculator';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
@@ -126,12 +130,12 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     });
     emit(jobId, 'progress', job);
 
-    let itBreakdown: SpendResult['itBreakdown'];
-    let erdBreakdown: SpendResult['erdBreakdown'];
-    let emergingTechBreakdown: SpendResult['emergingTechBreakdown'];
+    // Internal flat/pre-tree working values, used to resolve the AI/Blockchain
+    // overrides below before reshaping into the V2 nested/flat payload shapes.
+    let itBreakdownFlat: ReturnType<typeof computeItLevel3Breakdown> | undefined;
+    let erdBreakdownFlat: ReturnType<typeof computeErdBreakdown> | undefined;
     let itBaseUsdMillion: number | undefined;
     let erdBaseUsdMillion: number | undefined;
-    let erdApplicable = false;
 
     // ── IT base value: disclosed if found, else formula ──────────────────────
     if (spendResult.itSpend.found && spendResult.itSpend.valueRaw) {
@@ -141,14 +145,11 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       if (formula) itBaseUsdMillion = formula.usdMillion;
     }
     if (itBaseUsdMillion != null) {
-      itBreakdown = computeItLevel3Breakdown(industry, itBaseUsdMillion, revenueUsdM);
+      itBreakdownFlat = computeItLevel3Breakdown(industry, itBaseUsdMillion, revenueUsdM);
     }
-    const itSpendTrend = computeItSpendTrend(industry, revenueUsdM, region, tier);
 
     // ── ERD base value: disclosed R&D if found, else formula (ERD-eligible only) ──
-    let erdSpendTrend: SpendResult['erdSpendTrend'];
     if (isErdEligible(industry)) {
-      erdApplicable = true;
       if (spendResult.rdSpend.found && spendResult.rdSpend.valueRaw) {
         erdBaseUsdMillion = spendResult.rdSpend.valueRaw / 1_000_000;
       } else {
@@ -156,50 +157,81 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
         if (formula) erdBaseUsdMillion = formula.usdMillion;
       }
       if (erdBaseUsdMillion != null) {
-        erdBreakdown = computeErdBreakdown(industry, erdBaseUsdMillion, tier);
+        erdBreakdownFlat = computeErdBreakdown(industry, erdBaseUsdMillion, tier);
       }
-      erdSpendTrend = computeErdSpendTrend(industry, revenueUsdM, region, tier);
     }
 
-    // ── Emerging Tech (incl. AI, Blockchain) breakdown ────────────────────────
+    // ── Emerging Tech (incl. AI, Blockchain) overrides ────────────────────────
     // AI priority: disclosed research figure > ERD's "AI/ML & Data Engineering" line > formula.
     // Blockchain: always sourced from the IT breakdown's Services → Digital Enterprise →
     // Blockchain line item (never the formula-computed Emerging Tech value).
+    let emergingTechV2: ReturnType<typeof computeEmergingTechV2> | undefined;
     if (itBaseUsdMillion != null) {
       const disclosedAi = spendResult.aiSpend.found && spendResult.aiSpend.valueRaw
         ? spendResult.aiSpend.valueRaw / 1_000_000
         : undefined;
-      const erdAiLine = erdBreakdown ? findErdCategoryValue(erdBreakdown, 'AI/ML & Data Engineering') : undefined;
+      const erdAiLine = erdBreakdownFlat ? findErdCategoryValue(erdBreakdownFlat, 'AI/ML & Data Engineering') : undefined;
       const aiOverride = disclosedAi ?? erdAiLine;
 
-      const blockchainOverride = itBreakdown
-        ? findItLevel3Value(itBreakdown, 'Services', 'Digital Enterprise', 'Blockchain')
+      const blockchainOverride = itBreakdownFlat
+        ? findItLevel3Value(itBreakdownFlat, 'Services', 'Digital Enterprise', 'Blockchain')
         : undefined;
 
-      emergingTechBreakdown = computeEmergingTechBreakdown(industry, itBaseUsdMillion, region, tier, aiOverride, blockchainOverride, revenueUsdM);
+      emergingTechV2 = computeEmergingTechV2(industry, itBaseUsdMillion, region, tier, aiOverride, blockchainOverride, revenueUsdM);
     }
 
-    const emergingTechTotalUsdMillion = emergingTechBreakdown?.reduce((sum, row) => sum + row.usdMillion, 0);
+    // ── Assemble the V2 payload shapes ────────────────────────────────────────
+    const currencyInfo = { currency: 'USD', revenueUSD: revenueUsdM, exchangeRateToUSD: 1 };
+
+    let itSpendPayload: ItSpendPayload | undefined;
+    if (itBreakdownFlat && itBaseUsdMillion != null) {
+      const itTrend = computeItSpendTrendV2(industry, revenueUsdM, region, tier);
+      const itCagr = computeItCAGR(itTrend);
+      itSpendPayload = {
+        region,
+        trends: itTrend,
+        country: input.geography,
+        revenue: revenueUsdM,
+        industry,
+        companyName: input.companyName,
+        itBreakdown: buildItBreakdownTree(itBreakdownFlat),
+        currencyInfo,
+        emergingTech: (emergingTechV2 ?? []).map((r) => ({ name: r.tech, value: r.value, adjTotal: r.adjTotal })),
+        itCAGR_Forecast: itCagr.forecast,
+        itCAGR_Historical: itCagr.historical,
+      };
+    }
+
+    let erdSpendPayload: ErdSpendPayload | undefined;
+    if (erdBreakdownFlat && erdBaseUsdMillion != null) {
+      const erdTrend = computeErdSpendTrendV2(industry, revenueUsdM, region, tier);
+      const erdCagr = computeErdCAGR(erdTrend);
+      erdSpendPayload = {
+        region,
+        trends: erdTrend,
+        country: input.geography,
+        revenue: revenueUsdM,
+        industry,
+        companyName: input.companyName,
+        currencyInfo,
+        erdBreakdown: buildErdBreakdownFlat(erdBreakdownFlat),
+        erdCAGR_Forecast: erdCagr.forecast,
+        erdCAGR_Historical: erdCagr.historical,
+      };
+    }
 
     job = update(jobId, {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
       completedAt: new Date().toISOString(),
-      itSpend: spendResult.itSpend,
-      rdSpend: spendResult.rdSpend,
-      aiSpend: spendResult.aiSpend,
+      itSpendDisclosed: spendResult.itSpend,
+      rdSpendDisclosed: spendResult.rdSpend,
+      aiSpendDisclosed: spendResult.aiSpend,
       resolvedIndustry: industry,
       resolvedRegion: region,
-      itBaseUsdMillion,
-      itBreakdown,
-      itSpendTrend,
-      erdApplicable,
-      erdBaseUsdMillion,
-      erdBreakdown,
-      erdSpendTrend,
-      emergingTechBreakdown,
-      emergingTechTotalUsdMillion,
+      itSpend: itSpendPayload,
+      erdSpend: erdSpendPayload,
     });
     emit(jobId, 'result', job);
 
