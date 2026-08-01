@@ -1286,7 +1286,7 @@ export interface SpendBreakdownNode {
   level: number;
   value: number;
   percentage: number;
-  children?: SpendBreakdownNode[]; // IT breakdown only — ERD breakdown is flat (no children)
+  children?: SpendBreakdownNode[]; // present on IT and ERD breakdown nodes alike (both are nested L1 -> L2 -> L3 trees)
 }
 
 export interface SpendEmergingTechNode {
@@ -1317,7 +1317,7 @@ export interface ErdSpendPayload {
   industry: string;
   companyName: string;
   currencyInfo: SpendCurrencyInfo;
-  erdBreakdown: SpendBreakdownNode[]; // flat list, level 0 for every item
+  erdBreakdown: SpendBreakdownNode[]; // nested L1 -> L2 -> L3 tree, same shape as itBreakdown
   erdCAGR_Forecast: number;
   erdCAGR_Historical: number;
 }

@@ -324,11 +324,13 @@ export function computeErdSpendTrend(industry: string, revenueUsdMillion: number
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// V2 output-format builders (2026-07-29) — reshape the same underlying
-// calculations above into the IT_Spend.json / ERD_Spend.json reference shape
-// (nested breakdown tree for IT, flat breakdown list for ERD, itYoY/itPercent
-// trend points, and historical/forecast CAGR). These are pure transforms —
-// no new math beyond CAGR and YoY, which reuse the same trend series.
+// V2 output-format builders (2026-07-29, ERD tree updated 2026-07-30) —
+// reshape the same underlying calculations above into the module's response
+// format: nested L1 -> L2 -> L3 breakdown trees for BOTH IT and ERD (ERD
+// initially matched the ERD_Spend.json reference file's flat shape, then was
+// changed to mirror the IT tree instead), itYoY/itPercent trend points, and
+// historical/forecast CAGR. These are pure transforms — no new math beyond
+// CAGR and YoY, which reuse the same trend series.
 // ══════════════════════════════════════════════════════════════════════════
 
 export interface BreakdownNodeV2 {
@@ -372,9 +374,37 @@ export function buildItBreakdownTree(flat: Level3BreakdownRow[]): BreakdownNodeV
   });
 }
 
-/** Flattens the 14-category ERD breakdown into a flat list (no L1/L2 grouping in the V2 shape). */
-export function buildErdBreakdownFlat(rows: ErdBreakdownRow[]): BreakdownNodeV2[] {
-  return rows.map((r) => ({ id: r.category, name: r.category, level: 0, value: r.usdMillion, percentage: r.finalPct * 100 }));
+/** Groups the 14-category ERD breakdown into a 3-level tree (L1 -> L2 -> L3/category),
+ *  mirroring buildItBreakdownTree exactly — same shape as the IT breakdown, using the
+ *  level1/level2 hierarchy each row already carries (ERD_LEVEL3_MAP). */
+export function buildErdBreakdownTree(rows: ErdBreakdownRow[]): BreakdownNodeV2[] {
+  const l1Order: string[] = [];
+  const l1Map = new Map<string, Map<string, ErdBreakdownRow[]>>();
+  for (const row of rows) {
+    if (!l1Map.has(row.level1)) { l1Map.set(row.level1, new Map()); l1Order.push(row.level1); }
+    const l2Map = l1Map.get(row.level1)!;
+    if (!l2Map.has(row.level2)) l2Map.set(row.level2, []);
+    l2Map.get(row.level2)!.push(row);
+  }
+
+  return l1Order.map((l1Name) => {
+    const l2Map = l1Map.get(l1Name)!;
+    let l1Value = 0, l1Pct = 0;
+    const l2Nodes: BreakdownNodeV2[] = [...l2Map.entries()].map(([l2Name, categoryRows]) => {
+      const l3Nodes: BreakdownNodeV2[] = categoryRows.map((r) => ({
+        id: `L3-${l1Name}-${l2Name}-${r.category}`,
+        name: r.category,
+        level: 2,
+        value: r.usdMillion,
+        percentage: r.finalPct * 100,
+      }));
+      const l2Value = categoryRows.reduce((s, r) => s + r.usdMillion, 0);
+      const l2Pct = categoryRows.reduce((s, r) => s + r.finalPct, 0) * 100;
+      l1Value += l2Value; l1Pct += l2Pct;
+      return { id: `L2-${l1Name}-${l2Name}`, name: l2Name, level: 1, value: l2Value, percentage: l2Pct, children: l3Nodes };
+    });
+    return { id: `L1-${l1Name}`, name: l1Name, level: 0, value: l1Value, percentage: l1Pct, children: l2Nodes };
+  });
 }
 
 export interface ItTrendPointV2 { year: number; itYoY: number; itSpend: number; itPercent: number; }

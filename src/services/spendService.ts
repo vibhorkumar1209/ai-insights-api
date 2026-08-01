@@ -12,7 +12,7 @@ import {
   findItLevel3Value,
   findErdCategoryValue,
   buildItBreakdownTree,
-  buildErdBreakdownFlat,
+  buildErdBreakdownTree,
   computeItSpendTrendV2,
   computeErdSpendTrendV2,
   computeItCAGR,
@@ -214,7 +214,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
         industry,
         companyName: input.companyName,
         currencyInfo,
-        erdBreakdown: buildErdBreakdownFlat(erdBreakdownFlat),
+        erdBreakdown: buildErdBreakdownTree(erdBreakdownFlat),
         erdCAGR_Forecast: erdCagr.forecast,
         erdCAGR_Historical: erdCagr.historical,
       };
