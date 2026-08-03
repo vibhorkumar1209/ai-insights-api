@@ -1401,23 +1401,60 @@ export async function researchGccSalesPlay(input: {
 }): Promise<string> {
   const { targetCompany, targetGeoRegion, coreIndustrySegment } = input;
 
-  const queries = [
-    `${getSearchRecencyInstruction()}Research recent leadership and organizational changes at "${targetCompany}"'s Global Capability Center (GCC) or Global Delivery Center (GDC) operations in ${targetGeoRegion}. Specifically look for: new executive appointments or hires (CEO, CFO, COO, CTO, CISO, or country/site head roles) at the local GCC entity, leadership departures, org-structure or reporting-line changes, and any named executives currently running the local operation. Cite the publication date and source for every fact found.`,
-    `${getSearchRecencyInstruction()}Research recent expansion signals for "${targetCompany}" in ${targetGeoRegion} relevant to its Global Capability Center (GCC) or Global Delivery Center (GDC) footprint: new facility openings or expansions, headcount growth announcements, landmark contract wins, capital investment or real estate commitments, acquisitions or divestments touching the region, and government/regulatory empanelments. Cite the publication date and source for every fact found.`,
-    `${getSearchRecencyInstruction()}Research the most recent corporate developments for "${targetCompany}" relevant to its ${coreIndustrySegment} business and overall strategy: recent earnings results, major restructuring, technology or AI strategy announcements, and any developments materially affecting its ${targetGeoRegion} operations. Cite the publication date and source for every fact found.`,
+  // Parallel.AI queries — broad multi-source research crawls.
+  const parallelQueries: { label: string; query: string }[] = [
+    {
+      label: 'GCC/GDC Facility Footprint & Structure',
+      query: `${getSearchRecencyInstruction()}Research "${targetCompany}"'s Global Capability Center (GCC) or Global Delivery Center (GDC) facility footprint in ${targetGeoRegion}: which cities have confirmed captive delivery/technology/shared-services centers, approximate headcount per city, which functional domains and project lines (engineering, F&A, customer support, HR, procurement) are staffed at each site, and the legal entity names operating each facility. Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Leadership & Organizational Changes',
+      query: `${getSearchRecencyInstruction()}Research recent leadership and organizational changes at "${targetCompany}"'s Global Capability Center (GCC) or Global Delivery Center (GDC) operations in ${targetGeoRegion}. Specifically look for: new executive appointments or hires (CEO, CFO, COO, CTO, CISO, or country/site head roles) at the local GCC entity, leadership departures, org-structure or reporting-line changes, and any named executives currently running the local operation. Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Expansion Signals & Facility Activity',
+      query: `${getSearchRecencyInstruction()}Research recent expansion signals for "${targetCompany}" in ${targetGeoRegion} relevant to its Global Capability Center (GCC) or Global Delivery Center (GDC) footprint: new facility openings or expansions, headcount growth announcements, landmark contract wins, capital investment or real estate commitments, acquisitions or divestments touching the region, and government/regulatory empanelments. Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Recent Corporate Developments',
+      query: `${getSearchRecencyInstruction()}Research the most recent corporate developments for "${targetCompany}" relevant to its ${coreIndustrySegment} business and overall strategy: recent earnings results, major restructuring, technology or AI strategy announcements, and any developments materially affecting its ${targetGeoRegion} operations. Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Technology Stack & Infrastructure',
+      query: `${getSearchRecencyInstruction()}Research "${targetCompany}"'s core technology stack and infrastructure, especially as deployed or developed at its ${targetGeoRegion} Global Capability Center (GCC)/Global Delivery Center (GDC): cloud platforms in use, legacy systems being modernized, AI/ML platforms and tooling, application architecture, and cybersecurity/compliance frameworks. Cite the publication date and source for every fact found.`,
+    },
   ];
 
-  const settled = await Promise.allSettled(queries.map((q) => runResearch(q, 'base')));
-  const labels = ['Leadership & Organizational Changes', 'Expansion Signals & Facility Activity', 'Recent Corporate Developments'];
-  return settled
-    .map((r, idx) => {
-      if (r.status === 'fulfilled' && r.value) return `=== ${labels[idx]} ===\n${r.value}`;
-      const msg = r.status === 'rejected' ? (r.reason instanceof Error ? r.reason.message : 'Research failed') : 'No data found';
-      console.warn(`[parallelAI] GCC Sales Play research query ${idx + 1} failed: ${msg}`);
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n\n');
+  // Gemini Google Search grounding — a second, independent live-search
+  // engine, run in parallel with Parallel.AI so the research base draws
+  // from two distinct grounded-search sources rather than one.
+  const geminiQueries: { label: string; query: string }[] = [
+    {
+      label: 'Gemini — C-Suite & Named Executives',
+      query: `${getSearchRecencyInstruction()}Using Google Search, find the current named executives running "${targetCompany}"'s Global Capability Center (GCC) or Global Delivery Center (GDC) operations in ${targetGeoRegion} — CEO, CFO, COO, CTO, CISO, and business-unit leads based locally. For each, give their title, reporting line, functional scope, and the date/source of the most recent confirmation of their role. Prioritize the most recent appointments and organizational changes.`,
+    },
+    {
+      label: 'Gemini — Consulting/Advisory Firm Relationship',
+      query: `${getSearchRecencyInstruction()}Using Google Search, find any documented relationship between "${targetCompany}" and major consulting/advisory firms (Deloitte, Accenture, EY, KPMG, PwC, McKinsey, BCG) involving its ${targetGeoRegion} operations — compliance advisory, transformation projects, consortium work, or go-to-market partnerships. Cite the publication date and source for every fact found.`,
+    },
+  ];
+
+  const [parallelSettled, geminiSettled] = await Promise.all([
+    Promise.allSettled(parallelQueries.map((q) => runResearch(q.query, 'base'))),
+    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
+  ]);
+
+  const blocks: string[] = [];
+  parallelSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI] ${parallelQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] GCC Sales Play Parallel.AI query "${parallelQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+  geminiSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Gemini] ${geminiQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] GCC Sales Play Gemini query "${geminiQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+
+  return blocks.join('\n\n');
 }
 
 // ── Sales Play Context Research ────────────────────────────────────────────────

@@ -3805,12 +3805,28 @@ const GCC_TEMPORAL_RELEVANCE_RULE = `[CRITICAL SYSTEM RULE: TEMPORAL RELEVANCE]
 3. AVAILABILITY FALLBACK: If data within the 0-to-3-year window does not exist or is unavailable for a specific sub-topic, step back incrementally (e.g., 4-5 years) only as needed.
 4. MANDATORY TIMESTAMPING: Every fact, statistic, or event cited must be explicitly prefixed with its publication date or timeframe (e.g., "[June 2026] Fact details...").`;
 
+// Every fact must trace back to the RESEARCH DATA block (Gemini + Parallel.AI
+// grounded search) fed into this prompt — never to the model's own training
+// knowledge. This exists because the module's synthesis step used to have no
+// live search at all, which meant genuinely recent events (e.g. an executive
+// appointment) could silently be missing with no indication anything was
+// unconfirmed — the report just looked complete either way. A hard "say so
+// if research doesn't cover it" instruction turns that failure mode from
+// silent into visible.
+const GCC_RESEARCH_ONLY_RULE = `[CRITICAL SYSTEM RULE: RESEARCH-GROUNDED ONLY]
+This entire report must be built from the RESEARCH DATA block provided below (live Gemini and Parallel.AI web search results) — not from training knowledge. For every fact, figure, name, or claim:
+1. If it is supported by the RESEARCH DATA, cite it with its source and date as instructed by the temporal relevance rule.
+2. If a sub-topic (a table cell, a named executive, a facility detail) is NOT covered by the RESEARCH DATA, do not fill it from training knowledge or invent a plausible-sounding answer — mark it explicitly as "Not confirmed by available research" (or leave the cell as "⬜ Not evidenced" in tables, consistent with the GCC/GDC scope restriction rule's own convention) rather than presenting an unverified claim as fact.
+3. Training knowledge may only be used for genuinely stable, non-time-sensitive background context (e.g. widely known industry terminology) — never for company-specific facts, figures, names, or events, all of which must come from the research data.`;
+
 function gccSalesPlaySystemPrompt(): string {
   return `You are an expert Enterprise Account Intelligence and Strategic Growth Advisor specializing in Global Capability Centers (GCCs), Digital Engineering Exports, Tier-1 Management Consulting, and Cross-Border Corporate Restructuring. Output clean Markdown only — use headers, data-dense bullet points, and GitHub-flavored Markdown tables. Prioritize direct answers, structural markdown tables, visual anchors, and short, scannable sentences. Do not truncate information. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}
 
 ${GCC_SCOPE_RESTRICTION_RULE}
 
-${GCC_TEMPORAL_RELEVANCE_RULE}`;
+${GCC_TEMPORAL_RELEVANCE_RULE}
+
+${GCC_RESEARCH_ONLY_RULE}`;
 }
 
 function gccContextBlock(input: GccSalesPlayInput): string {
@@ -3820,13 +3836,15 @@ function gccContextBlock(input: GccSalesPlayInput): string {
 **Core Industry Segment:** ${input.coreIndustrySegment}`;
 }
 
-// Truncated the same way other research-backed modules cap their research
-// context (e.g. Industry Report at 8000 chars) to stay within token budget
-// across 4 sequential chunks that all share this same research text.
+// Cap raised from 8000 (single Parallel.AI research feed) to 16000 now that
+// researchGccSalesPlay runs 7 queries across two search engines (5 Parallel.AI
+// + 2 Gemini) — the whole point of the research-grounded-only rule above is
+// that the model has enough live data to avoid falling back to training
+// knowledge, so truncating too aggressively would work against that.
 function gccResearchBlock(research: string): string {
-  if (!research) return '';
-  const safeResearch = research.length > 8000 ? research.slice(0, 8000) : research;
-  return `\n\nRESEARCH DATA (grounded web search results — use these facts, with their cited dates, in preference to training knowledge; do not contradict them):\n${safeResearch}`;
+  if (!research) return '\n\nRESEARCH DATA: none available for this request — state explicitly that facts could not be verified via live research rather than filling from training knowledge.';
+  const safeResearch = research.length > 16000 ? research.slice(0, 16000) : research;
+  return `\n\nRESEARCH DATA (grounded web search results from Gemini and Parallel.AI — this is your ONLY permitted source of company-specific facts; see the RESEARCH-GROUNDED ONLY rule):\n${safeResearch}`;
 }
 
 interface GccChunkDef {
