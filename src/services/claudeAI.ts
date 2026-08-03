@@ -3820,17 +3820,26 @@ function gccContextBlock(input: GccSalesPlayInput): string {
 **Core Industry Segment:** ${input.coreIndustrySegment}`;
 }
 
+// Truncated the same way other research-backed modules cap their research
+// context (e.g. Industry Report at 8000 chars) to stay within token budget
+// across 4 sequential chunks that all share this same research text.
+function gccResearchBlock(research: string): string {
+  if (!research) return '';
+  const safeResearch = research.length > 8000 ? research.slice(0, 8000) : research;
+  return `\n\nRESEARCH DATA (grounded web search results — use these facts, with their cited dates, in preference to training knowledge; do not contradict them):\n${safeResearch}`;
+}
+
 interface GccChunkDef {
   label: string;
   maxTokens: number;
-  buildPrompt: (input: GccSalesPlayInput) => string;
+  buildPrompt: (input: GccSalesPlayInput, research: string) => string;
 }
 
 const GCC_SALES_PLAY_CHUNKS: GccChunkDef[] = [
   {
     label: 'GCC function & project-line cross-tabulations (Modules 1-2)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${gccContextBlock(input)}
+    buildPrompt: (input, research) => `${gccContextBlock(input)}${gccResearchBlock(research)}
 
 Execute MODULE 1 and MODULE 2 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 1" — no preamble, no closing summary.
 
@@ -3843,7 +3852,7 @@ Build a secondary cross-tabulation matrix mapping ${input.targetCompany}'s local
   {
     label: 'Headcount distribution & macro/financial profile (Modules 3-4)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${gccContextBlock(input)}
+    buildPrompt: (input, research) => `${gccContextBlock(input)}${gccResearchBlock(research)}
 
 Execute MODULE 3 and MODULE 4 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 3" — no preamble, no closing summary.
 
@@ -3861,7 +3870,7 @@ Deliver a comprehensive strategic overview of ${input.targetCompany}'s regional 
   {
     label: 'C-suite roster & technology stack (Modules 5-6)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${gccContextBlock(input)}
+    buildPrompt: (input, research) => `${gccContextBlock(input)}${gccResearchBlock(research)}
 
 Execute MODULE 5 and MODULE 6 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 5" — no preamble, no closing summary.
 
@@ -3884,7 +3893,7 @@ Categorize this table by technical layers: Compute/Servers, Cloud/Virtualization
   {
     label: 'Expansion signals, opportunity playbook & engagement timeline (Modules 7-8)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${gccContextBlock(input)}
+    buildPrompt: (input, research) => `${gccContextBlock(input)}${gccResearchBlock(research)}
 
 Execute MODULE 7 and MODULE 8 of the Account Strategy & Opportunity Dossier below. Output ONLY these two modules as Markdown, starting with "## MODULE 7" — no preamble, no closing summary. End with the 30-60-90 day engagement timeline described at the end of Module 8.
 
@@ -3909,12 +3918,13 @@ export const GCC_SALES_PLAY_CHUNK_COUNT = GCC_SALES_PLAY_CHUNKS.length;
 
 export async function synthesizeGccSalesPlayChunk(
   input: GccSalesPlayInput,
-  chunkIndex: number
+  chunkIndex: number,
+  research: string = ''
 ): Promise<{ label: string; markdown: string }> {
   const chunk = GCC_SALES_PLAY_CHUNKS[chunkIndex];
   if (!chunk) throw new Error(`Invalid GCC sales play chunk index: ${chunkIndex}`);
 
-  const userPrompt = chunk.buildPrompt(input);
+  const userPrompt = chunk.buildPrompt(input, research);
   const raw = await claudeCreateDirect(gccSalesPlaySystemPrompt(), userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 300000, 0.2);
   const markdown = raw.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 

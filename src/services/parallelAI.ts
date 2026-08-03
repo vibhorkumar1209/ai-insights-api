@@ -1382,6 +1382,44 @@ Do NOT include marketing taglines, mission statements, or "purpose" slogans (e.g
   ].filter(Boolean).join('\n\n');
 }
 
+// ── GCC Sales Play Research ──────────────────────────────────────────────────
+// GCC Sales Play's synthesis stage (claudeAI.ts synthesizeGccSalesPlayChunk)
+// previously had NO live search grounding at all — it called Claude directly
+// on training knowledge only, with no google_search/Parallel.AI research step
+// feeding it. That meant it could never surface anything genuinely recent
+// (a leadership appointment, a new facility, a contract win) unless it
+// happened to be in the model's training data — no amount of prompt wording
+// about "temporal relevance" or "0-3 year sourcing window" can manufacture a
+// fact the model was never trained on. This runs three targeted parallel
+// research queries up front and feeds the combined results into every
+// synthesis chunk as grounded RESEARCH DATA, the same pattern every other
+// research-backed module in this app already uses.
+export async function researchGccSalesPlay(input: {
+  targetCompany: string;
+  targetGeoRegion: string;
+  coreIndustrySegment: string;
+}): Promise<string> {
+  const { targetCompany, targetGeoRegion, coreIndustrySegment } = input;
+
+  const queries = [
+    `${getSearchRecencyInstruction()}Research recent leadership and organizational changes at "${targetCompany}"'s Global Capability Center (GCC) or Global Delivery Center (GDC) operations in ${targetGeoRegion}. Specifically look for: new executive appointments or hires (CEO, CFO, COO, CTO, CISO, or country/site head roles) at the local GCC entity, leadership departures, org-structure or reporting-line changes, and any named executives currently running the local operation. Cite the publication date and source for every fact found.`,
+    `${getSearchRecencyInstruction()}Research recent expansion signals for "${targetCompany}" in ${targetGeoRegion} relevant to its Global Capability Center (GCC) or Global Delivery Center (GDC) footprint: new facility openings or expansions, headcount growth announcements, landmark contract wins, capital investment or real estate commitments, acquisitions or divestments touching the region, and government/regulatory empanelments. Cite the publication date and source for every fact found.`,
+    `${getSearchRecencyInstruction()}Research the most recent corporate developments for "${targetCompany}" relevant to its ${coreIndustrySegment} business and overall strategy: recent earnings results, major restructuring, technology or AI strategy announcements, and any developments materially affecting its ${targetGeoRegion} operations. Cite the publication date and source for every fact found.`,
+  ];
+
+  const settled = await Promise.allSettled(queries.map((q) => runResearch(q, 'base')));
+  const labels = ['Leadership & Organizational Changes', 'Expansion Signals & Facility Activity', 'Recent Corporate Developments'];
+  return settled
+    .map((r, idx) => {
+      if (r.status === 'fulfilled' && r.value) return `=== ${labels[idx]} ===\n${r.value}`;
+      const msg = r.status === 'rejected' ? (r.reason instanceof Error ? r.reason.message : 'Research failed') : 'No data found';
+      console.warn(`[parallelAI] GCC Sales Play research query ${idx + 1} failed: ${msg}`);
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 // ── Sales Play Context Research ────────────────────────────────────────────────
 // Comprehensive competitive intelligence gathering for a sales play.
 // Covers: target account landscape, competitor weaknesses, your company's strengths.

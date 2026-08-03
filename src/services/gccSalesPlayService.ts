@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GccSalesPlayInput, GccSalesPlayResult } from '@ai-insights/types';
 import { synthesizeGccSalesPlayChunk, GCC_SALES_PLAY_CHUNK_COUNT } from './claudeAI';
+import { researchGccSalesPlay } from './parallelAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -71,9 +72,22 @@ export async function runGccSalesPlayJob(jobId: string, input: GccSalesPlayInput
     let job = update(jobId, {
       status: 'drafting',
       progress: 5,
-      currentStep: 'Starting account intelligence dossier…',
+      currentStep: `Researching ${input.targetCompany}'s recent GCC activity…`,
     });
     emit(jobId, 'progress', job);
+
+    // Live web research feeding all 4 synthesis chunks — without this, the
+    // synthesis stage had no way to know about anything genuinely recent
+    // (a leadership appointment, a new facility, a contract win) that wasn't
+    // already in the model's training data. Non-fatal if it fails entirely —
+    // the dossier still generates from training knowledge, just without the
+    // grounding boost.
+    let research = '';
+    try {
+      research = await researchGccSalesPlay(input);
+    } catch (err) {
+      console.warn('[gccSalesPlay] Research step failed, proceeding without it:', err instanceof Error ? err.message : err);
+    }
 
     let content = '';
     for (let i = 0; i < GCC_SALES_PLAY_CHUNK_COUNT; i++) {
@@ -86,11 +100,11 @@ export async function runGccSalesPlayJob(jobId: string, input: GccSalesPlayInput
 
       let chunk;
       try {
-        chunk = await synthesizeGccSalesPlayChunk(input, i);
+        chunk = await synthesizeGccSalesPlayChunk(input, i, research);
       } catch (err) {
         console.warn(`[gccSalesPlay] Chunk ${i} failed, retrying once:`, err instanceof Error ? err.message : err);
         await new Promise((r) => setTimeout(r, 3000));
-        chunk = await synthesizeGccSalesPlayChunk(input, i);
+        chunk = await synthesizeGccSalesPlayChunk(input, i, research);
       }
 
       content += (content ? '\n\n' : '') + chunk.markdown;
