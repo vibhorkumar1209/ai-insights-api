@@ -1457,6 +1457,73 @@ export async function researchGccSalesPlay(input: {
   return blocks.join('\n\n');
 }
 
+// ── Industry Outsourcing Report Research ──────────────────────────────────────
+// Same gap as GCC Sales Play had: synthesizeOutsourcingReportChunk called
+// Claude directly on training knowledge only, with no live search step at
+// all. Runs 7 queries across two independent search engines (5 Parallel.AI +
+// 2 Gemini) up front, fed into all 4 synthesis chunks as grounded research —
+// same architecture as researchGccSalesPlay above.
+export async function researchOutsourcingReport(input: {
+  vendorName: string;
+  targetIndustry: string;
+  geoFocus: string;
+  focusTech: string;
+  focusSegment: string;
+}): Promise<string> {
+  const { vendorName, targetIndustry, geoFocus, focusTech, focusSegment } = input;
+
+  const parallelQueries: { label: string; query: string }[] = [
+    {
+      label: 'Vendor Positioning & Portfolio',
+      query: `${getSearchRecencyInstruction()}Research "${vendorName}"'s current product/service portfolio, technology partnerships, and go-to-market positioning relevant to "${focusTech}" and the "${targetIndustry}" industry. Include named alliances, platform integrations, and how the company markets itself in this space. Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Industry Outsourcing Deals & Contracts',
+      query: `${getSearchRecencyInstruction()}Research major outsourcing contracts, managed-services deals, and IT/digital transformation engagements (TCV over $25M where disclosed) signed in the "${targetIndustry}" industry, especially involving "${focusSegment}" and "${focusTech}". For each, give the customer, vendor, announcement date, deal description, and contract value if disclosed. Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Competitor Benchmarking',
+      query: `${getSearchRecencyInstruction()}Research the top competitors to "${vendorName}" competing for "${targetIndustry}" outsourcing and technology services budgets, particularly around "${focusTech}". For each competitor, give their core strengths, notable recent wins or losses, and how they position against "${vendorName}". Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Key Customer Accounts',
+      query: `${getSearchRecencyInstruction()}Research named enterprise accounts in the "${targetIndustry}" industry, prioritizing "${focusSegment}", that have publicly disclosed outsourcing relationships, technology suppliers, or digital transformation initiatives relevant to "${focusTech}". Cite the publication date and source for every fact found.`,
+    },
+    {
+      label: 'Regional Market Dynamics & M&A Activity',
+      query: `${getSearchRecencyInstruction()}Research recent business trends, technology trends, regulatory drivers/barriers, and M&A/consolidation activity (mergers, acquisitions, joint ventures, partnerships) in the "${targetIndustry}" industry's technology/outsourcing supplier ecosystem, focused on "${geoFocus}". Cite the publication date and source for every fact found.`,
+    },
+  ];
+
+  const geminiQueries: { label: string; query: string }[] = [
+    {
+      label: 'Gemini — Emerging Outsourcing Trends',
+      query: `${getSearchRecencyInstruction()}Using Google Search, find the most recent emerging outsourcing and technology-delivery trends affecting the "${targetIndustry}" industry, especially around "${focusTech}". Include named examples of companies adopting these trends and the source/date for each.`,
+    },
+    {
+      label: 'Gemini — Vendor Competitive Capability',
+      query: `${getSearchRecencyInstruction()}Using Google Search, find recent (last 3 years) evidence of "${vendorName}"'s capability and track record delivering "${focusTech}"-related services within the "${targetIndustry}" industry — named case studies, press releases, analyst commentary, or customer references. Cite the publication date and source for every fact found.`,
+    },
+  ];
+
+  const [parallelSettled, geminiSettled] = await Promise.all([
+    Promise.allSettled(parallelQueries.map((q) => runResearch(q.query, 'base'))),
+    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
+  ]);
+
+  const blocks: string[] = [];
+  parallelSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI] ${parallelQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] Outsourcing Report Parallel.AI query "${parallelQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+  geminiSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Gemini] ${geminiQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] Outsourcing Report Gemini query "${geminiQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+
+  return blocks.join('\n\n');
+}
+
 // ── Sales Play Context Research ────────────────────────────────────────────────
 // Comprehensive competitive intelligence gathering for a sales play.
 // Covers: target account landscape, competitor weaknesses, your company's strengths.

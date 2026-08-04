@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { OutsourcingReportInput, OutsourcingReportResult } from '@ai-insights/types';
 import { synthesizeOutsourcingReportChunk, OUTSOURCING_CHUNK_COUNT } from './claudeAI';
+import { researchOutsourcingReport } from './parallelAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -72,9 +73,22 @@ export async function runOutsourcingReportJob(jobId: string, input: OutsourcingR
     let job = update(jobId, {
       status: 'drafting',
       progress: 5,
-      currentStep: 'Starting strategic blueprint generation…',
+      currentStep: `Researching ${input.vendorName}'s market and competitive landscape…`,
     });
     emit(jobId, 'progress', job);
+
+    // Live web research feeding all 4 synthesis chunks — without this, the
+    // synthesis stage had no way to ground deals, competitor moves, or
+    // customer accounts in anything current; it was pure training-knowledge
+    // synthesis. Non-fatal if it fails entirely — the report still generates,
+    // just without the grounding boost (and will flag facts as unconfirmed
+    // per the RESEARCH-GROUNDED ONLY rule rather than fabricating).
+    let research = '';
+    try {
+      research = await researchOutsourcingReport(input);
+    } catch (err) {
+      console.warn('[outsourcingReport] Research step failed, proceeding without it:', err instanceof Error ? err.message : err);
+    }
 
     let content = '';
     for (let i = 0; i < OUTSOURCING_CHUNK_COUNT; i++) {
@@ -87,11 +101,11 @@ export async function runOutsourcingReportJob(jobId: string, input: OutsourcingR
 
       let chunk;
       try {
-        chunk = await synthesizeOutsourcingReportChunk(input, i);
+        chunk = await synthesizeOutsourcingReportChunk(input, i, research);
       } catch (err) {
         console.warn(`[outsourcingReport] Chunk ${i} failed, retrying once:`, err instanceof Error ? err.message : err);
         await new Promise((r) => setTimeout(r, 3000));
-        chunk = await synthesizeOutsourcingReportChunk(input, i);
+        chunk = await synthesizeOutsourcingReportChunk(input, i, research);
       }
 
       content += (content ? '\n\n' : '') + chunk.markdown;

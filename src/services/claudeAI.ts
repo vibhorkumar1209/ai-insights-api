@@ -3665,7 +3665,28 @@ Return this exact JSON structure:
 
 import { OutsourcingReportInput } from '@ai-insights/types';
 
-const OUTSOURCING_SYSTEM_PROMPT = `You are an elite, world-class Technology Strategy Consultant, Enterprise Sales Enablement Director, and Industrial Market Analyst. Output clean Markdown only — use headers, data-dense bullet points, and GitHub-flavored Markdown tables. Do not truncate information or summarize sections broadly. Avoid generic corporate buzzwords; dive deep into technical, workload-specific, and operational realities. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}`;
+const OUTSOURCING_TEMPORAL_RELEVANCE_RULE = `[CRITICAL SYSTEM RULE: TEMPORAL RELEVANCE]
+1. SOURCING WINDOW: For all data gathering, synthesis, and reporting, strictly prioritize information published within a 0-to-3-year window backward from the date the report is generated.
+2. REVERSIBILITY: Structure the entire report, including subsections and bullet points, in strict reverse chronological order (newest information first).
+3. AVAILABILITY FALLBACK: If data within the 0-to-3-year window does not exist or is unavailable for a specific sub-topic, step back incrementally (e.g., 4-5 years) only as needed.
+4. MANDATORY TIMESTAMPING: Every fact, statistic, or event cited must be explicitly prefixed with its publication date or timeframe (e.g., "[June 2026] Fact details...").`;
+
+// Every fact must trace back to the RESEARCH DATA block (Gemini + Parallel.AI
+// grounded search), never to training knowledge — same rationale and wording
+// convention as GCC Sales Play's equivalent rule.
+const OUTSOURCING_RESEARCH_ONLY_RULE = `[CRITICAL SYSTEM RULE: RESEARCH-GROUNDED ONLY]
+This entire report must be built from the RESEARCH DATA block provided below (live Gemini and Parallel.AI web search results) — not from training knowledge. For every fact, figure, name, or claim:
+1. If it is supported by the RESEARCH DATA, cite it with its source and date as instructed by the temporal relevance rule.
+2. If a sub-topic (a table cell, a named deal, a competitor detail) is NOT covered by the RESEARCH DATA, do not fill it from training knowledge or invent a plausible-sounding answer — mark it explicitly as "Not confirmed by available research" rather than presenting an unverified claim as fact.
+3. Training knowledge may only be used for genuinely stable, non-time-sensitive background context (e.g. widely known industry terminology) — never for company-specific facts, figures, names, deals, or events, all of which must come from the research data.`;
+
+function outsourcingSystemPrompt(): string {
+  return `You are an elite, world-class Technology Strategy Consultant, Enterprise Sales Enablement Director, and Industrial Market Analyst. Output clean Markdown only — use headers, data-dense bullet points, and GitHub-flavored Markdown tables. Do not truncate information or summarize sections broadly. Avoid generic corporate buzzwords; dive deep into technical, workload-specific, and operational realities. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}
+
+${OUTSOURCING_TEMPORAL_RELEVANCE_RULE}
+
+${OUTSOURCING_RESEARCH_ONLY_RULE}`;
+}
 
 function outsourcingContextBlock(input: OutsourcingReportInput): string {
   return `**Vendor Name:** ${input.vendorName}
@@ -3675,17 +3696,24 @@ function outsourcingContextBlock(input: OutsourcingReportInput): string {
 **Focus Segment:** ${input.focusSegment}`;
 }
 
+// Cap chosen to match GCC Sales Play's equivalent (7-query, dual-engine research base).
+function outsourcingResearchBlock(research: string): string {
+  if (!research) return '\n\nRESEARCH DATA: none available for this request — state explicitly that facts could not be verified via live research rather than filling from training knowledge.';
+  const safeResearch = research.length > 16000 ? research.slice(0, 16000) : research;
+  return `\n\nRESEARCH DATA (grounded web search results from Gemini and Parallel.AI — this is your ONLY permitted source of company-specific facts; see the RESEARCH-GROUNDED ONLY rule):\n${safeResearch}`;
+}
+
 interface OutsourcingChunkDef {
   label: string;
   maxTokens: number;
-  buildPrompt: (input: OutsourcingReportInput) => string;
+  buildPrompt: (input: OutsourcingReportInput, research: string) => string;
 }
 
 const OUTSOURCING_CHUNKS: OutsourcingChunkDef[] = [
   {
     label: 'Strategic framework & ecosystem map (Steps 1-2)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+    buildPrompt: (input, research) => `${outsourcingContextBlock(input)}${outsourcingResearchBlock(research)}
 
 Execute STEP 1 and STEP 2 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 1" — no preamble, no closing summary.
 
@@ -3709,7 +3737,7 @@ Map the structural dynamics surrounding ${input.vendorName} within ${input.targe
   {
     label: 'Competitive benchmarking & strategic implications (Steps 3-4)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+    buildPrompt: (input, research) => `${outsourcingContextBlock(input)}${outsourcingResearchBlock(research)}
 
 Execute STEP 3 and STEP 4 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 3" — no preamble, no closing summary.
 
@@ -3729,7 +3757,7 @@ Based on the benchmarking data generated in Step 3, write an aggressive strategi
   {
     label: 'High-volume workloads & capability heat map (Steps 5-6)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+    buildPrompt: (input, research) => `${outsourcingContextBlock(input)}${outsourcingResearchBlock(research)}
 
 Execute STEP 5 and STEP 6 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 5" — no preamble, no closing summary.
 
@@ -3751,7 +3779,7 @@ Construct a clear visual capability matrix evaluating ${input.vendorName} and it
   {
     label: 'Customer anchors, regional dynamics & final playbook (Steps 7-8)',
     maxTokens: 8192,
-    buildPrompt: (input) => `${outsourcingContextBlock(input)}
+    buildPrompt: (input, research) => `${outsourcingContextBlock(input)}${outsourcingResearchBlock(research)}
 
 Execute STEP 7 and STEP 8 of the Sales Playbook and Strategic GTM Blueprint below. Output ONLY these two steps as Markdown, starting with "## STEP 7" — no preamble, no closing summary.
 
@@ -3774,13 +3802,14 @@ export const OUTSOURCING_CHUNK_COUNT = OUTSOURCING_CHUNKS.length;
 
 export async function synthesizeOutsourcingReportChunk(
   input: OutsourcingReportInput,
-  chunkIndex: number
+  chunkIndex: number,
+  research: string = ''
 ): Promise<{ label: string; markdown: string }> {
   const chunk = OUTSOURCING_CHUNKS[chunkIndex];
   if (!chunk) throw new Error(`Invalid outsourcing report chunk index: ${chunkIndex}`);
 
-  const userPrompt = chunk.buildPrompt(input);
-  const raw = await claudeCreateDirect(OUTSOURCING_SYSTEM_PROMPT, userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 300000, 0.2);
+  const userPrompt = chunk.buildPrompt(input, research);
+  const raw = await claudeCreateDirect(outsourcingSystemPrompt(), userPrompt, chunk.maxTokens, SYNTHESIS_MODEL, 300000, 0.2);
   const markdown = raw.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
   if (!markdown || markdown.length < 50) {
