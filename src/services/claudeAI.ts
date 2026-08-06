@@ -3981,3 +3981,45 @@ export async function synthesizeGccSalesPlayChunk(
 
   return { label: chunk.label, markdown };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IT JOBS — precise data extraction (job posting -> structured JSON)
+// ══════════════════════════════════════════════════════════════════════════════
+
+import { ItJobInput, ItJobExtraction } from '@ai-insights/types';
+
+export async function extractItJobDetails(input: ItJobInput): Promise<ItJobExtraction> {
+  const systemPrompt = 'You are a precise data extraction tool. Output ONLY a single valid JSON object, no markdown code fences, no explanation, no preamble or closing text.';
+
+  const userPrompt = `Act as a precise data extraction tool. Read the provided job title and job description carefully. Extract and output the information strictly in valid JSON format with the following keys:
+
+- job_title: The exact job title provided or extracted from the text.
+- summary: A concise 2-3 sentence overview of the role and main responsibilities.
+- date: The date the job was posted or mentioned (return null if not found).
+- required_skill: An array of key technical and soft skills needed for the job.
+
+Input Data:
+Job Title: ${input.jobTitle}
+Job Description: ${input.jobDescription}
+
+Return ONLY the JSON object: {"job_title": "...", "summary": "...", "date": "..." or null, "required_skill": ["...", "..."]}`;
+
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 1024, FAST_MODEL, 60000, 0);
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  let parsed: Partial<ItJobExtraction>;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('IT Jobs extraction returned no parseable JSON');
+    parsed = JSON.parse(jsonMatch[0]);
+  }
+
+  return {
+    job_title: typeof parsed.job_title === 'string' && parsed.job_title.trim() ? parsed.job_title.trim() : input.jobTitle,
+    summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
+    date: typeof parsed.date === 'string' && parsed.date.trim() ? parsed.date.trim() : null,
+    required_skill: Array.isArray(parsed.required_skill) ? parsed.required_skill.filter((s): s is string => typeof s === 'string' && s.trim().length > 0) : [],
+  };
+}

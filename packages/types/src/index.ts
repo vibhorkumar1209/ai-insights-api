@@ -1205,6 +1205,36 @@ export interface FirmographicResult {
   completedAt?: string;
 }
 
+// ── IT Jobs Module ────────────────────────────────────────────────────────────
+// Precise data-extraction tool: given a raw job posting (title + description),
+// extract a strict, structured summary via Claude — no research/grounding
+// needed since the input IS the source data, not something to look up.
+
+export interface ItJobInput {
+  jobTitle: string;
+  jobDescription: string;
+}
+
+export interface ItJobExtraction {
+  job_title: string;
+  summary: string;
+  date: string | null;
+  required_skill: string[];
+}
+
+export interface ItJobResult {
+  jobId: string;
+  status: 'pending' | 'processing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  jobTitleInput: string;
+  jobDescriptionInput: string;
+  extraction?: ItJobExtraction;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Spend Module ──────────────────────────────────────────────────────────────
 
 export interface SpendInput {

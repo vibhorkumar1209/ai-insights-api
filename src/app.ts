@@ -30,6 +30,7 @@ import firmographicRouter from './routes/firmographic';
 import spendRouter from './routes/spend';
 import outsourcingReportRouter from './routes/outsourcingReport';
 import gccSalesPlayRouter from './routes/gccSalesPlay';
+import itJobRouter from './routes/itJob';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -81,6 +82,7 @@ app.use('/api/firmographic', memoryGuard, firmographicRouter);
 app.use('/api/spend', memoryGuard, spendRouter);
 app.use('/api/industry-outsourcing-report', memoryGuard, outsourcingReportRouter);
 app.use('/api/gcc-sales-play', memoryGuard, gccSalesPlayRouter);
+app.use('/api/it-jobs', memoryGuard, itJobRouter);
 
 // ── Debug: test Claude connectivity ──────────────────────────────────────────
 app.get('/api/debug-claude', async (_req, res) => {
