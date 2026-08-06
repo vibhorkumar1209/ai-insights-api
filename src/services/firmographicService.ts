@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FirmographicInput, FirmographicResult } from '@ai-insights/types';
-import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString, formatRevenueUSD, companyNameLooselyMatches } from './yahooFinance';
+import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString, formatRevenueUSD, companyIdentityConfirmed } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
 import { geminiRevenueLookup, geminiFirmographicLookup } from './parallelAI';
 
@@ -163,10 +163,22 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
       // first above) carries no built-in verification — it's an LLM guess — so
       // without this check a hallucinated or wrong-company ticker would silently
       // surface someone else's real revenue/margins as if they were the
-      // requested company's. If it doesn't match, discard and fall through to
-      // the Gemini search fallback below, which searches by name directly.
-      if (data?.companyInfo?.name && !companyNameLooselyMatches(input.companyName, data.companyInfo.name)) {
-        console.warn(`[firmographic] Fetched company "${data.companyInfo.name}" for ticker ${ticker} doesn't match requested "${input.companyName}" — discarding and falling back to Gemini search`);
+      // requested company's. Prefers domain-vs-domain comparison (authoritative,
+      // effectively zero false-positive risk) over fuzzy name matching, which
+      // cannot distinguish two different companies sharing a name/prefix — e.g.
+      // "Croma" (the Tata-owned Indian electronics retailer) is a literal prefix
+      // of "Croma Security Solutions Group plc" (an unrelated UK firm), so name
+      // matching alone accepted it every time; comparing croma.com against the
+      // fetched company's own disclosed website closes that off. If it doesn't
+      // match, discard and fall through to the Gemini search fallback below,
+      // which searches by name (and domain, when provided) directly.
+      if (data?.companyInfo?.name && !companyIdentityConfirmed({
+        requestedName: input.companyName,
+        requestedDomain: input.companyDomain,
+        fetchedName: data.companyInfo.name,
+        fetchedWebsite: data.companyInfo.website,
+      })) {
+        console.warn(`[firmographic] Fetched company "${data.companyInfo.name}" (${data.companyInfo.website || 'no website'}) for ticker ${ticker} doesn't match requested "${input.companyName}" (${input.companyDomain || 'no domain'}) — discarding and falling back to Gemini search`);
         data = null;
       }
 

@@ -721,11 +721,59 @@ export function companyNameLooselyMatches(requestedName: string, fetchedName: st
   const reqNorm = normalizeName(requestedName);
   const fetchedNorm = normalizeName(fetchedName);
   if (!reqNorm || !fetchedNorm) return false;
-  if (fetchedNorm.includes(reqNorm) || reqNorm.includes(fetchedNorm)) return true;
+  if (reqNorm === fetchedNorm) return true;
+  // Substring match — but only when the shorter string covers a meaningful
+  // share of the longer one. Without this guard, a short/generic requested
+  // name that happens to be the literal leading word of a completely
+  // unrelated company's full legal name (e.g. "Croma" is a true prefix of
+  // "Croma Security Solutions Group plc", an unrelated UK locksmith/security
+  // firm, not the Tata-owned Indian electronics retailer the user meant)
+  // would pass this check every time — no name-only heuristic can tell those
+  // apart since they share the identical first word. This can't be fully
+  // fixed by name matching alone (see companyIdentityConfirmed for the
+  // domain-based check that actually resolves this), but requiring the
+  // match to cover a real share of the string closes the worst cases and
+  // fails closed (defers to research fallback) rather than silently
+  // accepting a coin-flip match.
+  const longer = Math.max(reqNorm.length, fetchedNorm.length);
+  const shorter = Math.min(reqNorm.length, fetchedNorm.length);
+  if ((fetchedNorm.includes(reqNorm) || reqNorm.includes(fetchedNorm)) && shorter / longer >= 0.5) return true;
   const reqFirstWordNorm = normalizeName(requestedName.trim().split(/\s+/)[0] || '');
-  if (reqFirstWordNorm.length >= 3 && fetchedNorm.includes(reqFirstWordNorm)) return true;
+  if (reqFirstWordNorm.length >= 3 && fetchedNorm.includes(reqFirstWordNorm) && reqFirstWordNorm.length / fetchedNorm.length >= 0.5) return true;
   if (acronymMatchesName(requestedName, fetchedName)) return true;
   return false;
+}
+
+/**
+ * Authoritative identity check: if the user supplied a company domain AND the
+ * fetched company data discloses its own website, compare domains directly —
+ * this has essentially zero false-positive risk (unlike fuzzy name matching,
+ * which fundamentally cannot distinguish two different companies that happen
+ * to share a name/prefix, like the Croma case above) and is decisive in both
+ * directions: a domain match confirms identity outright even if the fuzzy
+ * name check would have failed (e.g. a company that rebranded its trading
+ * name), and a domain MISMATCH rejects outright even if the fuzzy name check
+ * would have passed. Falls back to companyNameLooselyMatches only when no
+ * domain signal is available on one or both sides.
+ */
+export function companyIdentityConfirmed(params: {
+  requestedName: string;
+  requestedDomain?: string;
+  fetchedName?: string;
+  fetchedWebsite?: string;
+}): boolean {
+  const { requestedName, requestedDomain, fetchedName, fetchedWebsite } = params;
+  const reqDomain = normalizeDomain(requestedDomain);
+  const fetchedDomain = normalizeDomain(fetchedWebsite);
+  if (reqDomain && fetchedDomain) {
+    // Compare only the registrable "core" label (before the first dot of the
+    // normalized hostname) so "croma.com" vs a fetched "www.croma.com"/
+    // "croma.co.in" style variant still matches on the part that actually
+    // identifies the business, while a genuinely different domain
+    // (croma.com vs cssgplc.com) is rejected outright.
+    return reqDomain.split('.')[0] === fetchedDomain.split('.')[0];
+  }
+  return companyNameLooselyMatches(requestedName, fetchedName);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

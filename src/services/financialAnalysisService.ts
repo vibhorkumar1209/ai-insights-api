@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
-import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials, companyNameLooselyMatches } from './yahooFinance';
+import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials, companyIdentityConfirmed } from './yahooFinance';
 import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker, generateBusinessDescription } from './claudeAI';
 
@@ -243,8 +243,17 @@ async function runPublicPath(
   // Checks the fetched name actually matches the requested company, not just
   // that some name field is present — a hallucinated ticker (Claude is the
   // last-resort source above) can resolve to a real, unrelated company whose
-  // data would otherwise sail through this gate as "confirmed".
-  const profileConfirmsName = companyNameLooselyMatches(input.companyName, apiData.companyInfo?.name);
+  // data would otherwise sail through this gate as "confirmed". Prefers
+  // domain-vs-domain comparison when available (see companyIdentityConfirmed)
+  // since fuzzy name matching alone cannot distinguish two different
+  // companies that share a name/prefix (e.g. "Croma" the Indian retailer vs.
+  // "Croma Security Solutions Group plc", an unrelated UK firm).
+  const profileConfirmsName = companyIdentityConfirmed({
+    requestedName: input.companyName,
+    requestedDomain: input.companyDomain,
+    fetchedName: apiData.companyInfo?.name,
+    fetchedWebsite: apiData.companyInfo?.website,
+  });
   if (ticker && !hasMeaningfulData && !profileConfirmsName && input.isPublic !== true) {
     console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private path`);
     const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined });
