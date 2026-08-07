@@ -3513,11 +3513,13 @@ export async function claudeLookupTicker(
   companyName: string,
   domain?: string
 ): Promise<{ ticker: string; exchange: string } | null> {
-  const domainHint = domain ? ` (website: ${domain})` : '';
+  const identityAnchor = domain
+    ? `COMPANY: "${companyName}", operating at the domain ${domain}. This domain is the definitive identifier — company names are frequently shared by multiple unrelated businesses, some of which may be publicly traded under a similar-sounding ticker while the actual company at ${domain} is private or unlisted. Before returning any ticker, confirm it belongs to the specific company that operates at ${domain}, not merely a company with a similar or matching name. If the company you recall a ticker for does not clearly operate at ${domain}, do not return that ticker.\n\n`
+    : `COMPANY: "${companyName}" (no domain provided — if this name is ambiguous or shared by multiple companies, only return a ticker you are confident matches the most likely/prominent company, otherwise return an empty list).\n\n`;
   try {
     const text = await claudeCreateDirect(
       'You are a financial data expert. Return only the JSON object, no explanation.',
-      `What are the stock ticker symbols for "${companyName}"${domainHint}?
+      `${identityAnchor}What are the stock ticker symbols for "${companyName}"?
 
 Reply with ONLY a JSON object listing up to 3 tickers in priority order:
 {"tickers":[{"ticker":"SYMBOL","exchange":"EXCHANGE_NAME"},...]}"
@@ -3527,7 +3529,7 @@ Priority order:
 2. Home exchange listing (e.g. BVC, B3, BMV)
 3. Any other listing
 
-If you are not confident about any ticker, reply: {"tickers":[]}`,
+If you are not confident about any ticker — including if the company is privately held, or if you cannot confirm the ticker belongs to the company at the given domain rather than a similarly-named company — reply: {"tickers":[]}`,
       200,
       FAST_MODEL,
       undefined,

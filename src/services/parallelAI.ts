@@ -26,6 +26,23 @@ function currentYearRangeLabel(): string {
   return `${year - 1}-${year}`;
 }
 
+// A strong, leading identity-anchor paragraph for search prompts, built around
+// the company's domain when one is supplied. Prior versions of the Firmographic
+// search queries only appended a weak parenthetical like `"Croma" (croma.com)`
+// after the company name — easy for the model/search engine to treat as an
+// afterthought rather than a hard identity constraint. That let "Croma" (the
+// Tata-owned Indian electronics retailer) resolve to the unrelated "Croma
+// Security Solutions Group plc" (a UK firm) in the Yahoo/Google Finance path;
+// the same weak-hint pattern in the Gemini search prompts risked the identical
+// failure mode there too, since a plain "(domain)" suffix carries no explicit
+// instruction to verify identity or reject a same-named but different company.
+// Mirrors the identityAnchor pattern already used in researchCompanyOverview.
+function buildDomainIdentityAnchor(companyName: string, domain?: string): string {
+  return domain
+    ? `COMPANY TO RESEARCH: "${companyName}", operating at the domain ${domain}. This domain is the definitive identifier — company names are frequently shared by multiple unrelated businesses (e.g. a search for "Croma" could surface either the Tata-owned Indian electronics retailer at croma.com or an unrelated company that happens to share the name). Before reporting any figure or fact, confirm you are researching the specific company that operates at ${domain}. If search results surface a different company with the same or a similar name that does NOT operate at ${domain}, discard those results entirely and do not use them — even if that other company's data is more prominent or easier to find.\n\n`
+    : `COMPANY TO RESEARCH: "${companyName}" (no domain provided). Company names are frequently shared by multiple unrelated businesses — if this name is ambiguous, prioritize the most prominent/likely company matching any other context given, but do not silently blend data from a differently-named or clearly distinct company.\n\n`;
+}
+
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
 const TASK_TIMEOUT_MS = 90000;  // 90 seconds — Render Pro has more headroom
@@ -604,7 +621,8 @@ export interface GeminiRevenueResult {
   source?: string;             // publication / filing cited
 }
 
-function buildRevenuePrompt(companyName: string, domainHint: string, isPublic: boolean | undefined, simplified: boolean): string {
+function buildRevenuePrompt(companyName: string, domain: string | undefined, isPublic: boolean | undefined, simplified: boolean): string {
+  const identityAnchor = buildDomainIdentityAnchor(companyName, domain);
   const scopeHint = isPublic === false
     ? 'This is a privately-held company — look for news coverage, funding announcements, industry reports, or press releases that cite a revenue figure.'
     : 'This is a publicly-traded company — look for its latest annual revenue as reported in its financial statements (10-K / annual report), Yahoo Finance, or Google Finance.';
@@ -620,15 +638,17 @@ function buildRevenuePrompt(companyName: string, domainHint: string, isPublic: b
 
   if (simplified) {
     // Fallback prompt: fewer constraints, in case the structured version made the
-    // model over-cautious about qualifying as a "credible" search result.
-    return `${getSearchRecencyInstruction()}What was ${companyName}'s${domainHint} latest reported annual revenue? ${scopeHint}
+    // model over-cautious about qualifying as a "credible" search result. Keeps
+    // the identity anchor regardless — a looser prompt is exactly where a wrong-
+    // company match is most likely to slip through unchallenged.
+    return `${getSearchRecencyInstruction()}${identityAnchor}What was ${companyName}'s latest reported annual revenue? ${scopeHint}
 
 ${rawAmountRule}
 
 Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<human-readable figure in native currency>", "latestRevenueRaw": <plain unabbreviated number in native currency, per the rule above>, "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code of the company's NATIVE reporting currency>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure in native currency, or null>", "previousRevenueRaw": <plain unabbreviated number or null>, "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>"}`;
   }
 
-  return `${getSearchRecencyInstruction()}Using Google Search, find the latest annual revenue for "${companyName}"${domainHint}.
+  return `${getSearchRecencyInstruction()}${identityAnchor}Using Google Search, find the latest annual revenue for "${companyName}".
 
 ${scopeHint}
 
@@ -761,10 +781,8 @@ export async function geminiRevenueLookup(
   domain?: string,
   isPublic?: boolean
 ): Promise<GeminiRevenueResult | null> {
-  const domainHint = domain ? ` (${domain})` : '';
-
   for (const simplified of [false, true]) {
-    const prompt = buildRevenuePrompt(companyName, domainHint, isPublic, simplified);
+    const prompt = buildRevenuePrompt(companyName, domain, isPublic, simplified);
     try {
       const { text } = await runGeminiGroundedSearch(prompt);
       if (!text) {
@@ -859,14 +877,16 @@ export interface GeminiFirmographicResult {
   source?: string;
 }
 
-function buildFirmographicPrompt(companyName: string, domainHint: string, simplified: boolean): string {
+function buildFirmographicPrompt(companyName: string, domain: string | undefined, simplified: boolean): string {
+  const identityAnchor = buildDomainIdentityAnchor(companyName, domain);
+
   if (simplified) {
-    return `${getSearchRecencyInstruction()}Look up basic company profile facts for ${companyName}${domainHint}: founding year, headquarters location, employee count, official website, and LinkedIn company page URL.
+    return `${getSearchRecencyInstruction()}${identityAnchor}Look up basic company profile facts for ${companyName}: founding year, headquarters location, employee count, official website, and LinkedIn company page URL.
 
 Reply with ONLY this JSON object, nothing else: {"foundedYear": "<year or null>", "headquartersCity": "<city or null>", "headquartersState": "<state/province or null>", "headquartersCountry": "<country or null>", "employeeRange": "<range or null>", "website": "<url or null>", "linkedinUrl": "<url or null>", "source": "<where this came from>"}`;
   }
 
-  return `${getSearchRecencyInstruction()}Using Google Search, find firmographic profile information for "${companyName}"${domainHint}.
+  return `${getSearchRecencyInstruction()}${identityAnchor}Using Google Search, find firmographic profile information for "${companyName}".
 
 Look for:
 1. Founded year — the year the company was established
@@ -894,10 +914,8 @@ export async function geminiFirmographicLookup(
   companyName: string,
   domain?: string
 ): Promise<GeminiFirmographicResult | null> {
-  const domainHint = domain ? ` (${domain})` : '';
-
   for (const simplified of [false, true]) {
-    const prompt = buildFirmographicPrompt(companyName, domainHint, simplified);
+    const prompt = buildFirmographicPrompt(companyName, domain, simplified);
     try {
       const { text } = await runGeminiGroundedSearch(prompt);
       if (!text) {
