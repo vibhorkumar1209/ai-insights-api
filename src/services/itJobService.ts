@@ -42,6 +42,51 @@ function update(jobId: string, patch: Partial<ItJobResult>): ItJobResult {
   return updated;
 }
 
+// ── Row post-processing: guaranteed reverse-chronological order + dd-mm-yyyy ──
+// The synthesis prompt asks each region chunk to self-order newest-first and
+// to use YYYY-MM-DD internally, but three separate chunks (one per region)
+// can't enforce a single globally-correct order across their combined output,
+// and trusting the model to also hand-convert date formats risks silent
+// mistakes. Both are done deterministically here instead: parse each row's
+// Date cell, sort all rows (across all regions) by that ISO date descending
+// — plain string comparison sorts ISO dates correctly — then convert the
+// Date cell to dd-mm-yyyy for display. Rows with no verifiable date sort last,
+// in their original relative order.
+
+function splitTableRow(row: string): string[] {
+  return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+}
+
+function isIsoDate(cell: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(cell);
+}
+
+function isoToDDMMYYYY(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}-${m}-${y}`;
+}
+
+function sortAndFormatRows(rowBlocks: string[]): string {
+  const rows = rowBlocks
+    .join('\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('|'));
+
+  const parsed = rows.map((raw) => ({ raw, cells: splitTableRow(raw) }));
+  const dated = parsed.filter((r) => isIsoDate(r.cells[0]));
+  const undated = parsed.filter((r) => !isIsoDate(r.cells[0]));
+  dated.sort((a, b) => b.cells[0].localeCompare(a.cells[0])); // ISO strings sort correctly lexicographically
+
+  return [...dated, ...undated]
+    .map((r) => {
+      const cells = [...r.cells];
+      if (isIsoDate(cells[0])) cells[0] = isoToDDMMYYYY(cells[0]);
+      return `| ${cells.join(' | ')} |`;
+    })
+    .join('\n');
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 export function createItJobJob(input: ItJobInput): string {
@@ -115,13 +160,13 @@ export async function runItJobSearch(jobId: string, input: ItJobInput): Promise<
       }
       if (chunk.markdown) rowBlocks.push(chunk.markdown);
 
-      const contentSoFar = `${IT_JOBS_TABLE_HEADER}\n${rowBlocks.join('\n')}`;
+      const contentSoFar = `${IT_JOBS_TABLE_HEADER}\n${sortAndFormatRows(rowBlocks)}`;
       job = update(jobId, { content: contentSoFar, progress });
       emit(jobId, 'progress', job);
     }
 
     const content = rowBlocks.length > 0
-      ? `${IT_JOBS_TABLE_HEADER}\n${rowBlocks.join('\n')}`
+      ? `${IT_JOBS_TABLE_HEADER}\n${sortAndFormatRows(rowBlocks)}`
       : `${IT_JOBS_TABLE_HEADER}\n| — | — | No verifiable open IT/Software Engineering roles found within the last 6 months. | — | — | — | — |`;
 
     job = update(jobId, {

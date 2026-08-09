@@ -549,6 +549,28 @@ async function runResearchWithGoogleFallback(query: string, minUsefulLength = 20
     : `[Via Google Custom Search — Parallel.AI returned no result]\n${fallback}`;
 }
 
+/**
+ * Runs Parallel.AI AND Google Custom Search unconditionally and merges both,
+ * rather than only falling back to Google when Parallel.AI looks thin. Used
+ * specifically for the LinkedIn Jobs query: LinkedIn's own pages are
+ * JS-rendered and aggressively bot-gated, so a "was the result long enough"
+ * heuristic is a weak signal that Parallel.AI actually reached the real jobs
+ * listing rather than a login wall or an unrelated page that happened to
+ * return plenty of (wrong) text — always cross-checking against a second,
+ * independent engine gives LinkedIn coverage genuine redundancy instead of
+ * a single point of failure.
+ */
+async function runResearchDualEngine(query: string): Promise<string> {
+  const [primaryResult, fallbackResult] = await Promise.allSettled([
+    runResearch(query, 'base'),
+    runGoogleCustomSearch(query),
+  ]);
+  const primary = primaryResult.status === 'fulfilled' ? primaryResult.value : '';
+  const fallback = fallbackResult.status === 'fulfilled' ? fallbackResult.value : '';
+  if (primary && fallback) return `${primary}\n\n[Cross-checked via Google Custom Search]\n${fallback}`;
+  return primary || fallback;
+}
+
 // ── Gemini Google Search grounding — vendor ↔ target relationship ────────────
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -1622,19 +1644,15 @@ export async function researchItJobs(input: { companyName: string; companyDomain
     ? `"${companyName}"'s LinkedIn company jobs page at ${linkedinJobsUrl} specifically`
     : `"${companyName}"'s LinkedIn company jobs page (linkedin.com/company/.../jobs/ — identify the correct company handle first)`;
 
-  // Careers-portal and LinkedIn-jobs queries specifically use the Google
-  // Custom Search fallback (see runResearchWithGoogleFallback) since these
-  // are the two queries most likely to hit a JS-rendered/paginated page that
-  // a general Parallel.AI crawl can come up short on — the region and
-  // specialized-domain queries below are broader web research, less tied to
-  // one specific page, so they stay on plain Parallel.AI.
+  // Careers Portal uses the thin-result fallback (Google only kicks in if
+  // Parallel.AI's crawl looks too short to be real). LinkedIn Jobs always
+  // cross-checks both engines unconditionally (runResearchDualEngine) — its
+  // pages are JS-rendered and bot-gated, so a length-based "was this good
+  // enough" heuristic is a weak signal there; the caller's DUAL-SOURCE
+  // COVERAGE rule below depends on this block actually being reliable, not
+  // just present.
   const careersPortalQuery = `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s official careers portal (likely at or linked from ${companyDomain}). For each role found, extract: exact job title, posting or last-modified date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact URL for each listing.`;
   const linkedinJobsQuery = `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on ${linkedinTarget}. For each role found, extract: exact job title, posting or last-refreshed date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact LinkedIn job posting URL for each listing.`;
-
-  const fallbackBackedQueries: { label: string; query: string }[] = [
-    { label: 'Careers Portal — IT/Software Engineering Openings', query: careersPortalQuery },
-    { label: 'LinkedIn Jobs — IT/Software Engineering Openings', query: linkedinJobsQuery },
-  ];
 
   const parallelOnlyQueries: { label: string; query: string }[] = [
     {
@@ -1662,17 +1680,18 @@ export async function researchItJobs(input: { companyName: string; companyDomain
     },
   ];
 
-  const [fallbackSettled, parallelOnlySettled, geminiSettled] = await Promise.all([
-    Promise.allSettled(fallbackBackedQueries.map((q) => runResearchWithGoogleFallback(q.query))),
+  const [careersSettled, linkedinSettled, parallelOnlySettled, geminiSettled] = await Promise.all([
+    runResearchWithGoogleFallback(careersPortalQuery),
+    runResearchDualEngine(linkedinJobsQuery),
     Promise.allSettled(parallelOnlyQueries.map((q) => runResearch(q.query, 'base'))),
     Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
   ]);
 
   const blocks: string[] = [];
-  fallbackSettled.forEach((r, idx) => {
-    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI + Google fallback] ${fallbackBackedQueries[idx].label} ===\n${r.value}`);
-    else console.warn(`[parallelAI] IT Jobs query "${fallbackBackedQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
-  });
+  if (careersSettled) blocks.push(`=== [Careers Portal] Careers Portal — IT/Software Engineering Openings ===\n${careersSettled}`);
+  else console.warn('[parallelAI] IT Jobs Careers Portal query returned no data');
+  if (linkedinSettled) blocks.push(`=== [LinkedIn Jobs] LinkedIn Jobs — IT/Software Engineering Openings ===\n${linkedinSettled}`);
+  else console.warn('[parallelAI] IT Jobs LinkedIn Jobs query returned no data');
   parallelOnlySettled.forEach((r, idx) => {
     if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI] ${parallelOnlyQueries[idx].label} ===\n${r.value}`);
     else console.warn(`[parallelAI] IT Jobs Parallel.AI query "${parallelOnlyQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');

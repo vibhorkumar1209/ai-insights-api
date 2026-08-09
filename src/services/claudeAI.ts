@@ -4005,16 +4005,20 @@ function itJobsSystemPrompt(): string {
 
 CORE INPUTS & SOURCES: Ground every row in one of two primary sources — the company's Careers Portal, or its LinkedIn Company Handle's dedicated jobs segment (linkedin.com/company/.../jobs/). The "Source Platform" column must name whichever of these actually verified the listing, as a descriptive markdown hyperlink.
 
+DUAL-SOURCE COVERAGE (mandatory): The RESEARCH DATA below is organized into labeled blocks per source — look for blocks labeled "Careers Portal" and "LinkedIn Jobs" specifically. You MUST report roles from BOTH sources whenever both blocks contain verifiable listings — do not report only Careers Portal roles (or only LinkedIn roles) just because one source's research block is richer or easier to work with. If a role appears in both sources, cite whichever source's block you drew the specific detail from. If, after genuinely checking both blocks, one source's block truly contains zero verifiable IT/Software Engineering roles for this region, it is acceptable to report zero rows from that source — but only after confirming its research block was actually empty or irrelevant, not merely shorter than the other.
+
 TEMPORAL WINDOW: Only include roles actively open, modified, or posted within ${itJobsSixMonthWindowLabel()}. Never include a role older than 6 months from today.
+
+REVERSE CHRONOLOGICAL ORDER: Within your batch of rows, order them newest-first by Date (most recent date at the top, oldest at the bottom). Rows with no verifiable date go last.
 
 OCCUPATIONAL DEPTH: Target roles exclusively under the IT ecosystem — Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Do not include non-IT roles (sales, marketing, finance, general operations, etc.).
 
 Output ONLY markdown table rows (pipe-delimited, one role per row) — NO table header, NO preamble, NO closing summary, NO markdown code fences. The header is supplied separately by the caller.
 
 Each row must have exactly 7 columns in this exact order:
-1. Date — the exact date the role was published or refreshed, formatted strictly as YYYY-MM-DD.
+1. Date — the exact date the role was published or refreshed, formatted strictly as YYYY-MM-DD (this internal format is required for correct sorting; the caller converts it to dd-mm-yyyy for final display, so do not use any other format here). If no verifiable date exists, use exactly "Not evidenced" in this cell.
 2. Domain — the specific technical vertical or sub-specialization (e.g. "Generative AI Engineering", "Infrastructure DevOps", "Zero Trust Security").
-3. Job Description — a dense, high-utility, 1-sentence summary detailing the role's primary mission, system architecture focus, or product team alignment. Eliminate all corporate fluff.
+3. Job Description — MUST begin with the exact job title/designation as it appears in the listing, in bold (e.g. "**Senior Backend Engineer** — ..."), followed by a dense, high-utility, 1-sentence summary detailing the role's primary mission, system architecture focus, or product team alignment. Eliminate all corporate fluff after the designation.
 4. Tech Skills — a punchy, comma-separated list (within the cell, not a nested table) of the exact hard tech stack components, programming languages, automation frameworks, or specialized methodologies required, directly tied to the role's domain.
 5. Location (City, State) — the designated office city and its corresponding state, province, or territory.
 6. Country — the full, unabbreviated country name.
