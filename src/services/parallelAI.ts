@@ -539,10 +539,14 @@ async function runGoogleCustomSearch(query: string): Promise<string> {
  * queries specifically, where Parallel.AI's general-purpose crawl is most
  * likely to come up short on a JS-heavy or paginated jobs listing page.
  */
-async function runResearchWithGoogleFallback(query: string, minUsefulLength = 200): Promise<string> {
+// googleQuery defaults to `query` for existing callers, but should be passed
+// explicitly as a short keyword-style query where the caller's primary query
+// is a long natural-language instructional paragraph — see the note on
+// runResearchDualEngine below for why that matters for Google CSE specifically.
+async function runResearchWithGoogleFallback(query: string, minUsefulLength = 200, googleQuery: string = query): Promise<string> {
   const primary = await runResearch(query, 'base').catch(() => '');
   if (primary && primary.trim().length >= minUsefulLength) return primary;
-  const fallback = await runGoogleCustomSearch(query).catch(() => '');
+  const fallback = await runGoogleCustomSearch(googleQuery).catch(() => '');
   if (!fallback) return primary; // keep whatever thin result Parallel.AI gave, if any
   return primary
     ? `${primary}\n\n[Supplemented via Google Custom Search — Parallel.AI result was insufficient]\n${fallback}`
@@ -560,10 +564,17 @@ async function runResearchWithGoogleFallback(query: string, minUsefulLength = 20
  * independent engine gives LinkedIn coverage genuine redundancy instead of
  * a single point of failure.
  */
-async function runResearchDualEngine(query: string): Promise<string> {
+// googleQuery is a SEPARATE, short keyword-style query for the Google Custom
+// Search leg — Google CSE is a keyword-matching API, not an LLM, so reusing
+// Parallel.AI's long natural-language instructional paragraph here dilutes
+// the actual signal (company name, "linkedin", "jobs") into 100+ words of
+// task instructions and returns noise or nothing useful. Callers should pass
+// a plain search-engine-style query (e.g. `site:linkedin.com/jobs "Acme"
+// software engineer`) instead of reusing the Parallel.AI research prompt.
+async function runResearchDualEngine(query: string, googleQuery: string): Promise<string> {
   const [primaryResult, fallbackResult] = await Promise.allSettled([
     runResearch(query, 'base'),
-    runGoogleCustomSearch(query),
+    runGoogleCustomSearch(googleQuery),
   ]);
   const primary = primaryResult.status === 'fulfilled' ? primaryResult.value : '';
   const fallback = fallbackResult.status === 'fulfilled' ? fallbackResult.value : '';
@@ -1654,6 +1665,14 @@ export async function researchItJobs(input: { companyName: string; companyDomain
   const careersPortalQuery = `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s official careers portal (likely at or linked from ${companyDomain}). For each role found, extract: exact job title, posting or last-modified date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact URL for each listing.`;
   const linkedinJobsQuery = `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on ${linkedinTarget}. For each role found, extract: exact job title, posting or last-refreshed date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact LinkedIn job posting URL for each listing.`;
 
+  // Short, keyword-style queries for the Google Custom Search leg specifically
+  // — CSE does plain keyword matching, so it needs `site:` operators and a
+  // handful of terms, not a paragraph of research instructions.
+  const careersPortalGoogleQuery = `site:${companyDomain} careers OR jobs software engineer`;
+  const linkedinJobsGoogleQuery = linkedinHandle
+    ? `site:linkedin.com/jobs "${companyName}" software engineer`
+    : `site:linkedin.com/company "${companyName}" jobs software engineer`;
+
   const parallelOnlyQueries: { label: string; query: string }[] = [
     {
       label: 'AMER Region IT Roles',
@@ -1681,8 +1700,8 @@ export async function researchItJobs(input: { companyName: string; companyDomain
   ];
 
   const [careersSettled, linkedinSettled, parallelOnlySettled, geminiSettled] = await Promise.all([
-    runResearchWithGoogleFallback(careersPortalQuery),
-    runResearchDualEngine(linkedinJobsQuery),
+    runResearchWithGoogleFallback(careersPortalQuery, 200, careersPortalGoogleQuery),
+    runResearchDualEngine(linkedinJobsQuery, linkedinJobsGoogleQuery),
     Promise.allSettled(parallelOnlyQueries.map((q) => runResearch(q.query, 'base'))),
     Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
   ]);
