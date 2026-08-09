@@ -123,8 +123,11 @@ export async function runItJobSearch(jobId: string, input: ItJobInput): Promise<
     emit(jobId, 'progress', job);
 
     let research = '';
+    let debugInfo: Record<string, unknown> | undefined;
     try {
-      research = await researchItJobs(input);
+      const result = await researchItJobs(input);
+      research = result.text;
+      debugInfo = result.diagnostics;
     } catch (err) {
       console.warn('[itJob] Research step failed, proceeding without it:', err instanceof Error ? err.message : err);
     }
@@ -133,6 +136,7 @@ export async function runItJobSearch(jobId: string, input: ItJobInput): Promise<
       status: 'drafting',
       progress: 25,
       currentStep: 'Mapping roles across AMER, APAC, and EMEA…',
+      debugInfo,
     });
     emit(jobId, 'progress', job);
 

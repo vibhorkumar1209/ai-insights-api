@@ -571,6 +571,12 @@ async function runResearchWithGoogleFallback(query: string, minUsefulLength = 20
 // task instructions and returns noise or nothing useful. Callers should pass
 // a plain search-engine-style query (e.g. `site:linkedin.com/jobs "Acme"
 // software engineer`) instead of reusing the Parallel.AI research prompt.
+// TEMPORARY diagnostics hook (debugging live LinkedIn coverage gap) — captures
+// what each engine leg actually returned for the most recent dual-engine call,
+// so the caller can surface it in the job result without needing server log
+// access. Safe to remove once the LinkedIn coverage issue is resolved.
+export let lastDualEngineDiagnostics: Record<string, unknown> = {};
+
 async function runResearchDualEngine(query: string, googleQuery: string): Promise<string> {
   const [primaryResult, fallbackResult] = await Promise.allSettled([
     runResearch(query, 'base'),
@@ -578,6 +584,17 @@ async function runResearchDualEngine(query: string, googleQuery: string): Promis
   ]);
   const primary = primaryResult.status === 'fulfilled' ? primaryResult.value : '';
   const fallback = fallbackResult.status === 'fulfilled' ? fallbackResult.value : '';
+  lastDualEngineDiagnostics = {
+    googleQuery,
+    primaryStatus: primaryResult.status,
+    primaryLength: primary.length,
+    primaryPreview: primary.slice(0, 300),
+    primaryError: primaryResult.status === 'rejected' ? String(primaryResult.reason) : undefined,
+    fallbackStatus: fallbackResult.status,
+    fallbackLength: fallback.length,
+    fallbackPreview: fallback.slice(0, 500),
+    fallbackError: fallbackResult.status === 'rejected' ? String(fallbackResult.reason) : undefined,
+  };
   if (primary && fallback) return `${primary}\n\n[Cross-checked via Google Custom Search]\n${fallback}`;
   return primary || fallback;
 }
@@ -1639,7 +1656,7 @@ export async function researchOutsourcingReport(input: {
 // across AMER/APAC/EMEA. Same dual-engine (Gemini + Parallel.AI) architecture
 // as researchGccSalesPlay/researchOutsourcingReport — research runs once and
 // feeds all 3 region-specific synthesis chunks.
-export async function researchItJobs(input: { companyName: string; companyDomain: string; linkedinHandle?: string }): Promise<string> {
+export async function researchItJobs(input: { companyName: string; companyDomain: string; linkedinHandle?: string }): Promise<{ text: string; diagnostics: Record<string, unknown> }> {
   const { companyName, companyDomain, linkedinHandle } = input;
   const identityAnchor = `COMPANY: "${companyName}", operating at the domain ${companyDomain}. This domain is the definitive identifier — confirm every role you report belongs to this specific company's own careers portal or LinkedIn company page, not a similarly-named company.\n\n`;
 
@@ -1720,7 +1737,16 @@ export async function researchItJobs(input: { companyName: string; companyDomain
     else console.warn(`[parallelAI] IT Jobs Gemini query "${geminiQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
   });
 
-  return blocks.join('\n\n');
+  return {
+    text: blocks.join('\n\n'),
+    diagnostics: {
+      linkedinDualEngine: lastDualEngineDiagnostics,
+      linkedinBlockPresent: !!linkedinSettled,
+      linkedinBlockLength: linkedinSettled?.length || 0,
+      careersBlockPresent: !!careersSettled,
+      careersBlockLength: careersSettled?.length || 0,
+    },
+  };
 }
 
 // ── Sales Play Context Research ────────────────────────────────────────────────

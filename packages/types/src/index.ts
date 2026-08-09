@@ -1229,6 +1229,7 @@ export interface ItJobResult {
   error?: string;
   createdAt: string;
   completedAt?: string;
+  debugInfo?: Record<string, unknown>; // temporary — research-source diagnostics, safe to ignore/remove
 }
 
 // ── Spend Module ──────────────────────────────────────────────────────────────
