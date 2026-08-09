@@ -5,9 +5,24 @@ import { normalizeDomain } from '../services/yahooFinance';
 
 const router = Router();
 
+// Accepts either a bare handle ("stripe") or a full URL in any of the forms
+// LinkedIn/users commonly paste (linkedin.com/company/stripe,
+// https://www.linkedin.com/company/stripe/jobs/, etc.) and extracts just the
+// handle segment, so the research query can build a precise jobs-page URL
+// regardless of what shape the user typed.
+function normalizeLinkedinHandle(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const companyMatch = trimmed.match(/linkedin\.com\/company\/([^/?#]+)/i);
+  if (companyMatch) return companyMatch[1];
+  // Bare handle — strip any accidental leading/trailing slashes or "@"
+  return trimmed.replace(/^\/+|\/+$/g, '').replace(/^@/, '') || undefined;
+}
+
 // POST /api/it-jobs — create and start an IT/Software Engineering job-market search
 router.post('/', aiLimiter, (req: Request, res: Response) => {
-  const { companyName, companyDomain } = req.body;
+  const { companyName, companyDomain, linkedinHandle } = req.body;
 
   if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
     res.status(400).json({ error: 'companyName is required (min 2 characters)' });
@@ -24,7 +39,9 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     return;
   }
 
-  const input = { companyName: companyName.trim(), companyDomain: normalizedDomain };
+  const normalizedLinkedinHandle = typeof linkedinHandle === 'string' ? normalizeLinkedinHandle(linkedinHandle) : undefined;
+
+  const input = { companyName: companyName.trim(), companyDomain: normalizedDomain, linkedinHandle: normalizedLinkedinHandle };
   const jobId = createItJobJob(input);
   runItJobSearch(jobId, input).catch(() => {});
   res.status(202).json({ jobId });

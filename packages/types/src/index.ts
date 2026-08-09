@@ -1214,6 +1214,7 @@ export interface FirmographicResult {
 export interface ItJobInput {
   companyName: string;
   companyDomain: string;
+  linkedinHandle?: string; // e.g. "stripe" from linkedin.com/company/stripe — anchors the LinkedIn Jobs research query precisely
 }
 
 export interface ItJobResult {
@@ -1223,6 +1224,7 @@ export interface ItJobResult {
   currentStep?: string;
   companyName: string;
   companyDomain?: string;
+  linkedinHandle?: string;
   content?: string; // markdown table (rows only appended across region chunks, one shared header)
   error?: string;
   createdAt: string;

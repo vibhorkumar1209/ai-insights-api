@@ -52,6 +52,7 @@ export function createItJobJob(input: ItJobInput): string {
     progress: 0,
     companyName: input.companyName,
     companyDomain: input.companyDomain,
+    linkedinHandle: input.linkedinHandle,
     createdAt: new Date().toISOString(),
   });
   return jobId;

@@ -491,6 +491,64 @@ Cite every claim with a source. State "Not publicly disclosed" for any unavailab
   return runResearch(query, 'base');
 }
 
+// ── Google Custom Search JSON API — fallback when Parallel.AI comes up short ──
+// A distinct third search backend (separate from Gemini's built-in Google
+// Search grounding tool) for cases where Parallel.AI's crawl-based research
+// returns thin or empty results for a specific query — most likely for a
+// company's careers portal or LinkedIn Jobs page specifically, since those
+// are often JS-rendered/paginated in ways a general crawl can miss. Requires
+// GOOGLE_API_KEY + GOOGLE_CSE_ID (a Programmable Search Engine ID) to be set;
+// no-ops with a warning (same pattern as the Gemini key check below) if
+// either is absent, so this stays inert until credentials are configured
+// rather than breaking the module.
+const GOOGLE_CSE_TIMEOUT_MS = 20_000;
+
+async function runGoogleCustomSearch(query: string): Promise<string> {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const cseId = process.env.GOOGLE_CSE_ID;
+  if (!apiKey || !cseId) {
+    console.warn('GOOGLE_API_KEY/GOOGLE_CSE_ID not set — skipping Google Custom Search fallback');
+    return '';
+  }
+
+  try {
+    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(query)}&num=10`;
+    const res = await fetchWithTimeout(url, {}, GOOGLE_CSE_TIMEOUT_MS);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn(`Google Custom Search failed: ${res.status} — ${errText.slice(0, 200)}`);
+      return '';
+    }
+    const data = await res.json() as { items?: Array<{ title?: string; link?: string; snippet?: string }> };
+    const items = data.items || [];
+    if (items.length === 0) return '';
+    return items
+      .map((item) => `${item.title || 'Untitled'}\n${item.snippet || ''}\nURL: ${item.link || ''}`)
+      .join('\n\n');
+  } catch (err) {
+    console.warn('Google Custom Search error:', err instanceof Error ? err.message : err);
+    return '';
+  }
+}
+
+/**
+ * Runs a Parallel.AI query, and if the result looks too thin to be useful
+ * (empty, or under a length threshold — a rough proxy for "the crawl didn't
+ * find the actual page"), falls back to a Google Custom Search query for the
+ * same information. Used for IT Jobs' careers-portal and LinkedIn-jobs
+ * queries specifically, where Parallel.AI's general-purpose crawl is most
+ * likely to come up short on a JS-heavy or paginated jobs listing page.
+ */
+async function runResearchWithGoogleFallback(query: string, minUsefulLength = 200): Promise<string> {
+  const primary = await runResearch(query, 'base').catch(() => '');
+  if (primary && primary.trim().length >= minUsefulLength) return primary;
+  const fallback = await runGoogleCustomSearch(query).catch(() => '');
+  if (!fallback) return primary; // keep whatever thin result Parallel.AI gave, if any
+  return primary
+    ? `${primary}\n\n[Supplemented via Google Custom Search — Parallel.AI result was insufficient]\n${fallback}`
+    : `[Via Google Custom Search — Parallel.AI returned no result]\n${fallback}`;
+}
+
 // ── Gemini Google Search grounding — vendor ↔ target relationship ────────────
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -1548,19 +1606,37 @@ export async function researchOutsourcingReport(input: {
 // across AMER/APAC/EMEA. Same dual-engine (Gemini + Parallel.AI) architecture
 // as researchGccSalesPlay/researchOutsourcingReport — research runs once and
 // feeds all 3 region-specific synthesis chunks.
-export async function researchItJobs(input: { companyName: string; companyDomain: string }): Promise<string> {
-  const { companyName, companyDomain } = input;
+export async function researchItJobs(input: { companyName: string; companyDomain: string; linkedinHandle?: string }): Promise<string> {
+  const { companyName, companyDomain, linkedinHandle } = input;
   const identityAnchor = `COMPANY: "${companyName}", operating at the domain ${companyDomain}. This domain is the definitive identifier — confirm every role you report belongs to this specific company's own careers portal or LinkedIn company page, not a similarly-named company.\n\n`;
 
-  const parallelQueries: { label: string; query: string }[] = [
-    {
-      label: 'Careers Portal — IT/Software Engineering Openings',
-      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s official careers portal (likely at or linked from ${companyDomain}). For each role found, extract: exact job title, posting or last-modified date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact URL for each listing.`,
-    },
-    {
-      label: 'LinkedIn Jobs — IT/Software Engineering Openings',
-      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s LinkedIn company jobs page (linkedin.com/company/.../jobs/). For each role found, extract: exact job title, posting or last-refreshed date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact LinkedIn job posting URL for each listing.`,
-    },
+  // A supplied LinkedIn handle (e.g. "stripe" from linkedin.com/company/stripe)
+  // lets the LinkedIn Jobs query target the exact page directly instead of
+  // asking the research engine to first guess the handle from the company
+  // name — the same kind of precision win the domain anchor already gives
+  // the careers-portal query.
+  const linkedinJobsUrl = linkedinHandle
+    ? `https://www.linkedin.com/company/${linkedinHandle}/jobs/`
+    : undefined;
+  const linkedinTarget = linkedinJobsUrl
+    ? `"${companyName}"'s LinkedIn company jobs page at ${linkedinJobsUrl} specifically`
+    : `"${companyName}"'s LinkedIn company jobs page (linkedin.com/company/.../jobs/ — identify the correct company handle first)`;
+
+  // Careers-portal and LinkedIn-jobs queries specifically use the Google
+  // Custom Search fallback (see runResearchWithGoogleFallback) since these
+  // are the two queries most likely to hit a JS-rendered/paginated page that
+  // a general Parallel.AI crawl can come up short on — the region and
+  // specialized-domain queries below are broader web research, less tied to
+  // one specific page, so they stay on plain Parallel.AI.
+  const careersPortalQuery = `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s official careers portal (likely at or linked from ${companyDomain}). For each role found, extract: exact job title, posting or last-modified date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact URL for each listing.`;
+  const linkedinJobsQuery = `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on ${linkedinTarget}. For each role found, extract: exact job title, posting or last-refreshed date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact LinkedIn job posting URL for each listing.`;
+
+  const fallbackBackedQueries: { label: string; query: string }[] = [
+    { label: 'Careers Portal — IT/Software Engineering Openings', query: careersPortalQuery },
+    { label: 'LinkedIn Jobs — IT/Software Engineering Openings', query: linkedinJobsQuery },
+  ];
+
+  const parallelOnlyQueries: { label: string; query: string }[] = [
     {
       label: 'AMER Region IT Roles',
       query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT/Software Engineering job postings at "${companyName}" specifically located in the Americas (AMER) region — United States, Canada, Mexico, Brazil, or other American countries. Include exact posting dates, city/state, required tech skills, and the source URL (careers portal or LinkedIn jobs page) for each listing.`,
@@ -1586,15 +1662,20 @@ export async function researchItJobs(input: { companyName: string; companyDomain
     },
   ];
 
-  const [parallelSettled, geminiSettled] = await Promise.all([
-    Promise.allSettled(parallelQueries.map((q) => runResearch(q.query, 'base'))),
+  const [fallbackSettled, parallelOnlySettled, geminiSettled] = await Promise.all([
+    Promise.allSettled(fallbackBackedQueries.map((q) => runResearchWithGoogleFallback(q.query))),
+    Promise.allSettled(parallelOnlyQueries.map((q) => runResearch(q.query, 'base'))),
     Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
   ]);
 
   const blocks: string[] = [];
-  parallelSettled.forEach((r, idx) => {
-    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI] ${parallelQueries[idx].label} ===\n${r.value}`);
-    else console.warn(`[parallelAI] IT Jobs Parallel.AI query "${parallelQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  fallbackSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI + Google fallback] ${fallbackBackedQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] IT Jobs query "${fallbackBackedQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+  parallelOnlySettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI] ${parallelOnlyQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] IT Jobs Parallel.AI query "${parallelOnlyQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
   });
   geminiSettled.forEach((r, idx) => {
     if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Gemini] ${geminiQueries[idx].label} ===\n${r.value}`);
