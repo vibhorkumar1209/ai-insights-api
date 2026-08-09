@@ -1542,6 +1542,68 @@ export async function researchOutsourcingReport(input: {
   return blocks.join('\n\n');
 }
 
+// ── IT Jobs Research ──────────────────────────────────────────────────────────
+// OSINT-style crawl of a company's Careers Portal and LinkedIn Jobs page for
+// open IT/Software Engineering roles posted in the last 6 months, balanced
+// across AMER/APAC/EMEA. Same dual-engine (Gemini + Parallel.AI) architecture
+// as researchGccSalesPlay/researchOutsourcingReport — research runs once and
+// feeds all 3 region-specific synthesis chunks.
+export async function researchItJobs(input: { companyName: string; companyDomain: string }): Promise<string> {
+  const { companyName, companyDomain } = input;
+  const identityAnchor = `COMPANY: "${companyName}", operating at the domain ${companyDomain}. This domain is the definitive identifier — confirm every role you report belongs to this specific company's own careers portal or LinkedIn company page, not a similarly-named company.\n\n`;
+
+  const parallelQueries: { label: string; query: string }[] = [
+    {
+      label: 'Careers Portal — IT/Software Engineering Openings',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s official careers portal (likely at or linked from ${companyDomain}). For each role found, extract: exact job title, posting or last-modified date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact URL for each listing.`,
+    },
+    {
+      label: 'LinkedIn Jobs — IT/Software Engineering Openings',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT and Software Engineering job postings on "${companyName}"'s LinkedIn company jobs page (linkedin.com/company/.../jobs/). For each role found, extract: exact job title, posting or last-refreshed date, office location (city, state/province, country), required technical skills/tech stack, and a brief description of the role's focus. Prioritize roles in Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Include the exact LinkedIn job posting URL for each listing.`,
+    },
+    {
+      label: 'AMER Region IT Roles',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT/Software Engineering job postings at "${companyName}" specifically located in the Americas (AMER) region — United States, Canada, Mexico, Brazil, or other American countries. Include exact posting dates, city/state, required tech skills, and the source URL (careers portal or LinkedIn jobs page) for each listing.`,
+    },
+    {
+      label: 'APAC Region IT Roles',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT/Software Engineering job postings at "${companyName}" specifically located in the Asia-Pacific (APAC) region — India, Singapore, Japan, Australia, China, or other APAC countries. Include exact posting dates, city/state, required tech skills, and the source URL (careers portal or LinkedIn jobs page) for each listing.`,
+    },
+    {
+      label: 'EMEA Region IT Roles',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Research open IT/Software Engineering job postings at "${companyName}" specifically located in the Europe, Middle East, or Africa (EMEA) region — UK, Germany, France, UAE, South Africa, or other EMEA countries. Include exact posting dates, city/state, required tech skills, and the source URL (careers portal or LinkedIn jobs page) for each listing.`,
+    },
+  ];
+
+  const geminiQueries: { label: string; query: string }[] = [
+    {
+      label: 'Gemini — Cyber Security/DevSecOps and Data/AI/ML Roles',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Using Google Search, find open Cyber Security, DevSecOps, Data Analytics, and AI/ML engineering job postings at "${companyName}" (careers portal or LinkedIn jobs page), posted within the last 6 months. Include exact posting dates, office locations (city, state/province, country), required tech skills, and the exact source URL for each listing.`,
+    },
+    {
+      label: 'Gemini — Cloud Infrastructure and Technical Program Management Roles',
+      query: `${getSearchRecencyInstruction()}${identityAnchor}Using Google Search, find open Cloud & Infrastructure Architecture and Technical Program Management job postings at "${companyName}" (careers portal or LinkedIn jobs page), posted within the last 6 months. Include exact posting dates, office locations (city, state/province, country), required tech skills, and the exact source URL for each listing.`,
+    },
+  ];
+
+  const [parallelSettled, geminiSettled] = await Promise.all([
+    Promise.allSettled(parallelQueries.map((q) => runResearch(q.query, 'base'))),
+    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
+  ]);
+
+  const blocks: string[] = [];
+  parallelSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Parallel.AI] ${parallelQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] IT Jobs Parallel.AI query "${parallelQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+  geminiSettled.forEach((r, idx) => {
+    if (r.status === 'fulfilled' && r.value) blocks.push(`=== [Gemini] ${geminiQueries[idx].label} ===\n${r.value}`);
+    else console.warn(`[parallelAI] IT Jobs Gemini query "${geminiQueries[idx].label}" failed:`, r.status === 'rejected' ? r.reason : 'No data');
+  });
+
+  return blocks.join('\n\n');
+}
+
 // ── Sales Play Context Research ────────────────────────────────────────────────
 // Comprehensive competitive intelligence gathering for a sales play.
 // Covers: target account landscape, competitor weaknesses, your company's strengths.

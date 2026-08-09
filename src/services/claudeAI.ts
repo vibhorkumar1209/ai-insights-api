@@ -3985,43 +3985,82 @@ export async function synthesizeGccSalesPlayChunk(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// IT JOBS — precise data extraction (job posting -> structured JSON)
+// IT JOBS — OSINT-style global IT/Software Engineering job-market mapper
 // ══════════════════════════════════════════════════════════════════════════════
 
-import { ItJobInput, ItJobExtraction } from '@ai-insights/types';
+import { ItJobInput } from '@ai-insights/types';
 
-export async function extractItJobDetails(input: ItJobInput): Promise<ItJobExtraction> {
-  const systemPrompt = 'You are a precise data extraction tool. Output ONLY a single valid JSON object, no markdown code fences, no explanation, no preamble or closing text.';
+const IT_JOBS_TABLE_HEADER = '| Date | Domain | Job Description | Tech Skills | Location (City, State) | Country | Source Platform |\n|---|---|---|---|---|---|---|';
 
-  const userPrompt = `Act as a precise data extraction tool. Read the provided job title and job description carefully. Extract and output the information strictly in valid JSON format with the following keys:
+function itJobsSixMonthWindowLabel(): string {
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setMonth(cutoff.getMonth() - 6);
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return `${fmt(cutoff)} through ${fmt(now)} (today)`;
+}
 
-- job_title: The exact job title provided or extracted from the text.
-- summary: A concise 2-3 sentence overview of the role and main responsibilities.
-- date: The date the job was posted or mentioned (return null if not found).
-- required_skill: An array of key technical and soft skills needed for the job.
+function itJobsSystemPrompt(): string {
+  return `You are an elite OSINT (Open Source Intelligence) data analyst and technical talent sourcer. Your objective is to conduct an exhaustive, multi-layered search to map global Information Technology (IT) and Software Engineering job openings at the input company posted within the last 6 months.
 
-Input Data:
-Job Title: ${input.jobTitle}
-Job Description: ${input.jobDescription}
+CORE INPUTS & SOURCES: Ground every row in one of two primary sources — the company's Careers Portal, or its LinkedIn Company Handle's dedicated jobs segment (linkedin.com/company/.../jobs/). The "Source Platform" column must name whichever of these actually verified the listing, as a descriptive markdown hyperlink.
 
-Return ONLY the JSON object: {"job_title": "...", "summary": "...", "date": "..." or null, "required_skill": ["...", "..."]}`;
+TEMPORAL WINDOW: Only include roles actively open, modified, or posted within ${itJobsSixMonthWindowLabel()}. Never include a role older than 6 months from today.
 
-  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 1024, FAST_MODEL, 60000, 0);
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+OCCUPATIONAL DEPTH: Target roles exclusively under the IT ecosystem — Core Software Engineering, Cloud & Infrastructure Architecture, Cyber Security/DevSecOps, Data Analytics/AI/ML, and Technical Program Management. Do not include non-IT roles (sales, marketing, finance, general operations, etc.).
 
-  let parsed: Partial<ItJobExtraction>;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('IT Jobs extraction returned no parseable JSON');
-    parsed = JSON.parse(jsonMatch[0]);
-  }
+Output ONLY markdown table rows (pipe-delimited, one role per row) — NO table header, NO preamble, NO closing summary, NO markdown code fences. The header is supplied separately by the caller.
 
-  return {
-    job_title: typeof parsed.job_title === 'string' && parsed.job_title.trim() ? parsed.job_title.trim() : input.jobTitle,
-    summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
-    date: typeof parsed.date === 'string' && parsed.date.trim() ? parsed.date.trim() : null,
-    required_skill: Array.isArray(parsed.required_skill) ? parsed.required_skill.filter((s): s is string => typeof s === 'string' && s.trim().length > 0) : [],
-  };
+Each row must have exactly 7 columns in this exact order:
+1. Date — the exact date the role was published or refreshed, formatted strictly as YYYY-MM-DD.
+2. Domain — the specific technical vertical or sub-specialization (e.g. "Generative AI Engineering", "Infrastructure DevOps", "Zero Trust Security").
+3. Job Description — a dense, high-utility, 1-sentence summary detailing the role's primary mission, system architecture focus, or product team alignment. Eliminate all corporate fluff.
+4. Tech Skills — a punchy, comma-separated list (within the cell, not a nested table) of the exact hard tech stack components, programming languages, automation frameworks, or specialized methodologies required, directly tied to the role's domain.
+5. Location (City, State) — the designated office city and its corresponding state, province, or territory.
+6. Country — the full, unabbreviated country name.
+7. Source Platform — an active markdown hyperlink with descriptive anchor text (e.g. "[Microsoft LinkedIn Hub](url)" or "[Microsoft Careers Portal](url)") demonstrating exactly which source verified the listing.
+
+DATA QUALITY CHECK (apply before outputting each row): no entry may be older than 6 months; every one of the 7 cells must be populated (no blank cells); every tech skill listed must be directly tied to that row's specific domain; never truncate text or use placeholders like "etc.".
+
+${GCC_RESEARCH_ONLY_RULE.replace('This entire report', 'This entire table').replace(/table cell, a named executive, a facility detail\)/, 'row, a specific field)')}
+
+${WRITING_DIRECTIVE}`;
+}
+
+interface ItJobsRegionDef {
+  label: string;
+  region: 'AMER (Americas)' | 'APAC (Asia-Pacific)' | 'EMEA (Europe, Middle East, Africa)';
+}
+
+const IT_JOBS_REGIONS: ItJobsRegionDef[] = [
+  { label: 'AMER roles', region: 'AMER (Americas)' },
+  { label: 'APAC roles', region: 'APAC (Asia-Pacific)' },
+  { label: 'EMEA roles', region: 'EMEA (Europe, Middle East, Africa)' },
+];
+
+export const IT_JOBS_CHUNK_COUNT = IT_JOBS_REGIONS.length;
+export { IT_JOBS_TABLE_HEADER };
+
+export async function synthesizeItJobsChunk(
+  input: ItJobInput,
+  chunkIndex: number,
+  research: string
+): Promise<{ label: string; markdown: string }> {
+  const regionDef = IT_JOBS_REGIONS[chunkIndex];
+  if (!regionDef) throw new Error(`Invalid IT Jobs chunk index: ${chunkIndex}`);
+
+  const researchBlock = research
+    ? `\n\nRESEARCH DATA (grounded web search results from Gemini and Parallel.AI — this is your ONLY permitted source of role listings; see the RESEARCH-GROUNDED ONLY rule):\n${research.length > 16000 ? research.slice(0, 16000) : research}`
+    : '\n\nRESEARCH DATA: none available for this request — output no rows rather than fabricating listings.';
+
+  const userPrompt = `**Target Company:** ${input.companyName}
+**Company Domain:** ${input.companyDomain}
+**Region for this batch:** ${regionDef.region}${researchBlock}
+
+From the research data above, extract every genuinely verifiable open IT/Software Engineering role at ${input.companyName} located in the ${regionDef.region} region only (roles in other regions belong to a different batch — omit them here even if present in the research data). Output only the markdown table rows (no header) as specified in the system prompt. If the research data contains no verifiable ${regionDef.region} roles within the 6-month window, output nothing rather than fabricating rows.`;
+
+  const raw = await claudeCreateDirect(itJobsSystemPrompt(), userPrompt, 4096, SYNTHESIS_MODEL, 120000, 0.1);
+  const markdown = raw.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  return { label: regionDef.label, markdown };
 }

@@ -1,25 +1,32 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
-import { createItJobJob, getItJobJob, runItJobExtraction, subscribeToJob, unsubscribeFromJob } from '../services/itJobService';
+import { createItJobJob, getItJobJob, runItJobSearch, subscribeToJob, unsubscribeFromJob } from '../services/itJobService';
+import { normalizeDomain } from '../services/yahooFinance';
 
 const router = Router();
 
-// POST /api/it-jobs — create and start an extraction job
+// POST /api/it-jobs — create and start an IT/Software Engineering job-market search
 router.post('/', aiLimiter, (req: Request, res: Response) => {
-  const { jobTitle, jobDescription } = req.body;
+  const { companyName, companyDomain } = req.body;
 
-  if (!jobTitle || typeof jobTitle !== 'string' || !jobTitle.trim()) {
-    res.status(400).json({ error: 'jobTitle is required' });
+  if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
+    res.status(400).json({ error: 'companyName is required (min 2 characters)' });
     return;
   }
-  if (!jobDescription || typeof jobDescription !== 'string' || !jobDescription.trim()) {
-    res.status(400).json({ error: 'jobDescription is required' });
+  if (!companyDomain || typeof companyDomain !== 'string' || !companyDomain.trim()) {
+    res.status(400).json({ error: 'companyDomain is required — used to anchor search results to the correct company' });
     return;
   }
 
-  const input = { jobTitle: jobTitle.trim(), jobDescription: jobDescription.trim() };
+  const normalizedDomain = normalizeDomain(companyDomain);
+  if (!normalizedDomain) {
+    res.status(400).json({ error: 'companyDomain is not a valid domain' });
+    return;
+  }
+
+  const input = { companyName: companyName.trim(), companyDomain: normalizedDomain };
   const jobId = createItJobJob(input);
-  runItJobExtraction(jobId, input).catch(() => {});
+  runItJobSearch(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });
 

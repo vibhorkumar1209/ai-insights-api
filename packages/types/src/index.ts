@@ -1206,30 +1206,24 @@ export interface FirmographicResult {
 }
 
 // ── IT Jobs Module ────────────────────────────────────────────────────────────
-// Precise data-extraction tool: given a raw job posting (title + description),
-// extract a strict, structured summary via Claude — no research/grounding
-// needed since the input IS the source data, not something to look up.
+// OSINT-style job-market mapper: given a company, crawls its careers portal and
+// LinkedIn Jobs page via live research (Gemini + Parallel.AI) to surface open
+// IT/Software Engineering roles posted or refreshed in the last 6 months,
+// balanced across AMER/APAC/EMEA, synthesized into a single markdown table.
 
 export interface ItJobInput {
-  jobTitle: string;
-  jobDescription: string;
-}
-
-export interface ItJobExtraction {
-  job_title: string;
-  summary: string;
-  date: string | null;
-  required_skill: string[];
+  companyName: string;
+  companyDomain: string;
 }
 
 export interface ItJobResult {
   jobId: string;
-  status: 'pending' | 'processing' | 'complete' | 'error';
+  status: 'pending' | 'researching' | 'drafting' | 'complete' | 'error';
   progress: number;
   currentStep?: string;
-  jobTitleInput: string;
-  jobDescriptionInput: string;
-  extraction?: ItJobExtraction;
+  companyName: string;
+  companyDomain?: string;
+  content?: string; // markdown table (rows only appended across region chunks, one shared header)
   error?: string;
   createdAt: string;
   completedAt?: string;
