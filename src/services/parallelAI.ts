@@ -2,6 +2,7 @@ import fetch from 'node-fetch';
 import { Readable } from 'stream';
 import { Competitor } from '@ai-insights/types';
 import { formatRevenueUSD } from './yahooFinance';
+import { logGeminiUsage } from './usageLogger';
 
 // Returns a natural-language recency instruction to prepend to every research
 // query/prompt sent to a search or research engine (Parallel.AI, Gemini grounded
@@ -610,7 +611,7 @@ interface GeminiGroundingSource {
   uri: string;
 }
 
-async function runGeminiGroundedSearch(prompt: string): Promise<{ text: string; sources: GeminiGroundingSource[] }> {
+async function runGeminiGroundedSearch(prompt: string, source: string): Promise<{ text: string; sources: GeminiGroundingSource[] }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn('GEMINI_API_KEY not set — skipping Gemini grounded search');
@@ -661,12 +662,14 @@ async function runGeminiGroundedSearch(prompt: string): Promise<{ text: string; 
     .filter((w): w is Record<string, unknown> => !!w?.uri)
     .map((w) => ({ title: String(w.title || w.uri), uri: String(w.uri) }));
 
+  logGeminiUsage({ source, model: GEMINI_SEARCH_MODEL, usageMetadata: data?.usageMetadata, groundingUsed: true });
+
   return { text, sources };
 }
 
 // ── Gemini url_context — fetch a company's own webpage directly ──────────────
 
-async function fetchCompanyWebpage(domain: string): Promise<string> {
+async function fetchCompanyWebpage(domain: string, source: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn('GEMINI_API_KEY not set — skipping company webpage fetch');
@@ -708,6 +711,7 @@ async function fetchCompanyWebpage(domain: string): Promise<string> {
     const candidate = data?.candidates?.[0];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const text = ((candidate?.content?.parts || []) as any[]).map((p) => p.text || '').join('').trim();
+    logGeminiUsage({ source, model: GEMINI_SEARCH_MODEL, usageMetadata: data?.usageMetadata, groundingUsed: false });
     return text;
   } catch (err) {
     console.warn('Gemini url_context fetch threw:', err);
@@ -892,7 +896,7 @@ export async function geminiRevenueLookup(
   for (const simplified of [false, true]) {
     const prompt = buildRevenuePrompt(companyName, domain, isPublic, simplified);
     try {
-      const { text } = await runGeminiGroundedSearch(prompt);
+      const { text } = await runGeminiGroundedSearch(prompt, 'geminiRevenueLookup');
       if (!text) {
         console.warn(`[gemini] Revenue lookup for ${companyName} (simplified=${simplified}) returned empty text`);
         continue;
@@ -1025,7 +1029,7 @@ export async function geminiFirmographicLookup(
   for (const simplified of [false, true]) {
     const prompt = buildFirmographicPrompt(companyName, domain, simplified);
     try {
-      const { text } = await runGeminiGroundedSearch(prompt);
+      const { text } = await runGeminiGroundedSearch(prompt, 'geminiFirmographicLookup');
       if (!text) {
         console.warn(`[gemini] Firmographic lookup for ${companyName} (simplified=${simplified}) returned empty text`);
         continue;
@@ -1121,7 +1125,7 @@ export async function geminiSpendLookup(
   const prompt = buildSpendPrompt(companyName, domainHint, geoHint, industry, revenueUsdMillion);
 
   try {
-    const { text } = await runGeminiGroundedSearch(prompt);
+    const { text } = await runGeminiGroundedSearch(prompt, 'geminiSpendLookup');
     if (!text) {
       console.warn(`[gemini] Spend lookup for ${companyName} returned empty text`);
       return null;
@@ -1188,7 +1192,7 @@ Look for case studies, partnership announcements, press releases, customer refer
 Summarize what you find in 3-5 sentences, citing specifics (dates, project names, sources) where available. If you find no evidence of an existing relationship, say so explicitly — do not guess or fabricate.`;
 
   try {
-    const { text, sources } = await runGeminiGroundedSearch(prompt);
+    const { text, sources } = await runGeminiGroundedSearch(prompt, 'researchVendorRelationship');
     if (!text) {
       // Fallback to Parallel.AI if Gemini unavailable or returned nothing
       const fallbackQuery = `${getSearchRecencyInstruction()}"${vendorName}" "${targetCompany}" existing deployment implementation partnership case study${sectorLine}`.trim();
@@ -1489,7 +1493,7 @@ Do NOT include marketing taglines, mission statements, or "purpose" slogans (e.g
 
   const [parallelResult, webpageResult] = await Promise.allSettled([
     runResearch(query, 'base'),
-    domain ? fetchCompanyWebpage(domain) : Promise.resolve(''),
+    domain ? fetchCompanyWebpage(domain, 'researchCompanyOverview') : Promise.resolve(''),
   ]);
 
   const parallelText = parallelResult.status === 'fulfilled' ? parallelResult.value : '';
@@ -1567,7 +1571,7 @@ export async function researchGccSalesPlay(input: {
 
   const [parallelSettled, geminiSettled] = await Promise.all([
     Promise.allSettled(parallelQueries.map((q) => runResearch(q.query, 'base'))),
-    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
+    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query, q.label).then((r) => r.text))),
   ]);
 
   const blocks: string[] = [];
@@ -1634,7 +1638,7 @@ export async function researchOutsourcingReport(input: {
 
   const [parallelSettled, geminiSettled] = await Promise.all([
     Promise.allSettled(parallelQueries.map((q) => runResearch(q.query, 'base'))),
-    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
+    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query, q.label).then((r) => r.text))),
   ]);
 
   const blocks: string[] = [];
@@ -1720,7 +1724,7 @@ export async function researchItJobs(input: { companyName: string; companyDomain
     runResearchWithGoogleFallback(careersPortalQuery, 200, careersPortalGoogleQuery),
     runResearchDualEngine(linkedinJobsQuery, linkedinJobsGoogleQuery),
     Promise.allSettled(parallelOnlyQueries.map((q) => runResearch(q.query, 'base'))),
-    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query).then((r) => r.text))),
+    Promise.allSettled(geminiQueries.map((q) => runGeminiGroundedSearch(q.query, q.label).then((r) => r.text))),
   ]);
 
   const blocks: string[] = [];
