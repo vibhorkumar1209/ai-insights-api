@@ -111,6 +111,17 @@ router.get('/:jobId/stream', (req: Request, res: Response) => {
   // Send current state immediately
   res.write(`event: progress\ndata: ${JSON.stringify(job)}\n\n`);
 
+  // Long idle stretches between progress updates (e.g. sequential company
+  // research) leave the connection silent for minutes at a time — proxies
+  // and load balancers kill SSE connections after ~1-2 min of no bytes,
+  // which the browser surfaces as a native 'error' event even though the
+  // job is still running server-side. A periodic comment keeps it alive,
+  // mirroring the pattern already used in itJob.ts/financialAnalysis.ts/
+  // keyBuyers.ts/salesPlay.ts.
+  const keepAlive = setInterval(() => {
+    try { res.write(': keepalive\n\n'); } catch { clearInterval(keepAlive); }
+  }, 20_000);
+
   const cb = (event: string, data: unknown) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     if (event === 'result' || event === 'error') {
@@ -122,6 +133,7 @@ router.get('/:jobId/stream', (req: Request, res: Response) => {
   subscribeToJob(req.params.jobId, cb);
 
   const cleanup = () => {
+    clearInterval(keepAlive);
     unsubscribeFromJob(req.params.jobId, cb);
   };
 
