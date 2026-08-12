@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import { Readable } from 'stream';
 import { Competitor } from '@ai-insights/types';
 import { formatRevenueUSD } from './yahooFinance';
-import { logGeminiUsage } from './usageLogger';
+import { logGeminiUsage, logParallelUsage, getCallerLabel } from './usageLogger';
 
 // Returns a natural-language recency instruction to prepend to every research
 // query/prompt sent to a search or research engine (Parallel.AI, Gemini grounded
@@ -199,12 +199,19 @@ export async function runResearchQuery(query: string): Promise<string> {
 }
 
 async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'): Promise<string> {
+  // Captured synchronously (before any await) — see runGeminiGroundedSearch's
+  // use of the same pattern and usageLogger.ts's getCallerLabel doc comment.
+  const source = getCallerLabel();
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const startedAt = Date.now();
     try {
       const runId = await createTask(query, processor);
-      return await pollTask(runId);
+      const result = await pollTask(runId);
+      logParallelUsage({ source, processor, success: true, durationMs: Date.now() - startedAt });
+      return result;
     } catch (err) {
+      logParallelUsage({ source, processor, success: false, durationMs: Date.now() - startedAt });
       lastError = err instanceof Error ? err : new Error(String(err));
       const isTimeout = lastError.message.includes('timed out');
       if (isTimeout && attempt < MAX_RETRIES) {
@@ -505,6 +512,7 @@ Cite every claim with a source. State "Not publicly disclosed" for any unavailab
 const GOOGLE_CSE_TIMEOUT_MS = 20_000;
 
 async function runGoogleCustomSearch(query: string): Promise<string> {
+  const source = getCallerLabel();
   const apiKey = process.env.GOOGLE_API_KEY;
   const cseId = process.env.GOOGLE_CSE_ID;
   if (!apiKey || !cseId) {
@@ -512,22 +520,29 @@ async function runGoogleCustomSearch(query: string): Promise<string> {
     return '';
   }
 
+  const startedAt = Date.now();
   try {
     const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(query)}&num=10`;
     const res = await fetchWithTimeout(url, {}, GOOGLE_CSE_TIMEOUT_MS);
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       console.warn(`Google Custom Search failed: ${res.status} — ${errText.slice(0, 200)}`);
+      logParallelUsage({ source: `googleCSE:${source}`, processor: 'google-cse', success: false, durationMs: Date.now() - startedAt });
       return '';
     }
     const data = await res.json() as { items?: Array<{ title?: string; link?: string; snippet?: string }> };
     const items = data.items || [];
+    // Google bills the query whether or not it returned results — count it as
+    // billed here (success: true) and let the zero-items case be visible via
+    // the empty return value to callers, not conflated with an API failure.
+    logParallelUsage({ source: `googleCSE:${source}`, processor: 'google-cse', success: true, durationMs: Date.now() - startedAt });
     if (items.length === 0) return '';
     return items
       .map((item) => `${item.title || 'Untitled'}\n${item.snippet || ''}\nURL: ${item.link || ''}`)
       .join('\n\n');
   } catch (err) {
     console.warn('Google Custom Search error:', err instanceof Error ? err.message : err);
+    logParallelUsage({ source: `googleCSE:${source}`, processor: 'google-cse', success: false, durationMs: Date.now() - startedAt });
     return '';
   }
 }

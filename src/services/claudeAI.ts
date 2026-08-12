@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { logClaudeUsage, getCallerLabel } from './usageLogger';
 import {
   BenchmarkInput, BenchmarkDimension, GapAnalysisRow,
   ThemeInput, ThemeRow,
@@ -108,8 +109,17 @@ class AnthropicApiError extends Error {
 }
 
 export async function claudeCreateDirect(
-  system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000, temperature?: number
+  system: string, user: string, maxTokens: number, model: string, timeoutMs = 120000, temperature?: number,
+  sourceOverride?: string
 ): Promise<string> {
+  // Captured synchronously (before any await) so the stack still reflects
+  // the real caller — see usageLogger.ts's getCallerLabel doc comment for
+  // why this replaces threading an explicit `source` param through 30+
+  // call sites. `sourceOverride` is for indirect wrappers (e.g.
+  // runClaudeStream) where auto-detection would otherwise just label
+  // every call site with the wrapper's own name.
+  const source = sourceOverride || getCallerLabel();
+
   async function runOnce(): Promise<string> {
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
@@ -133,7 +143,9 @@ export async function claudeCreateDirect(
         const retryAfterMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : undefined;
         throw new AnthropicApiError(res.status, `Anthropic API ${res.status}: ${errText.slice(0, 300)}`, retryAfterMs);
       }
-      const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await res.json() as { content: Array<{ type: string; text?: string }>; usage?: any };
+      logClaudeUsage({ source, model, usage: data.usage });
       return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text || '').join('');
     } finally {
       clearTimeout(timeoutHandle);
@@ -3169,7 +3181,9 @@ Output JSON:
         const errText = await res.text().catch(() => '');
         throw new Error(`Anthropic API ${res.status}: ${errText.slice(0, 300)}`);
       }
-      const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await res.json() as { content: Array<{ type: string; text?: string }>; usage?: any };
+      logClaudeUsage({ source: 'synthesizeSalesPlay2', model: SYNTHESIS_MODEL, usage: data.usage });
       const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text || '').join('');
       onChunk?.(text);
       return text;
@@ -3228,8 +3242,9 @@ async function runClaudeStream(
   system: string,
   userContent: string,
   timeoutMs: number,
+  source?: string,
 ): Promise<string> {
-  return claudeCreateDirect(system, userContent, maxTokens, model, timeoutMs).catch(() => '');
+  return claudeCreateDirect(system, userContent, maxTokens, model, timeoutMs, undefined, source || 'runClaudeStream').catch(() => '');
 }
 
 // ── Helper: parse JSON robustly (handles truncation) ─────────────────────────
@@ -3300,7 +3315,7 @@ Return JSON:
   "researchMethodology": "brief string describing sources used"
 }`;
 
-  const raw1 = await runClaudeStream(SYNTHESIS_MODEL, 2500, systemPrompt, call1Prompt, 120_000);
+  const raw1 = await runClaudeStream(SYNTHESIS_MODEL, 2500, systemPrompt, call1Prompt, 120_000, 'consultingIntelligence.call1');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let part1: any = {};
   try { part1 = parseJsonRobust(raw1); } catch (e) {
@@ -3325,7 +3340,7 @@ Return JSON with exactly these fields:
 }
 Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Include 5-6 matrix rows.`;
 
-  const raw2 = await runClaudeStream(FAST_MODEL, 3000, systemPrompt, call2Prompt, 90_000);
+  const raw2 = await runClaudeStream(FAST_MODEL, 3000, systemPrompt, call2Prompt, 90_000, 'consultingIntelligence.call2');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let part2: any = {};
   try { part2 = parseJsonRobust(raw2); } catch (e) {
@@ -3357,8 +3372,8 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
 
 // ── VUCA × 4W1H Analysis ──────────────────────────────────────────────────────
 
-async function claudeCreate(system: string, user: string, maxTokens: number, timeoutMs: number, model = FAST_MODEL): Promise<string> {
-  return claudeCreateDirect(system, user, maxTokens, model, timeoutMs);
+async function claudeCreate(system: string, user: string, maxTokens: number, timeoutMs: number, model = FAST_MODEL, source?: string): Promise<string> {
+  return claudeCreateDirect(system, user, maxTokens, model, timeoutMs, undefined, source);
 }
 
 // ── Retry wrapper: attempt up to 2 times if response is too short ─────────────
@@ -3366,7 +3381,7 @@ async function vucaCall(
   system: string, user: string, maxTokens: number, timeoutMs: number, label: string
 ): Promise<string> {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const raw = await claudeCreate(system, user, maxTokens, timeoutMs, SYNTHESIS_MODEL)
+    const raw = await claudeCreate(system, user, maxTokens, timeoutMs, SYNTHESIS_MODEL, `vuca.${label}`)
       .catch((e: Error) => { console.error(`[vuca] ${label} attempt ${attempt} error: ${e.message}`); return ''; });
     console.log(`[vuca] ${label} attempt ${attempt} len=${raw.length} preview="${raw.slice(0, 80)}"`);
     if (raw.length > 80) return raw;
