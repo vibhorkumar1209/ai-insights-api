@@ -100,7 +100,20 @@ async function enrichAndComplete(
 
 export async function runFirmographicJob(jobId: string, input: FirmographicInput): Promise<void> {
   try {
-    // Step 1: Ticker detection — skip yahoo-finance2 (rate-limited), go straight to Claude
+    // Step 1: Ticker detection — Yahoo (detectTicker) first, Claude as fallback.
+    // Previously this was Claude-first "to skip yahoo-finance2 (rate-limited)",
+    // but that made this module diverge from financialAnalysisService.ts (which
+    // has always tried Yahoo first) in a way that silently broke it: Claude's
+    // ticker lookup is an unverified LLM guess with no confirmation step, and
+    // for "Tata Consumer Product" it hallucinated "TATACONSUMER.NS" (does not
+    // exist — the real ticker is "TATACONSUM.NS"), so every downstream fetch
+    // failed and the module reported no revenue at all, while Financial
+    // Analysis — trying Yahoo first — resolved the correct ticker immediately
+    // and returned full financials for the same company. Matching the order
+    // used there fixes this class of failure and also makes the two modules
+    // resolve to the same ticker (and therefore the same revenue figures,
+    // since both call the same fetchYahooQuoteSummaryFinancials/
+    // fetchAnnualFinancials functions once a ticker is known).
     let job = update(jobId, {
       status: 'detecting',
       progress: 20,
@@ -108,12 +121,13 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
     });
     emit(jobId, 'progress', job);
 
-    // Claude lookup doesn't hit Yahoo's crumb endpoint
-    let tickerResult = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
+    let tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
 
-    // Only try detectTicker (yahoo-finance2) as last resort if Claude couldn't find it
+    // Claude as fallback — doesn't hit Yahoo's crumb endpoint, so it's a
+    // useful last resort if Yahoo's search genuinely has nothing, but its
+    // guess is unverified and should not be tried first.
     if (!tickerResult) {
-      tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
+      tickerResult = await claudeLookupTicker(input.companyName, input.companyDomain).catch(() => null);
     }
 
     const ticker   = tickerResult?.ticker;
