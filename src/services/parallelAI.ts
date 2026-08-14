@@ -885,6 +885,20 @@ function isImplausibleNativeAmount(raw: number, currency: string): boolean {
   return Math.abs(raw) > 0 && Math.abs(raw) < 1e6; // < 10 Lakh
 }
 
+/**
+ * Generic grounded-search-and-parse helper for callers that just want a JSON
+ * object back (competitor selection, research fan-out, etc.) rather than
+ * hand-rolling their own runGeminiGroundedSearch + parse each time. Returns
+ * null on empty response or unparseable JSON — callers should treat that as
+ * "unverified" per this app's "never state what you couldn't confirm" rule,
+ * not retry silently into a fabricated fallback.
+ */
+export async function runGeminiGroundedJSON<T>(prompt: string, source: string): Promise<Partial<T> | null> {
+  const { text } = await runGeminiGroundedSearch(prompt, source).catch(() => ({ text: '', sources: [] }));
+  if (!text) return null;
+  return parseGeminiJson<T>(text);
+}
+
 function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();

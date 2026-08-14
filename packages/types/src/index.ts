@@ -1232,6 +1232,121 @@ export interface ItJobResult {
   debugInfo?: Record<string, unknown>; // temporary — research-source diagnostics, safe to ignore/remove
 }
 
+// ── Competition Benchmarking ─────────────────────────────────────────────────
+// Gemini (google_search grounding) does the research; Claude does the writing.
+// See src/services/competitionBenchmarkingService.ts for the full pipeline.
+
+export interface CompetitionBenchmarkingInput {
+  userFirm: string;
+  userDomain: string;
+  focusSegment?: string;
+  focusTech?: string;
+  geoFocus?: string;
+  additionalContext?: string;
+  competitorList?: string[];       // if provided, selectedCompetitors is used instead of auto-select
+  selectedCompetitors?: string[];  // user's chosen subset of competitorList, max 5
+}
+
+export interface CompetitorCandidate {
+  name: string;
+  rationale: string;
+}
+
+export interface CompetitorSelection {
+  competitors: CompetitorCandidate[];
+  rankingSource: string;
+  rankingSourceUrl: string;
+  rankingPeriod: string;
+  asOf: string;
+}
+
+export type ResearchCategory = 'financials' | 'leadership' | 'productNames' | 'marketShare' | 'techProofPoint';
+
+export interface FinancialsFact {
+  fiscalYearEnd: string;
+  revenue: string;
+  yoyGrowth?: number;
+  verified: boolean;
+  source?: string;
+}
+
+export interface LeadershipFact {
+  name: string;
+  title: string;
+  verifiedDate?: string;
+  verified: boolean;
+  source?: string;
+  changeFlag?: { changedFrom: string; changedTo: string; date: string };
+}
+
+export interface ProductNameFact {
+  name: string;
+  description: string;
+  verified: boolean;
+  source?: string;
+}
+
+export interface MarketShareFact {
+  sharePct?: string;
+  trend?: string;
+  period?: string;
+  verified: boolean;
+  source?: string;
+}
+
+export interface TechProofPointFact {
+  description: string;
+  date?: string;
+  verified: boolean;
+  source?: string;
+}
+
+export interface EntityResearch {
+  entityName: string;
+  financials: FinancialsFact[];
+  leadership: LeadershipFact[];
+  productNames: ProductNameFact[];
+  marketShare?: MarketShareFact;
+  techProofPoint?: TechProofPointFact;
+  unverifiedCategories: ResearchCategory[]; // categories that came back empty/unparseable after retry
+}
+
+export interface ResearchDossier {
+  entities: EntityResearch[];
+  generatedAt: string;
+}
+
+export interface BenchmarkingTable {
+  headers: string[];
+  rows: string[][];
+  columnWidthHint: 'narrow' | 'even' | 'wide-last-column';
+}
+
+export interface BenchmarkingSection {
+  heading: string;
+  paragraphs: string[];
+  tables: BenchmarkingTable[];
+  footnote?: string;
+  flags: string[];
+}
+
+export interface CompetitionBenchmarkingResult {
+  jobId: string;
+  status: 'pending' | 'selecting' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  input: CompetitionBenchmarkingInput;
+  competitorSelection?: CompetitorSelection; // present only when auto-selected
+  finalCompetitors?: string[];               // the 5 actually used (user-supplied or auto-selected)
+  dossier?: ResearchDossier;
+  sections?: BenchmarkingSection[];
+  unverifiedFactCount?: number;
+  totalFactCount?: number;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Spend Module ──────────────────────────────────────────────────────────────
 
 export interface SpendInput {

@@ -32,6 +32,7 @@ import outsourcingReportRouter from './routes/outsourcingReport';
 import gccSalesPlayRouter from './routes/gccSalesPlay';
 import itJobRouter from './routes/itJob';
 import usageRouter from './routes/usage';
+import competitionBenchmarkingRouter from './routes/competitionBenchmarking';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -85,6 +86,7 @@ app.use('/api/industry-outsourcing-report', memoryGuard, outsourcingReportRouter
 app.use('/api/gcc-sales-play', memoryGuard, gccSalesPlayRouter);
 app.use('/api/it-jobs', memoryGuard, itJobRouter);
 app.use('/api/usage', usageRouter);
+app.use('/api/competition-benchmarking', memoryGuard, competitionBenchmarkingRouter);
 
 // ── Debug: test Claude connectivity ──────────────────────────────────────────
 app.get('/api/debug-claude', async (_req, res) => {
