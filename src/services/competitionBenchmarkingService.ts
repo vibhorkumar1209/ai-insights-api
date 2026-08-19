@@ -325,12 +325,29 @@ function dossierSlice(dossier: ResearchDossier, categories: ResearchCategory[] |
   };
 }
 
+// Attempts to pull a JSON object out of a raw Claude response and parse it.
+// Returns null (never throws) so the caller can decide whether to retry —
+// distinct from withRetry's job, which only covers the network/timeout case
+// (claudeCreateDirect throwing). A call that *succeeds* but returns
+// malformed JSON — the actual failure mode observed live in production for
+// 2 of 10 sections on the first real end-to-end run — needs its own retry
+// loop, one call level up from withRetry.
+function tryParseSectionJson(raw: string): Record<string, unknown> | null {
+  const match = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim().match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
 async function synthesizeSection(
   spec: SectionSpec,
   dossier: ResearchDossier,
   input: CompetitionBenchmarkingInput
 ): Promise<BenchmarkingSection> {
-  const userPrompt = `Section: ${spec.name}
+  const basePrompt = `Section: ${spec.name}
 Section requirements: ${spec.requirements}
 
 Research dossier (JSON): ${JSON.stringify(dossierSlice(dossier, spec.relevantCategories))}
@@ -346,23 +363,34 @@ Return JSON matching this schema:
   "flags": string[]
 }`;
 
-  const raw = await withRetry(() => claudeCreateDirect(SYNTHESIS_SYSTEM_PROMPT, userPrompt, 3000, SYNTHESIS_MODEL, 90_000, 0.1, `synthesizeSection.${spec.name}`));
-  const match = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim().match(/\{[\s\S]*\}/);
-  if (!match) {
-    return { heading: spec.name, paragraphs: [], tables: [], flags: [`Section "${spec.name}" failed to generate — not included in this report. Retry recommended.`] };
+  const repairSuffix = `
+
+Your previous response for this exact section did not parse as valid JSON matching the schema above. Return ONLY the JSON object this time — no markdown code fences, no prose before or after it, no trailing commentary.`;
+
+  const JSON_PARSE_ATTEMPTS = 2; // 1 normal attempt + 1 repair attempt with an explicit correction nudge
+
+  for (let attempt = 0; attempt < JSON_PARSE_ATTEMPTS; attempt++) {
+    const userPrompt = attempt === 0 ? basePrompt : basePrompt + repairSuffix;
+    const source = `synthesizeSection.${spec.name}${attempt > 0 ? '.repair' : ''}`;
+
+    // withRetry still covers network/timeout failures within this attempt;
+    // a parse failure below falls through to the outer loop for a fresh
+    // call with the repair nudge, rather than retrying the same prompt.
+    const raw = await withRetry(() => claudeCreateDirect(SYNTHESIS_SYSTEM_PROMPT, userPrompt, 3000, SYNTHESIS_MODEL, 90_000, 0.1, source)).catch(() => '');
+    const parsed = raw ? tryParseSectionJson(raw) : null;
+
+    if (parsed) {
+      return {
+        heading: (parsed.heading as string) || spec.name,
+        paragraphs: Array.isArray(parsed.paragraphs) ? parsed.paragraphs as string[] : [],
+        tables: Array.isArray(parsed.tables) ? parsed.tables as BenchmarkingSection['tables'] : [],
+        footnote: (parsed.footnote as string) || undefined,
+        flags: Array.isArray(parsed.flags) ? parsed.flags as string[] : [],
+      };
+    }
   }
-  try {
-    const parsed = JSON.parse(match[0]);
-    return {
-      heading: parsed.heading || spec.name,
-      paragraphs: Array.isArray(parsed.paragraphs) ? parsed.paragraphs : [],
-      tables: Array.isArray(parsed.tables) ? parsed.tables : [],
-      footnote: parsed.footnote || undefined,
-      flags: Array.isArray(parsed.flags) ? parsed.flags : [],
-    };
-  } catch {
-    return { heading: spec.name, paragraphs: [], tables: [], flags: [`Section "${spec.name}" returned malformed output — not included in this report. Retry recommended.`] };
-  }
+
+  return { heading: spec.name, paragraphs: [], tables: [], flags: [`Section "${spec.name}" returned malformed output after ${JSON_PARSE_ATTEMPTS} attempts — not included in this report. Retry recommended.`] };
 }
 
 // ── Fact counting for the Verification Summary panel ─────────────────────────
