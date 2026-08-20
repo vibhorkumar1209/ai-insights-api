@@ -1347,6 +1347,49 @@ export interface CompetitionBenchmarkingResult {
   completedAt?: string;
 }
 
+// ── Job Description Parser ───────────────────────────────────────────────────
+// Not a research module — a batch structured-extraction transform. User
+// pastes raw job postings; Claude normalizes each into a fixed schema. No
+// Gemini/Parallel.AI calls — everything needed is already in the input text.
+
+export interface JobPostingInput {
+  jobTitle: string;
+  jobDescription: string;
+  postedDate?: string;
+  jobPostingUrl?: string;
+}
+
+export interface JobPostingSkillCategory {
+  category: string;
+  skills: string[];
+}
+
+export interface JobPostingParsed {
+  domain: string;
+  job_title: string;
+  summary: string;
+  posted_date: string;
+  required_skills: JobPostingSkillCategory[];
+  job_posting_url: string;
+  parseError?: string; // present only if extraction failed for this specific posting after retry
+}
+
+export interface JobDescriptionParserInput {
+  postings: JobPostingInput[];
+}
+
+export interface JobDescriptionParserResult {
+  jobId: string;
+  status: 'pending' | 'parsing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  totalPostings: number;
+  parsed: JobPostingParsed[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 // ── Spend Module ──────────────────────────────────────────────────────────────
 
 export interface SpendInput {
