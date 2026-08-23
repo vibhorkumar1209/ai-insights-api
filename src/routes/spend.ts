@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { createSpendJob, getSpendJob, runSpendJob, subscribeToJob, unsubscribeFromJob } from '../services/spendService';
 import { SPEND_CALCULATOR_INDUSTRIES } from '../services/claudeAI';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     revenueUsdMillion,
   };
   const jobId = createSpendJob(input);
+  registerJobStart('spend', jobId, extractLabel(req.body));
   runSpendJob(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });

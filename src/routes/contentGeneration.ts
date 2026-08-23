@@ -8,6 +8,7 @@ import {
   unsubscribeFromJob,
 } from '../services/contentGenerationService';
 import { ContentGenerationInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const jobId = createContentGenerationJob();
+  registerJobStart('content-generation', jobId, extractLabel(req.body));
   runContentGeneration(jobId, input).catch((err) =>
     console.error('[contentGeneration] Unhandled error:', err)
   );

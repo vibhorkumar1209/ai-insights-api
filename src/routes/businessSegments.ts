@@ -9,6 +9,7 @@ import {
   getJobManager as getSegmentsJobManager,
 } from '../services/businessSegmentsService';
 import { handleJobError } from '../utils/jobErrorHandler';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -25,6 +26,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     companyName.trim().slice(0, 200),
     typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined
   );
+  registerJobStart('business-segments', jobId, extractLabel(req.body));
 
   // Run async (fire and forget)
   const manager = getSegmentsJobManager();

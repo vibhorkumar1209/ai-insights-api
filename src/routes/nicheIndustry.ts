@@ -8,6 +8,7 @@ import {
   unsubscribeFromJob,
 } from '../services/nicheIndustryService';
 import { NicheOutputMode, NicheSegmentationDepth } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const jobId = createNicheIndustryJob();
+  registerJobStart('niche-industries', jobId, extractLabel(req.body));
 
   runNicheIndustryAnalysis(jobId, {
     industryVertical: industryVertical.trim().slice(0, 2000),

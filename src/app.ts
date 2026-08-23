@@ -34,6 +34,7 @@ import itJobRouter from './routes/itJob';
 import usageRouter from './routes/usage';
 import competitionBenchmarkingRouter from './routes/competitionBenchmarking';
 import jobDescriptionParserRouter from './routes/jobDescriptionParser';
+import reportsRouter from './routes/reports';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -89,6 +90,7 @@ app.use('/api/it-jobs', memoryGuard, itJobRouter);
 app.use('/api/usage', usageRouter);
 app.use('/api/competition-benchmarking', memoryGuard, competitionBenchmarkingRouter);
 app.use('/api/job-description-parser', memoryGuard, jobDescriptionParserRouter);
+app.use('/api/reports', reportsRouter);
 
 // ── Debug: test Claude connectivity ──────────────────────────────────────────
 app.get('/api/debug-claude', async (_req, res) => {

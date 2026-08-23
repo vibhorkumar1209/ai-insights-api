@@ -11,6 +11,7 @@ import {
   getJobManager as getIndustryJobManager,
 } from '../services/industryReportService';
 import { handleJobError } from '../utils/jobErrorHandler';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -61,6 +62,7 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
 
   const input = { query: scope.industry, geography: scope.geography };
   const jobId = createIndustryReportJob(input);
+  registerJobStart('industry-report', jobId, extractLabel(req.body));
   const manager = getIndustryJobManager();
   runIndustryReportV2(jobId, enrichedScope).catch((err) =>
     handleJobError(jobId, err, manager)

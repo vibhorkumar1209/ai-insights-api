@@ -5,6 +5,7 @@ import {
   subscribeToJob, unsubscribeFromJob,
 } from '../services/jobDescriptionParserService';
 import { JobPostingInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -42,6 +43,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   }
 
   const jobId = createJobDescriptionParserJob(cleaned);
+  registerJobStart('job-description-parser', jobId, extractLabel(req.body));
   runJobDescriptionParser(jobId, cleaned).catch(() => {});
   res.status(202).json({ jobId });
 });

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { SalesPlayInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createSalesPlayJob,
   runSalesPlay,
@@ -52,6 +53,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   };
 
   const jobId = createSalesPlayJob(input);
+  registerJobStart('sales-play', jobId, extractLabel(req.body));
   // Fire-and-forget — result delivered via SSE
   runSalesPlay(jobId, input).catch((err) =>
     console.error('[salesPlay] Unhandled error:', err)

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { SalesPlay2Input } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createSalesPlay2Job,
   runSalesPlay2,
@@ -29,6 +30,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     competitorWeaknesses: competitorWeaknesses?.trim() || undefined,
   };
   const jobId = createSalesPlay2Job(input);
+  registerJobStart('sales-play-2', jobId, extractLabel(req.body));
   runSalesPlay2(jobId, input).catch((err) => console.error('[salesPlay2] Unhandled error:', err));
   res.status(202).json({ jobId });
 });

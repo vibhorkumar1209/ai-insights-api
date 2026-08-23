@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createOutsourcingReportJob,
   getOutsourcingReportJob,
@@ -30,6 +31,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   };
 
   const jobId = createOutsourcingReportJob(input);
+  registerJobStart('industry-outsourcing-report', jobId, extractLabel(req.body));
   runOutsourcingReportJob(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });

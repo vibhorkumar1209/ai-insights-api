@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { createItJobJob, getItJobJob, runItJobSearch, subscribeToJob, unsubscribeFromJob } from '../services/itJobService';
 import { normalizeDomain } from '../services/yahooFinance';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -43,6 +44,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
 
   const input = { companyName: companyName.trim(), companyDomain: normalizedDomain, linkedinHandle: normalizedLinkedinHandle };
   const jobId = createItJobJob(input);
+  registerJobStart('it-jobs', jobId, extractLabel(req.body));
   runItJobSearch(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });

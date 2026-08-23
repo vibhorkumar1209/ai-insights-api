@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createIndustryTrendsJob,
   getIndustryTrendsJob,
@@ -20,6 +21,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const jobId = createIndustryTrendsJob();
+  registerJobStart('industry-trends', jobId, extractLabel(req.body));
 
   runIndustryTrends(jobId, {
     industrySegment: industrySegment.trim().slice(0, 300),

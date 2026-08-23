@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter.js';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createConsultingIntelligenceJob,
   getConsultingIntelligenceJob,
@@ -32,6 +33,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     topic: topic.trim().slice(0, 2000),
     geography: geoValue,
   });
+  registerJobStart('consulting-intelligence', jobId, extractLabel(req.body));
 
   runConsultingIntelligenceAnalysis(jobId).catch((err) =>
     console.error('[consultingIntelligence] Unhandled error:', err)

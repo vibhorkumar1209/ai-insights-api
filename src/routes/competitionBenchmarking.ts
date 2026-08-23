@@ -5,6 +5,7 @@ import {
   subscribeToJob, unsubscribeFromJob,
 } from '../services/competitionBenchmarkingService';
 import { CompetitionBenchmarkingInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -43,6 +44,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   };
 
   const jobId = createCompetitionBenchmarkingJob(input);
+  registerJobStart('competition-benchmarking', jobId, extractLabel(req.body));
   runCompetitionBenchmarking(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });

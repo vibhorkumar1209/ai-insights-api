@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createGccSalesPlayJob,
   getGccSalesPlayJob,
@@ -27,6 +28,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   };
 
   const jobId = createGccSalesPlayJob(input);
+  registerJobStart('gcc-sales-play', jobId, extractLabel(req.body));
   runGccSalesPlayJob(jobId, input).catch(() => {});
   res.status(202).json({ jobId });
 });

@@ -8,6 +8,7 @@ import {
   unsubscribeFromThemeJob,
 } from '../services/themesService';
 import { aiLimiter } from '../middleware/rateLimiter';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   };
 
   const jobId = createThemeJob();
+  registerJobStart('business-themes', jobId, extractLabel(req.body));
 
   runThemesAnalysis(jobId, input).catch((err) => {
     console.error(`[themes] Job ${jobId} failed:`, err);

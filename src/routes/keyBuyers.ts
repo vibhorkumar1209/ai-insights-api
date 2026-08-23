@@ -8,6 +8,7 @@ import {
   unsubscribeFromJob,
 } from '../services/keyBuyersService';
 import { KeyBuyersInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   };
 
   const jobId = createKeyBuyersJob();
+  registerJobStart('key-buyers', jobId, extractLabel(req.body));
 
   // Fire-and-forget — result delivered via SSE
   runKeyBuyers(jobId, input).catch((err) =>

@@ -9,6 +9,7 @@ import {
 } from '../services/technologyHeatMapService';
 import { discoverEmergingTechsQuick } from '../services/claudeAI';
 import { TechHeatMapInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const jobId = createTechnologyHeatMapJob();
+  registerJobStart('technology-heat-map', jobId, extractLabel(req.body));
 
   runTechnologyHeatMap(jobId, input).catch((err) =>
     console.error('[technologyHeatMap] Unhandled error:', err)

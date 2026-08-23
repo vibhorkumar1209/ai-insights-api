@@ -10,6 +10,7 @@ import {
 } from '../services/benchmarkService';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { handleJobError } from '../utils/jobErrorHandler';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -59,6 +60,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   };
 
   const jobId = createJob();
+  registerJobStart('peer-benchmarking', jobId, extractLabel(req.body));
 
   // Run benchmark asynchronously — client streams progress via SSE
   const manager = getBenchmarkJobManager();

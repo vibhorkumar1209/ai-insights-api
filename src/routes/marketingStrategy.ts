@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { StrategyFramework } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createMarketingStrategyJob,
   getMarketingStrategyJob,
@@ -32,6 +33,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const jobId = createMarketingStrategyJob();
+  registerJobStart('marketing-strategy', jobId, extractLabel(req.body));
 
   runMarketingStrategy(jobId, {
     industryOrSegment: industryOrSegment.trim().slice(0, 300),

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { ObjectionHandlingInput } from '@ai-insights/types';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createObjectionHandlingJob,
   runObjectionHandling,
@@ -53,6 +54,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   };
 
   const jobId = createObjectionHandlingJob(input);
+  registerJobStart('objection-handling', jobId, extractLabel(req.body));
   runObjectionHandling(jobId, input).catch((err) =>
     console.error('[objectionHandling] Unhandled error:', err)
   );

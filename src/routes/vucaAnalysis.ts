@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter.js';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createVucaJob,
   getVucaJob,
@@ -29,6 +30,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     companyName: typeof companyName === 'string' ? companyName.trim().slice(0, 200) : undefined,
     companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 200) : undefined,
   });
+  registerJobStart('vuca-analysis', jobId, extractLabel(req.body));
 
   runVucaAnalysis(jobId).catch((err) =>
     console.error('[vucaAnalysis] Unhandled error:', err)

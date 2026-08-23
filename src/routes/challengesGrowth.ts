@@ -8,6 +8,7 @@ import {
   unsubscribeFromJob,
 } from '../services/challengesGrowthService';
 import { aiLimiter } from '../middleware/rateLimiter';
+import { registerJobStart, extractLabel } from '../services/reportRegistry';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   };
 
   const jobId = createChallengesGrowthJob();
+  registerJobStart('challenges-growth', jobId, extractLabel(req.body));
   runChallengesGrowth(jobId, input).catch((err) =>
     console.error(`[challenges-growth] Job ${jobId} failed:`, err)
   );
