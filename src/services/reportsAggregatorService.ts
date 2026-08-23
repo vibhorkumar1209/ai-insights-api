@@ -42,7 +42,11 @@ const GETTERS: Record<string, (jobId: string) => any> = {
   'challenges-growth': getChallengesGrowthJob,
   'competition-benchmarking': getCompetitionBenchmarkingJob,
   'consulting-intelligence': getConsultingIntelligenceJob,
-  'content-generation': getContentGenerationJob,
+  // contentGeneration.ts registers jobs under whichever of these two the
+  // request actually asked for, not the generic route name — see the
+  // comment at its registerJobStart() call site.
+  'industry-blog': getContentGenerationJob,
+  'industry-thought-leadership': getContentGenerationJob,
   'financial-analysis': getFinancialJob,
   'firmographic': getFirmographicJob,
   'gcc-sales-play': getGccSalesPlayJob,

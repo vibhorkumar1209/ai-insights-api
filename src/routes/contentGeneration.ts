@@ -38,7 +38,13 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const jobId = createContentGenerationJob();
-  registerJobStart('content-generation', jobId, extractLabel(req.body));
+  // Registered under the actual sub-module (industry-blog /
+  // industry-thought-leadership), not the generic 'content-generation'
+  // route name — this route serves both off one endpoint, and the
+  // frontend's per-module History hydration (apiReports.ts) branches on
+  // exactly this moduleType string, the same way it branches on
+  // marketing-strategy's VUCA-vs-standard-framework result shape.
+  registerJobStart(input.moduleType, jobId, input.industryReportData?.query || extractLabel(req.body));
   runContentGeneration(jobId, input).catch((err) =>
     console.error('[contentGeneration] Unhandled error:', err)
   );
