@@ -943,34 +943,79 @@ export interface ExecutiveDiscoveryResult {
   linkedinUrl: string;
 }
 
+interface ExecutiveResearchCandidate {
+  name?: string | null;
+  title?: string | null;
+}
+
+interface ExecutiveResearchResponse {
+  regionalHead?: ExecutiveResearchCandidate | null;
+  lieutenants?: ExecutiveResearchCandidate[] | null;
+  siteLeaders?: ExecutiveResearchCandidate[] | null;
+}
+
 /**
  * Fallback for when Claude declines to name anyone for a Sales Play II win
  * theme (it's instructed to omit the name rather than guess when unsure —
  * see synthesizeSalesPlay2's prompt — which in practice means it names
  * someone only rarely). Rather than leaving the Target Executive column
- * permanently empty, ask Gemini's grounded search to find AND verify a real
- * current executive in one pass: Gemini has live web/LinkedIn access this
- * app doesn't otherwise use for open-ended "who currently holds this role"
- * discovery, which is a fundamentally different task from re-checking a
- * name Claude already proposed (verifyExecutiveLinkedIn above).
+ * permanently empty, ask Gemini's grounded search to find a real current
+ * executive using an "expert corporate researcher" framing (a company/
+ * department/geography leadership-mapping brief) rather than a single
+ * yes/no name lookup — this surfaces a small slate of real candidates
+ * (regional head, SVP/VP lieutenants, site leaders) instead of gambling
+ * everything on one direct "who owns X" query. The top candidate found is
+ * still independently re-verified via verifyExecutiveLinkedIn below before
+ * ever reaching the UI, same bar as a Claude-proposed name.
  */
 export async function discoverVerifiedExecutive(
   targetAccount: string,
   targetDepartment: string,
   themeContext: string
 ): Promise<ExecutiveDiscoveryResult | null> {
-  const prompt = `Search for a specific, real, CURRENT executive or senior leader at "${targetAccount}" who owns or is responsible for "${targetDepartment}" — context: ${themeContext}.
+  const prompt = `Act as an expert corporate researcher and executive recruiter. I need to identify the current senior leadership and CXO-level executives for a specific company, within a precise department and geographic region.
 
-Find their LinkedIn profile and confirm it CURRENTLY lists "${targetAccount}" (or an unambiguous variant of that company name) as their employer — not a former employer.
+- Company Name: ${targetAccount}
+- Target Department/Function: ${targetDepartment} (context: ${themeContext})
+- Geographic Context: Global / worldwide (company headquarters and primary operating regions) — this account has no specific region on file, so search broadly rather than assuming one
+
+Please find:
+1. Ultimate Regional Head / CXO: Name and exact title of the highest-ranking executive for this department (globally, or at the company's primary headquarters region).
+2. Functional Lieutenants (SVP/VP Level): Currently active Senior VPs or Vice Presidents leading sub-functions or business units in this department.
+3. Local Site/Center Leaders (if applicable): Managing Directors or site heads who oversee physical operations or regional hubs for this team.
+
+Ensure the data reflects current leaders only, active as of 2026 — never a former titleholder. Avoid listing mid-level managers or directors unless they are a primary site head. Only include a person if you have clear evidence they currently hold that role; omit any tier entirely (null) rather than guessing.
 
 Return ONLY this JSON, no markdown fences:
-{"name": "Full Name or null", "title": "Their exact current title or null", "linkedinUrl": "https://www.linkedin.com/in/... or null"}
+{
+  "regionalHead": {"name": "Full Name", "title": "Exact title"} or null,
+  "lieutenants": [{"name": "Full Name", "title": "Exact title"}] or [],
+  "siteLeaders": [{"name": "Full Name", "title": "Exact title"}] or []
+}`;
 
-Only return a name if you have clear, current evidence from a real LinkedIn profile. If you cannot find and verify a specific real person for this role, return {"name": null, "title": null, "linkedinUrl": null}. Never guess or invent a name or title.`;
+  const result = await runGeminiGroundedJSON<ExecutiveResearchResponse>(prompt, 'discoverVerifiedExecutive');
+  if (!result) return null;
 
-  const result = await runGeminiGroundedJSON<ExecutiveDiscoveryResult>(prompt, 'discoverVerifiedExecutive');
-  if (!result || !result.name || !result.title || !result.linkedinUrl) return null;
-  return { name: result.name, title: result.title, linkedinUrl: result.linkedinUrl };
+  // Preference order matches how directly each tier maps to "owns this
+  // department": the regional/global head first, then the first named
+  // lieutenant, then the first named site leader — never more than one
+  // candidate is carried forward, since verifyExecutiveLinkedIn below (and
+  // the UI) only ever show a single Target Executive per win theme.
+  const candidate: ExecutiveResearchCandidate | undefined =
+    (result.regionalHead?.name && result.regionalHead?.title ? result.regionalHead : undefined) ??
+    result.lieutenants?.find((c) => c?.name && c?.title) ??
+    result.siteLeaders?.find((c) => c?.name && c?.title);
+
+  if (!candidate?.name || !candidate?.title) return null;
+
+  // The research prompt above surfaces plausible current titleholders but
+  // doesn't itself confirm employment — reuse the same LinkedIn re-check
+  // applied to a Claude-proposed name so a discovered candidate clears the
+  // identical bar before ever reaching the UI.
+  const verification = await verifyExecutiveLinkedIn(candidate.name, candidate.title, targetAccount);
+  if (!verification.currentCompanyMatches || !verification.linkedinUrl) return null;
+
+  return { name: candidate.name, title: candidate.title, linkedinUrl: verification.linkedinUrl };
 }
 
 function parseGeminiJson<T>(text: string): Partial<T> | null {
