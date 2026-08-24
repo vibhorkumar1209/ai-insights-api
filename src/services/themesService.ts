@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ThemeInput, ThemeResult } from '@ai-insights/types';
 import { researchCompanyThemes } from './parallelAI';
 import { synthesizeThemes } from './claudeAI';
+import { filterLiveUrlsOnRows } from './urlValidator';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 
@@ -84,7 +85,10 @@ export async function runThemesAnalysis(jobId: string, input: ThemeInput): Promi
     updateThemeJob(jobId, { status: 'synthesizing' });
     emit(jobId, 'progress', { progress: 65, currentStep: 'Synthesizing themes...' });
 
-    const rows = await synthesizeThemes(input, research);
+    let rows = await synthesizeThemes(input, research);
+
+    step('Verifying source links...', 90);
+    rows = await filterLiveUrlsOnRows(rows);
 
     const completed: Partial<ThemeResult> = {
       status: 'complete',

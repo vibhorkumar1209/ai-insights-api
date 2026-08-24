@@ -1,0 +1,94 @@
+import fetch from 'node-fetch';
+
+const CHECK_TIMEOUT_MS = 6_000;
+const MAX_CONCURRENT_CHECKS = 6;
+
+async function fetchWithTimeout(url: string, method: 'HEAD' | 'GET', timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method,
+      redirect: 'follow',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      signal: controller.signal as any,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RefractOneLinkCheck/1.0)' },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Real HTTP check — a URL only survives if it resolves to a live, non-error page. */
+async function isUrlLive(url: string): Promise<boolean> {
+  try {
+    new URL(url); // throws on malformed URLs (Claude occasionally truncates one)
+  } catch {
+    return false;
+  }
+  try {
+    // Many news/IR sites reject HEAD (405/403) — fall back to GET before giving up.
+    const head = await fetchWithTimeout(url, 'HEAD', CHECK_TIMEOUT_MS);
+    if (head.ok) return true;
+    if (head.status !== 405 && head.status !== 403) return false;
+  } catch {
+    // HEAD can fail even for live URLs (some CDNs); still try GET below.
+  }
+  try {
+    const get = await fetchWithTimeout(url, 'GET', CHECK_TIMEOUT_MS);
+    return get.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function checkAllLive(urls: string[]): Promise<Map<string, boolean>> {
+  const results = new Map<string, boolean>();
+  const unique = Array.from(new Set(urls));
+  for (let i = 0; i < unique.length; i += MAX_CONCURRENT_CHECKS) {
+    const batch = unique.slice(i, i + MAX_CONCURRENT_CHECKS);
+    const checked = await Promise.all(batch.map(async (u) => [u, await isUrlLive(u)] as const));
+    checked.forEach(([u, ok]) => results.set(u, ok));
+  }
+  return results;
+}
+
+const URL_REGEX = /https?:\/\/[^\s|)"]+[^\s|).,;:"]/g;
+
+/**
+ * Strips any URL from a Claude-generated "source" string that doesn't
+ * actually resolve live (dead link, 404, DNS failure, etc.) — LLM-cited
+ * source URLs are frequently plausible-looking but non-existent, and the
+ * UI renders these as clickable links, so an unchecked one is a broken
+ * link shown to the user. Leaves non-URL text (e.g. "Company press
+ * releases") untouched. Falls back to a generic label if every URL in the
+ * string turns out dead.
+ */
+export async function filterLiveUrls(source: string | undefined, fallback = 'Company reports, press releases, and public filings'): Promise<string | undefined> {
+  if (!source) return source;
+  const urls = source.match(URL_REGEX) || [];
+  if (urls.length === 0) return source;
+
+  const liveness = await checkAllLive(urls);
+  let cleaned = source;
+  for (const url of urls) {
+    if (!liveness.get(url)) {
+      cleaned = cleaned.split(url).join('').trim();
+    }
+  }
+  // Tidy up now-dangling separators/labels left behind after removing dead URLs
+  cleaned = cleaned
+    .replace(/\|\s*\|/g, '|')
+    .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+    .replace(/[A-Za-z ]+:\s*(\||$)/g, '$1')
+    .trim();
+
+  return cleaned || fallback;
+}
+
+/** Batch helper for arrays of rows that each carry a `source` field. */
+export async function filterLiveUrlsOnRows<T extends { source?: string }>(rows: T[]): Promise<T[]> {
+  return Promise.all(
+    rows.map(async (row) => ({ ...row, source: await filterLiveUrls(row.source) }))
+  );
+}
