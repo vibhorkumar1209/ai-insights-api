@@ -1,12 +1,19 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ChallengesGrowthInput, ChallengesGrowthResult } from '@ai-insights/types';
-import { researchCompanyChallengesGrowth } from './parallelAI';
-import { synthesizeChallengesGrowth } from './claudeAI';
-import { filterLiveUrlsOnRows } from './urlValidator';
+import { BusinessDescriptionInput, BusinessDescriptionResult } from '@ai-insights/types';
+import { researchCompanyOverview } from './parallelAI';
+import { generateBusinessDescription } from './claudeAI';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
+//
+// Converts what used to be a single blocking POST (research call, up to ~90s,
+// then a Claude call, up to ~120s — worst case ~5 minutes with a research
+// retry) into the same async job + SSE pattern every other module uses.
+// The synchronous version had no progress feedback and was one dropped
+// connection away from silently losing the entire result — gateway/proxy
+// timeouts on a multi-minute unary HTTP request are the "susceptible to
+// failure" behaviour this was built to fix.
 
-const jobs = new Map<string, ChallengesGrowthResult>();
+const jobs = new Map<string, BusinessDescriptionResult>();
 
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
 const cleanupTimer = setInterval(() => {
@@ -17,17 +24,17 @@ const cleanupTimer = setInterval(() => {
 }, 30 * 60 * 1000);
 cleanupTimer.unref();
 
-export function getChallengesGrowthJob(jobId: string): ChallengesGrowthResult | undefined {
+export function getBusinessDescriptionJob(jobId: string): BusinessDescriptionResult | undefined {
   return jobs.get(jobId);
 }
 
-export function createChallengesGrowthJob(): string {
+export function createBusinessDescriptionJob(): string {
   const jobId = uuidv4();
   jobs.set(jobId, { jobId, status: 'pending', progress: 0, createdAt: new Date().toISOString() });
   return jobId;
 }
 
-function updateJob(jobId: string, update: Partial<ChallengesGrowthResult>) {
+function updateJob(jobId: string, update: Partial<BusinessDescriptionResult>) {
   const current = jobs.get(jobId);
   if (current) jobs.set(jobId, { ...current, ...update });
 }
@@ -53,43 +60,41 @@ function emit(jobId: string, event: string, data: unknown) {
 
 // ── Main runner ───────────────────────────────────────────────────────────────
 
-export async function runChallengesGrowth(
+export async function runBusinessDescription(
   jobId: string,
-  input: ChallengesGrowthInput
+  input: BusinessDescriptionInput
 ): Promise<void> {
-  const step = (msg: string, progress: number) => {
-    updateJob(jobId, { currentStep: msg, progress, status: 'researching' });
+  const step = (msg: string, progress: number, status: BusinessDescriptionResult['status']) => {
+    updateJob(jobId, { currentStep: msg, progress, status });
     emit(jobId, 'progress', { currentStep: msg, progress });
   };
 
   try {
-    updateJob(jobId, { companyName: input.companyName });
+    updateJob(jobId, { companyName: input.companyName, domain: input.domain });
 
-    step(`Researching ${input.companyName}...`, 10);
-    const research = await researchCompanyChallengesGrowth(input.companyName, input.companyDomain);
+    step(`Researching ${input.companyName}...`, 15, 'researching');
+    let research = '';
+    try {
+      research = await researchCompanyOverview(input.companyName, input.domain);
+    } catch (err) {
+      console.warn('[businessDescription] Research failed, proceeding with training knowledge:', err);
+    }
 
-    step('Synthesizing challenges & growth analysis...', 65);
-    updateJob(jobId, { status: 'synthesizing' });
-    emit(jobId, 'progress', { progress: 65, currentStep: 'Synthesizing challenges & growth analysis...' });
+    step('Writing business description...', 65, 'synthesizing');
+    const description = await generateBusinessDescription(input.companyName, input.domain, research);
 
-    let rows = await synthesizeChallengesGrowth(input, research);
-
-    updateJob(jobId, { currentStep: 'Verifying citation links...', progress: 90, status: 'synthesizing' });
-    emit(jobId, 'progress', { currentStep: 'Verifying citation links...', progress: 90 });
-    rows = await filterLiveUrlsOnRows(rows, '');
-
-    const completed: Partial<ChallengesGrowthResult> = {
+    const completed: Partial<BusinessDescriptionResult> = {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
-      rows,
+      description,
       completedAt: new Date().toISOString(),
     };
-
     updateJob(jobId, completed);
     emit(jobId, 'result', { ...jobs.get(jobId) });
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    const errorMsg = err instanceof Error ? err.message : 'Description generation failed';
+    console.error(`[businessDescription] job ${jobId} failed:`, errorMsg);
     updateJob(jobId, { status: 'error', error: errorMsg, progress: 0 });
     emit(jobId, 'error', { error: errorMsg });
   }

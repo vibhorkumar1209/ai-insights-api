@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { KeyBuyersInput, KeyBuyersResult, KeyBuyerRow } from '@ai-insights/types';
 import { researchKeyBuyers } from './parallelAI';
 import { synthesizeKeyBuyers } from './claudeAI';
+import { filterLiveUrlsOnRows } from './urlValidator';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 
@@ -86,6 +87,9 @@ export async function runKeyBuyers(
       console.error(`[keyBuyers] Synthesis failed for ${input.companyName}:`, msg, synthesisErr);
       throw new Error(`Synthesis failed: ${msg}`);
     }
+
+    step('Verifying source links…', 90, 'synthesizing');
+    rows = await filterLiveUrlsOnRows(rows);
 
     const completed: Partial<KeyBuyersResult> = {
       status: 'complete',

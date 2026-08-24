@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { BenchmarkDimension } from '@ai-insights/types';
 
 const CHECK_TIMEOUT_MS = 6_000;
 const MAX_CONCURRENT_CHECKS = 6;
@@ -102,5 +103,32 @@ export async function filterLiveUrlsOnRows<T extends { source?: string }>(
 ): Promise<T[]> {
   return Promise.all(
     rows.map(async (row) => ({ ...row, source: await filterLiveUrls(row.source, fallback) }))
+  );
+}
+
+/**
+ * Peer Benchmarking's Table 1 carries a source per grid cell (target company
+ * column + one per peer column, for every dimension) rather than one source
+ * per row — flattens all cells, live-checks each in one batched pass, then
+ * reassembles the table. '' fallback: drop a cell's source entirely rather
+ * than injecting placeholder text into a small table cell.
+ */
+export async function filterLiveUrlsOnBenchmarkTable(
+  table: BenchmarkDimension[]
+): Promise<BenchmarkDimension[]> {
+  return Promise.all(
+    table.map(async (dim) => {
+      const peerNames = Object.keys(dim.peers);
+      const [targetCompany, peerCells] = await Promise.all([
+        (async () => ({ ...dim.targetCompany, source: await filterLiveUrls(dim.targetCompany.source, '') }))(),
+        Promise.all(
+          peerNames.map(async (name) => [
+            name,
+            { ...dim.peers[name], source: await filterLiveUrls(dim.peers[name].source, '') },
+          ] as const)
+        ),
+      ]);
+      return { ...dim, targetCompany, peers: Object.fromEntries(peerCells) };
+    })
   );
 }

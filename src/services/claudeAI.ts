@@ -411,6 +411,7 @@ export async function synthesizeBenchmarkingTable(
 - Never leave a cell empty — always provide a meaningful best-known answer.
 - FORMATTING: Each value field MUST be formatted as bullet points separated by " • ". Wrap the most important keyword or phrase in each bullet with **double asterisks** for emphasis. Example: "**SAP S/4HANA** deployed across 12 regions • **AI-powered** demand forecasting in pilot • Cloud migration **60% complete**"
 - EXISTING VENDOR DEPLOYMENTS: If the vendor relationship context shows that ${input.userOrganization} solutions are ALREADY deployed at ${input.targetCompany}, you MUST reflect this in the targetCompany's value/notes for the relevant dimensions — prefix with "✓ EXISTING ${input.userOrganization} DEPLOYMENT:" and describe the specific solution in use.
+- SOURCING: For each cell, also give "source": a real, currently-live URL (annual report, investor relations page, press release, news article, vendor case study) that supports the value stated. Omit "source" entirely if you cannot name a real URL — never invent one.
 - Output ONLY valid JSON. No markdown fences, no explanation outside the JSON.
 - ${getRecencyDirective()}
 - ${WRITING_DIRECTIVE}`;
@@ -427,7 +428,7 @@ ${Object.entries(safeResearch)
     .join('\n---\n')}
 
 Return a JSON array with EXACTLY this shape (one object per dimension):
-[{"dimension":"...","targetCompany":{"value":"...","notes":"..."},"peers":{"${input.selectedCompetitors[0] ?? 'Peer1'}":{"value":"...","notes":"..."}}}]
+[{"dimension":"...","targetCompany":{"value":"...","notes":"...","source":"https://... (omit if none known)"},"peers":{"${input.selectedCompetitors[0] ?? 'Peer1'}":{"value":"...","notes":"...","source":"https://... (omit if none known)"}}}]
 
 DYNAMIC DIMENSIONS:
 - Analyse the research data and identify EXACTLY 5 strategic dimensions that best differentiate and compare these companies.
@@ -636,14 +637,14 @@ Return a JSON array with EXACTLY this shape (8 objects):
     "dimension": "Macroeconomics",
     "challenge": "2-4 bullet points (each starting with '• ' separated by newlines): the specific macroeconomic challenges affecting ${input.companyName}'s operations or profitability.",
     "growthProspect": "2-4 bullet points (each starting with '• ' separated by newlines): specific growth opportunities ${input.companyName} can pursue in response to macroeconomic conditions.",
-    "source": "Source of information: ONLY include verified, legitimate sources (e.g., 'SEC EDGAR filings', 'Company investor relations website', 'Earnings call transcripts'). Do NOT invent or guess URLs. If you cannot verify a specific source, leave this empty or write 'Based on business intelligence and market analysis'."
+    "source": "A citation for this dimension's claims: prefer a real, currently-live URL (annual report, investor relations page, SEC filing, earnings call transcript, press release, news article) so it can be shown as a clickable citation. Omit this field entirely if you cannot name a real URL — never invent one. If no URL exists but the source type is still known, name it plainly (e.g. 'Company investor relations' — no URL)."
   }
 ]
 
 For EACH dimension:
 - "challenge": 2-4 bullet points (each line starts with "• "): the most material, specific challenges for ${input.companyName} in this dimension — cite data, name the threat, quantify where possible, reference ${input.companyName}'s specific assets/operations.
 - "growthProspect": 2-4 bullet points (each line starts with "• "): the most compelling growth opportunities for ${input.companyName} — forward-looking, specific, actionable insights tied to ${input.companyName}'s capabilities, geography, product portfolio, or customer base.
-- "source": Source of the information. ONLY include verified, legitimate sources (e.g., "SEC EDGAR filings", "Company investor relations", "Earnings call transcripts", "Press releases from company website"). Do NOT invent or guess URLs. If the source is general market knowledge, write "Market intelligence and business analysis".`;
+- "source": A citation supporting this dimension. Prefer a real, currently-live URL (SEC EDGAR filing, company investor relations page, earnings call transcript, press release, reputable news article) — never invent or guess one. If you cannot name a real URL, omit "source" entirely rather than writing a vague placeholder.`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
   return parseChallengesGrowth(text);

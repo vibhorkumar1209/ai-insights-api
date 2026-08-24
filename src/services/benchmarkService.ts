@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BenchmarkInput, BenchmarkResult } from '@ai-insights/types';
 import { discoverCompetitors, researchAllCompanies, researchVendorRelationship } from './parallelAI';
 import { synthesizeBenchmarkingTable, synthesizeGapAnalysis } from './claudeAI';
+import { filterLiveUrlsOnBenchmarkTable } from './urlValidator';
 
 // In-memory job store (replace with Redis for production multi-instance)
 const jobs = new Map<string, BenchmarkResult>();
@@ -130,11 +131,13 @@ export async function runBenchmark(jobId: string, input: BenchmarkInput): Promis
 
     step('Synthesizing benchmarking table...', 68);
     updateJob(jobId, { status: 'synthesizing' });
-    const benchmarkingTable = await synthesizeBenchmarkingTable(
+    let benchmarkingTable = await synthesizeBenchmarkingTable(
       { ...input, selectedCompetitors: selectedPeers },
       companyResearch,
       vendorRelationshipContext
     );
+    step('Verifying source links...', 78);
+    benchmarkingTable = await filterLiveUrlsOnBenchmarkTable(benchmarkingTable);
     updateJob(jobId, { benchmarkingTable });
     emit(jobId, 'progress', { benchmarkingTable, progress: 82 });
 

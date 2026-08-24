@@ -1,5 +1,6 @@
 import { getRegisteredReports } from './reportRegistry';
 import { getJob as getBenchmarkJob } from './benchmarkService';
+import { getBusinessDescriptionJob } from './businessDescriptionService';
 import { getBusinessSegmentsJob } from './businessSegmentsService';
 import { getBusinessTimelinesJob } from './businessTimelinesService';
 import { getChallengesGrowthJob } from './challengesGrowthService';
@@ -37,6 +38,7 @@ import { getVucaJob } from './vucaAnalysisService';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const GETTERS: Record<string, (jobId: string) => any> = {
   'peer-benchmarking': getBenchmarkJob,
+  'business-description': getBusinessDescriptionJob,
   'business-segments': getBusinessSegmentsJob,
   'business-timelines': getBusinessTimelinesJob,
   'challenges-growth': getChallengesGrowthJob,

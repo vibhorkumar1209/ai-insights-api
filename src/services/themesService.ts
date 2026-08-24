@@ -87,7 +87,8 @@ export async function runThemesAnalysis(jobId: string, input: ThemeInput): Promi
 
     let rows = await synthesizeThemes(input, research);
 
-    step('Verifying source links...', 90);
+    updateThemeJob(jobId, { currentStep: 'Verifying source links...', progress: 90, status: 'synthesizing' });
+    emit(jobId, 'progress', { currentStep: 'Verifying source links...', progress: 90 });
     rows = await filterLiveUrlsOnRows(rows);
 
     const completed: Partial<ThemeResult> = {
