@@ -937,6 +937,42 @@ Set "currentCompanyMatches" to true ONLY if you have clear, current evidence. If
   return { linkedinUrl: result.linkedinUrl, currentCompanyMatches: true };
 }
 
+export interface ExecutiveDiscoveryResult {
+  name: string;
+  title: string;
+  linkedinUrl: string;
+}
+
+/**
+ * Fallback for when Claude declines to name anyone for a Sales Play II win
+ * theme (it's instructed to omit the name rather than guess when unsure —
+ * see synthesizeSalesPlay2's prompt — which in practice means it names
+ * someone only rarely). Rather than leaving the Target Executive column
+ * permanently empty, ask Gemini's grounded search to find AND verify a real
+ * current executive in one pass: Gemini has live web/LinkedIn access this
+ * app doesn't otherwise use for open-ended "who currently holds this role"
+ * discovery, which is a fundamentally different task from re-checking a
+ * name Claude already proposed (verifyExecutiveLinkedIn above).
+ */
+export async function discoverVerifiedExecutive(
+  targetAccount: string,
+  targetDepartment: string,
+  themeContext: string
+): Promise<ExecutiveDiscoveryResult | null> {
+  const prompt = `Search for a specific, real, CURRENT executive or senior leader at "${targetAccount}" who owns or is responsible for "${targetDepartment}" — context: ${themeContext}.
+
+Find their LinkedIn profile and confirm it CURRENTLY lists "${targetAccount}" (or an unambiguous variant of that company name) as their employer — not a former employer.
+
+Return ONLY this JSON, no markdown fences:
+{"name": "Full Name or null", "title": "Their exact current title or null", "linkedinUrl": "https://www.linkedin.com/in/... or null"}
+
+Only return a name if you have clear, current evidence from a real LinkedIn profile. If you cannot find and verify a specific real person for this role, return {"name": null, "title": null, "linkedinUrl": null}. Never guess or invent a name or title.`;
+
+  const result = await runGeminiGroundedJSON<ExecutiveDiscoveryResult>(prompt, 'discoverVerifiedExecutive');
+  if (!result || !result.name || !result.title || !result.linkedinUrl) return null;
+  return { name: result.name, title: result.title, linkedinUrl: result.linkedinUrl };
+}
+
 function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();

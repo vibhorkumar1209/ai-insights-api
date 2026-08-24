@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SalesPlay2Input, SalesPlay2Result, SalesPlay2WinTheme } from '@ai-insights/types';
-import { researchSalesPlayContext, researchVendorRelationship, verifyExecutiveLinkedIn } from './parallelAI';
+import { researchSalesPlayContext, researchVendorRelationship, verifyExecutiveLinkedIn, discoverVerifiedExecutive } from './parallelAI';
 import { synthesizeSalesPlay2 } from './claudeAI';
 import { filterLiveUrlsOnRows, filterLiveUrls } from './urlValidator';
 
@@ -11,6 +11,13 @@ import { filterLiveUrlsOnRows, filterLiveUrls } from './urlValidator';
  * it ever reaches the UI — if the profile can't be confirmed as currently
  * employed at the target account, the name/title are dropped entirely
  * rather than shown unverified (the department alone still shows).
+ *
+ * Claude's prompt tells it to omit the name rather than guess whenever it's
+ * not confident, which in practice means most win themes come back with no
+ * named executive at all — not because the LinkedIn re-check keeps failing,
+ * but because Claude never proposed anyone to check. For those, fall back to
+ * Gemini's own grounded discovery (discoverVerifiedExecutive) so the column
+ * isn't just permanently empty whenever Claude declines to name someone.
  */
 async function verifyWinThemeExecutives(
   winThemes: SalesPlay2WinTheme[],
@@ -18,24 +25,36 @@ async function verifyWinThemeExecutives(
 ): Promise<SalesPlay2WinTheme[]> {
   return Promise.all(
     winThemes.map(async (wt) => {
-      if (!wt.targetExecutiveName || !wt.targetExecutiveTitle) return wt;
+      if (wt.targetExecutiveName && wt.targetExecutiveTitle) {
+        try {
+          const verification = await verifyExecutiveLinkedIn(wt.targetExecutiveName, wt.targetExecutiveTitle, targetAccount);
+          if (verification.currentCompanyMatches && verification.linkedinUrl) {
+            const liveUrl = await filterLiveUrls(verification.linkedinUrl, '');
+            if (liveUrl) return { ...wt, targetExecutiveLinkedIn: liveUrl, targetExecutiveVerified: true };
+          }
+        } catch (err) {
+          console.warn(`[salesPlay2] Executive verification failed for "${wt.targetExecutiveName}":`, err);
+        }
+        // Claude's proposed name couldn't be verified — drop it and fall through
+        // to Gemini discovery below rather than giving up on this theme entirely.
+      }
+
+      const { targetExecutiveName: _n, targetExecutiveTitle: _t, ...withoutExec } = wt;
       try {
-        const verification = await verifyExecutiveLinkedIn(wt.targetExecutiveName, wt.targetExecutiveTitle, targetAccount);
-        if (!verification.currentCompanyMatches || !verification.linkedinUrl) {
-          const { targetExecutiveName, targetExecutiveTitle, ...rest } = wt;
-          return rest;
-        }
-        // Belt and suspenders: the URL Gemini names still needs to actually resolve.
-        const liveUrl = await filterLiveUrls(verification.linkedinUrl, '');
-        if (!liveUrl) {
-          const { targetExecutiveName, targetExecutiveTitle, ...rest } = wt;
-          return rest;
-        }
-        return { ...wt, targetExecutiveLinkedIn: liveUrl, targetExecutiveVerified: true };
+        const discovered = await discoverVerifiedExecutive(targetAccount, wt.targetDepartment, `${wt.theme}: ${wt.description}`);
+        if (!discovered) return withoutExec;
+        const liveUrl = await filterLiveUrls(discovered.linkedinUrl, '');
+        if (!liveUrl) return withoutExec;
+        return {
+          ...withoutExec,
+          targetExecutiveName: discovered.name,
+          targetExecutiveTitle: discovered.title,
+          targetExecutiveLinkedIn: liveUrl,
+          targetExecutiveVerified: true,
+        };
       } catch (err) {
-        console.warn(`[salesPlay2] Executive verification failed for "${wt.targetExecutiveName}":`, err);
-        const { targetExecutiveName, targetExecutiveTitle, ...rest } = wt;
-        return rest;
+        console.warn(`[salesPlay2] Gemini executive discovery failed for department "${wt.targetDepartment}":`, err);
+        return withoutExec;
       }
     })
   );
@@ -148,7 +167,7 @@ export async function runSalesPlay2(jobId: string, input: SalesPlay2Input): Prom
       emit(jobId, 'progress', j);
     });
 
-    job = update(jobId, { progress: 92, currentStep: 'Verifying target executives via LinkedIn…' });
+    job = update(jobId, { progress: 92, currentStep: 'Identifying and verifying target executives via LinkedIn…' });
     emit(jobId, 'progress', job);
     let winThemes = await verifyWinThemeExecutives(result.winThemes, input.targetAccount);
 
