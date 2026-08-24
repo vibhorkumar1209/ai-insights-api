@@ -248,6 +248,39 @@ function fetchWithTimeout(url: string, timeoutMs: number): Promise<import('node-
   return fetch(url, { signal: controller.signal as any }).finally(() => clearTimeout(timer));
 }
 
+// Bounds how much of the Puppeteer scraper's response body this process will
+// buffer before parsing — same pattern as parallelAI.ts's readBodyLimited,
+// applied here because this backend runs on a 512MB instance and an
+// unbounded `res.json()` on a pathological/garbled scraper response has no
+// upper limit on memory it can consume.
+async function readJsonBodyLimited<T>(res: import('node-fetch').Response, maxBytes = 2_000_000): Promise<T> {
+  const body = res.body;
+  if (!body) return {} as T;
+
+  const rawText = await new Promise<string>((resolve) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    (body as unknown as import('stream').Readable)
+      .on('data', (raw: unknown) => {
+        const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+        const remaining = maxBytes - total;
+        if (chunk.length >= remaining) {
+          chunks.push(chunk.slice(0, remaining));
+          total = maxBytes;
+          try { (body as unknown as { destroy?: () => void }).destroy?.(); } catch { /* ignore */ }
+        } else {
+          chunks.push(chunk);
+          total += chunk.length;
+        }
+      })
+      .on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+      .on('error', () => resolve(Buffer.concat(chunks).toString('utf8')))
+      .on('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+
+  return JSON.parse(rawText) as T;
+}
+
 // ── Fetch annual data ──────────────────────────────────────────────────────────
 
 export interface AnnualFinancialsResult {
@@ -266,7 +299,7 @@ export async function fetchAnnualFinancials(searchString: string): Promise<Annua
   // 60 s timeout — Puppeteer-based API can be slow to launch the browser
   const res  = await fetchWithTimeout(url, 60_000);
   if (!res.ok) throw new Error(`Finance API annual: HTTP ${res.status}`);
-  const data = (await res.json()) as AnnualAPIResponse;
+  const data = await readJsonBodyLimited<AnnualAPIResponse>(res);
 
   const currency = extractCurrency(data.Financial);
 
@@ -513,7 +546,7 @@ export async function fetchQuarterlyFinancials(searchString: string): Promise<Qu
   // 60 s timeout — Puppeteer-based API can be slow to launch the browser
   const res  = await fetchWithTimeout(url, 60_000);
   if (!res.ok) throw new Error(`Finance API quarterly: HTTP ${res.status}`);
-  const data = (await res.json()) as QuarterlyAPIResponse;
+  const data = await readJsonBodyLimited<QuarterlyAPIResponse>(res);
 
   const raw      = data.QuarterFinancialAnalysis || {};
   const currency = extractCurrency(raw);
@@ -858,7 +891,20 @@ export async function detectTicker(
 
   equities.sort((a, b) => scoreQuote(b, companyName, domainHint) - scoreQuote(a, companyName, domainHint));
 
-  const best     = equities[0];
+  const best      = equities[0];
+  const bestScore = scoreQuote(best, companyName, domainHint);
+  // A broad/generic query (e.g. just the first word of a multi-word company
+  // name, pushed onto `queries` above) can return a plausible-looking but
+  // unrelated top result with a very low score — nothing in scoreQuote's
+  // weighting requires an actual name/domain/acronym match to "win", it just
+  // has to be the highest of whatever candidates came back. Reject outright
+  // rather than return a low-confidence guess; the caller falls through to
+  // the Claude lookup / private-company path instead.
+  if (bestScore < 8) {
+    console.warn(`[yahooFinance] detectTicker: best match for "${companyName}" scored too low (${bestScore}) — treating as not found`);
+    return null;
+  }
+
   const exchange = best.exchDisp || best.exchange || '';
   return { ticker: best.symbol as string, exchange };
 }

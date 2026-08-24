@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/types';
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials, companyIdentityConfirmed } from './yahooFinance';
-import { researchPrivateCompany, researchCompanySegments } from './parallelAI';
+import { researchPrivateCompany, researchCompanySegments, isImplausibleNativeAmount, LAKH_CRORE_CURRENCIES } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker, generateBusinessDescription } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
@@ -248,13 +248,33 @@ async function runPublicPath(
   // since fuzzy name matching alone cannot distinguish two different
   // companies that share a name/prefix (e.g. "Croma" the Indian retailer vs.
   // "Croma Security Solutions Group plc", an unrelated UK firm).
+  //
+  // Only skip this check when the fetched profile carries no name/website at
+  // all to compare against (companyIdentityConfirmed then has nothing to
+  // check and would otherwise reject every quoteSummary-only response that
+  // never populated companyInfo) — NOT based on hasMeaningfulData. A wrong
+  // ticker that happens to resolve to a real, unrelated, revenue-reporting
+  // company is the common case this exists to catch (e.g. "Croma" the Indian
+  // retailer resolving to "Croma Security Solutions Group plc" — that ticker
+  // has perfectly real, populated financials, just for the wrong company),
+  // and hasMeaningfulData is true for exactly that case, so gating on it
+  // let wrong-but-populated tickers straight through.
+  const hasProfileToCheck = !!(apiData.companyInfo?.name || apiData.companyInfo?.website);
   const profileConfirmsName = companyIdentityConfirmed({
     requestedName: input.companyName,
     requestedDomain: input.companyDomain,
     fetchedName: apiData.companyInfo?.name,
     fetchedWebsite: apiData.companyInfo?.website,
   });
-  if (ticker && !hasMeaningfulData && !profileConfirmsName && input.isPublic !== true) {
+  if (ticker && hasProfileToCheck && !profileConfirmsName && input.isPublic !== true) {
+    console.warn(`[financialAnalysis] Ticker ${ticker} resolved to "${apiData.companyInfo?.name}" which does not match requested company "${input.companyName}" — falling back to private path`);
+    apiData = {};
+    segmentContext = '';
+    const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined, companyInfo: undefined, revenueHistory: undefined, marginHistory: undefined, plStatement: undefined, balanceSheet: undefined, cashFlow: undefined, quarterlyHistory: undefined });
+    emit(jobId, 'progress', job0);
+    return runPrivatePath(jobId, input);
+  }
+  if (ticker && !hasMeaningfulData && !hasProfileToCheck && input.isPublic !== true) {
     console.warn(`[financialAnalysis] Ticker ${ticker} resolved but yielded no meaningful financial data — falling back to private path`);
     const job0 = update(jobId, { isPublic: false, ticker: undefined, exchange: undefined });
     emit(jobId, 'progress', job0);
@@ -275,11 +295,30 @@ async function runPublicPath(
     emit(jobId, 'progress', j);
   });
 
+  // Claude free-extracts revenueHistoryExtracted from research text only when
+  // Yahoo/Google Finance returned nothing — for lakh/crore-numbering
+  // currencies (INR, NPR, PKR, BDT, LKR) this is exactly the failure mode
+  // already guarded against in the private-company path (parallelAI.ts's
+  // isImplausibleNativeAmount): a bare number stated without its magnitude
+  // unit reads as a wildly wrong revenue figure. Apply the same check here —
+  // one implausible year in the extracted array is enough to distrust the
+  // whole array's unit handling, so drop it entirely rather than show a mix
+  // of possibly-right and definitely-wrong figures.
+  const extractedCurrency = (apiData.currency || 'USD').toUpperCase();
+  let revenueHistoryExtracted = insights.revenueHistoryExtracted;
+  if (revenueHistoryExtracted?.length && LAKH_CRORE_CURRENCIES.has(extractedCurrency)) {
+    const hasImplausible = revenueHistoryExtracted.some((r) => isImplausibleNativeAmount(r.revenue, extractedCurrency));
+    if (hasImplausible) {
+      console.warn(`[financialAnalysis] Discarding Claude-extracted revenueHistory for ${input.companyName} — implausible ${extractedCurrency} magnitude (likely missing Lakh/Crore unit)`);
+      revenueHistoryExtracted = undefined;
+    }
+  }
+
   // Prefer API-sourced structured arrays; fall back to Claude-extracted arrays
   const finalRevenueHistory =
     (apiData.revenueHistory?.length ?? 0) > 0
       ? apiData.revenueHistory
-      : insights.revenueHistoryExtracted?.length ? insights.revenueHistoryExtracted : undefined;
+      : revenueHistoryExtracted?.length ? revenueHistoryExtracted : undefined;
 
   const finalMarginHistory =
     (apiData.marginHistory?.length ?? 0) > 0

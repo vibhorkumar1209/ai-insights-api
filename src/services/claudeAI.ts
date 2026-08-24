@@ -1023,7 +1023,7 @@ Rules:
   const userPrompt = `Analyse the financial data for "${input.companyName}" (ticker: ${yahooData.ticker || 'N/A'}) and produce structured insights.
 Reporting currency: ${reportingCurrency}. Use the correct currency symbol for ${reportingCurrency} in all formatted monetary values (e.g. revenueFormatted, segment/geo revenue strings, P&L/BS/CF value fields). Do NOT default to "$" if the currency is not USD.
 
-## Google Finance Data (structured, pre-verified numbers)
+## ${yahooData.dataSource || 'Finance API'} Data (structured, pre-verified numbers)
 Revenue History: ${revenueStr || 'NOT AVAILABLE'}
 Margin History: ${marginStr || 'NOT AVAILABLE'}
 P&L Highlights: ${plStr || 'NOT AVAILABLE'}

@@ -863,7 +863,7 @@ function formatUSDMillion(raw: number): string {
 // Currencies that use the lakh/crore (or equivalent regional) numbering
 // system, where large company-scale figures are conventionally stated with
 // a magnitude unit (Lakh/Crore) rather than as a bare number.
-const LAKH_CRORE_CURRENCIES = new Set(['INR', 'NPR', 'PKR', 'BDT', 'LKR']);
+export const LAKH_CRORE_CURRENCIES = new Set(['INR', 'NPR', 'PKR', 'BDT', 'LKR']);
 
 /**
  * Flags a parsed native-currency amount as implausible for a real company's
@@ -880,7 +880,7 @@ const LAKH_CRORE_CURRENCIES = new Set(['INR', 'NPR', 'PKR', 'BDT', 'LKR']);
  * unit was never present in the source text at all (e.g. Taj Hotels
  * resolving to "$120" instead of ~$1.2B).
  */
-function isImplausibleNativeAmount(raw: number, currency: string): boolean {
+export function isImplausibleNativeAmount(raw: number, currency: string): boolean {
   if (!LAKH_CRORE_CURRENCIES.has(currency.toUpperCase())) return false;
   return Math.abs(raw) > 0 && Math.abs(raw) < 1e6; // < 10 Lakh
 }
