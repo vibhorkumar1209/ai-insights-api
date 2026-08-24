@@ -3124,14 +3124,20 @@ ${hasResearch ? `\nRESEARCH:\n${research.slice(0, 12000)}` : '\n[No live researc
 ${hasIncumbencyResearch ? `\nVENDOR INCUMBENCY CHECK (web search results for "competitor + ${input.targetAccount}" — use this to determine if a competitor already has a deployment/relationship there):\n${incumbencyResearch.slice(0, 4000)}` : ''}
 
 Generate:
-1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency. Each "theme" must be a short punchy label (3-6 words, not a full sentence — e.g. "Cloud Cost Optimization Pressure", not a paragraph explaining it). Each theme must have a short "focusArea" label (2-4 words, e.g. "Cloud Migration", "Cybersecurity Modernization"). Win Themes and triggers must be about ${input.targetAccount}'s own business context (priorities, pain points, initiatives) — do NOT mention any competitor by name in the theme or trigger text. For each trigger, also give "source": a real, currently-live URL (annual report, press release, news article, earnings call transcript) that supports the trigger claim — omit "source" entirely if you cannot name a real URL, never invent one.
+1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency. Win Themes and triggers must be about ${input.targetAccount}'s own business context (priorities, pain points, initiatives) — do NOT mention any competitor by name in the theme or trigger text. For each theme give:
+   - "theme": a short punchy label (3-6 words, not a full sentence — e.g. "Cloud Cost Optimization Pressure", not a paragraph explaining it).
+   - "description": 1-2 sentences explaining what this win theme means for ${input.targetAccount} and why it matters to their business.
+   - "trigger": the specific event, initiative, or pressure that creates urgency right now.
+   - "targetDepartment": the department or function at ${input.targetAccount} this theme is most relevant to (e.g. "IT Operations", "Procurement", "Supply Chain", "Marketing").
+   - "targetExecutiveName" and "targetExecutiveTitle": IF you can name a specific real, current executive at ${input.targetAccount} who owns this department/theme (from the research provided or well-established public knowledge), give their full name and exact title. If you are not confident of a specific, currently-accurate individual, OMIT both fields entirely — do not guess a plausible-sounding name or a former/outdated titleholder. This will be independently re-verified against LinkedIn before being shown, so naming someone you are unsure about will simply cause it to be dropped, not accepted as-is.
+   - "source": a real, currently-live URL (annual report, press release, news article, earnings call transcript) that supports the trigger claim — omit "source" entirely if you cannot name a real URL, never invent one.
 2. Opportunity Mapping — 4-5 opportunity areas showing how ${input.yourCompany} solves real problems with realistic deal sizes
 3. Competitive Positioning — generate ONE entry for EACH of these competitors, in this exact order: ${competitors.join(', ')}. For each, give specific strengths, weaknesses, and how ${input.yourCompany} differentiates. If the VENDOR INCUMBENCY CHECK above shows credible evidence (a case study, partnership announcement, deployment, or customer reference) that this competitor already serves ${input.targetAccount}, set "incumbencyNote" to a short factual note (e.g. "Existing vendor since 2021 — confirmed via case study") citing what was found. If no such evidence exists, omit "incumbencyNote" entirely (do not guess or fabricate).
 
 Output JSON:
 {
   "winThemes": [
-    { "theme": "...", "focusArea": "...", "trigger": "...", "source": "https://... (omit if none known)" }
+    { "theme": "...", "description": "...", "trigger": "...", "targetDepartment": "...", "targetExecutiveName": "... (omit if not confident)", "targetExecutiveTitle": "... (omit if not confident)", "source": "https://... (omit if none known)" }
   ],
   "opportunities": [
     {

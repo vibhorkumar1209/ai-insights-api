@@ -899,6 +899,44 @@ export async function runGeminiGroundedJSON<T>(prompt: string, source: string): 
   return parseGeminiJson<T>(text);
 }
 
+export interface ExecutiveLinkedInVerification {
+  linkedinUrl?: string;
+  currentCompanyMatches: boolean;
+}
+
+/**
+ * Sales Play II names a specific executive per win theme, which is exactly
+ * the kind of claim most likely to be stale (people change jobs constantly)
+ * or outright hallucinated. This independently re-checks the name+title
+ * Claude proposed via Gemini grounded search against LinkedIn, and only
+ * confirms it if the profile found currently lists targetAccount as the
+ * employer — a title/company match on its own (without a name) is not
+ * enough, since that's exactly the kind of plausible-but-wrong guess this
+ * check exists to catch.
+ */
+export async function verifyExecutiveLinkedIn(
+  name: string,
+  title: string,
+  targetAccount: string
+): Promise<ExecutiveLinkedInVerification> {
+  const prompt = `Search for the LinkedIn profile of "${name}", reported to hold the title "${title}" at "${targetAccount}".
+
+Confirm two things:
+1. A LinkedIn profile for this specific person exists and is findable.
+2. That profile CURRENTLY lists "${targetAccount}" (or an unambiguous variant of that company name) as their current employer — not a former employer.
+
+Return ONLY this JSON, no markdown fences:
+{"linkedinUrl": "https://www.linkedin.com/in/... or null if not found", "currentCompanyMatches": true or false}
+
+Set "currentCompanyMatches" to true ONLY if you have clear, current evidence. If the person cannot be found, the profile is ambiguous, or ${targetAccount} is listed as a past (not current) employer, return {"linkedinUrl": null, "currentCompanyMatches": false}. Never guess.`;
+
+  const result = await runGeminiGroundedJSON<ExecutiveLinkedInVerification>(prompt, 'verifyExecutiveLinkedIn');
+  if (!result || !result.currentCompanyMatches || !result.linkedinUrl) {
+    return { currentCompanyMatches: false };
+  }
+  return { linkedinUrl: result.linkedinUrl, currentCompanyMatches: true };
+}
+
 function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();

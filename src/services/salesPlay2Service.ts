@@ -1,8 +1,45 @@
 import { v4 as uuidv4 } from 'uuid';
-import { SalesPlay2Input, SalesPlay2Result } from '@ai-insights/types';
-import { researchSalesPlayContext, researchVendorRelationship } from './parallelAI';
+import { SalesPlay2Input, SalesPlay2Result, SalesPlay2WinTheme } from '@ai-insights/types';
+import { researchSalesPlayContext, researchVendorRelationship, verifyExecutiveLinkedIn } from './parallelAI';
 import { synthesizeSalesPlay2 } from './claudeAI';
-import { filterLiveUrlsOnRows } from './urlValidator';
+import { filterLiveUrlsOnRows, filterLiveUrls } from './urlValidator';
+
+/**
+ * Claude names a specific executive per win theme, which is exactly the kind
+ * of claim most prone to being stale or hallucinated. Independently
+ * re-verify each named executive via Gemini-grounded LinkedIn search before
+ * it ever reaches the UI — if the profile can't be confirmed as currently
+ * employed at the target account, the name/title are dropped entirely
+ * rather than shown unverified (the department alone still shows).
+ */
+async function verifyWinThemeExecutives(
+  winThemes: SalesPlay2WinTheme[],
+  targetAccount: string
+): Promise<SalesPlay2WinTheme[]> {
+  return Promise.all(
+    winThemes.map(async (wt) => {
+      if (!wt.targetExecutiveName || !wt.targetExecutiveTitle) return wt;
+      try {
+        const verification = await verifyExecutiveLinkedIn(wt.targetExecutiveName, wt.targetExecutiveTitle, targetAccount);
+        if (!verification.currentCompanyMatches || !verification.linkedinUrl) {
+          const { targetExecutiveName, targetExecutiveTitle, ...rest } = wt;
+          return rest;
+        }
+        // Belt and suspenders: the URL Gemini names still needs to actually resolve.
+        const liveUrl = await filterLiveUrls(verification.linkedinUrl, '');
+        if (!liveUrl) {
+          const { targetExecutiveName, targetExecutiveTitle, ...rest } = wt;
+          return rest;
+        }
+        return { ...wt, targetExecutiveLinkedIn: liveUrl, targetExecutiveVerified: true };
+      } catch (err) {
+        console.warn(`[salesPlay2] Executive verification failed for "${wt.targetExecutiveName}":`, err);
+        const { targetExecutiveName, targetExecutiveTitle, ...rest } = wt;
+        return rest;
+      }
+    })
+  );
+}
 
 const jobs = new Map<string, SalesPlay2Result>();
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
@@ -111,12 +148,16 @@ export async function runSalesPlay2(jobId: string, input: SalesPlay2Input): Prom
       emit(jobId, 'progress', j);
     });
 
+    job = update(jobId, { progress: 92, currentStep: 'Verifying target executives via LinkedIn…' });
+    emit(jobId, 'progress', job);
+    let winThemes = await verifyWinThemeExecutives(result.winThemes, input.targetAccount);
+
     job = update(jobId, { progress: 97, currentStep: 'Verifying source links…' });
     emit(jobId, 'progress', job);
     // '' fallback: if every URL Claude cited for a trigger turns out dead,
     // drop the source note entirely rather than showing generic placeholder
     // text after the trigger sentence.
-    const winThemes = await filterLiveUrlsOnRows(result.winThemes, '');
+    winThemes = await filterLiveUrlsOnRows(winThemes, '');
 
     const completedAt = new Date().toISOString();
     job = update(jobId, {

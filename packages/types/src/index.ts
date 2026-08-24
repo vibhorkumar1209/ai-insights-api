@@ -966,9 +966,18 @@ export interface ContentGenerationResult {
 
 export interface SalesPlay2WinTheme {
   theme: string;
-  focusArea: string;
+  description: string;
   trigger: string;
+  targetDepartment: string;
+  /** Named individual — only ever present if verified via LinkedIn (see targetExecutiveVerified). */
+  targetExecutiveName?: string;
+  targetExecutiveTitle?: string;
+  /** LinkedIn profile URL — only set once Gemini-grounded search confirmed it lists targetAccount as the current employer, and the URL itself resolves live. */
+  targetExecutiveLinkedIn?: string;
+  targetExecutiveVerified?: boolean;
   source?: string;
+  /** @deprecated replaced by targetDepartment — kept optional so old cached History entries don't break. */
+  focusArea?: string;
 }
 
 export interface SalesPlay2Opportunity {
