@@ -90,9 +90,17 @@ export async function filterLiveUrls(source: string | undefined, fallback = 'Com
   return cleaned || fallback;
 }
 
-/** Batch helper for arrays of rows that each carry a `source` field. */
-export async function filterLiveUrlsOnRows<T extends { source?: string }>(rows: T[]): Promise<T[]> {
+/**
+ * Batch helper for arrays of rows that each carry a `source` field.
+ * `fallback` is used only when a row's source string existed but every URL
+ * in it turned out dead; pass '' for callers where "no source" should mean
+ * the field disappears rather than showing generic placeholder text.
+ */
+export async function filterLiveUrlsOnRows<T extends { source?: string }>(
+  rows: T[],
+  fallback = 'Company reports, press releases, and public filings'
+): Promise<T[]> {
   return Promise.all(
-    rows.map(async (row) => ({ ...row, source: await filterLiveUrls(row.source) }))
+    rows.map(async (row) => ({ ...row, source: await filterLiveUrls(row.source, fallback) }))
   );
 }

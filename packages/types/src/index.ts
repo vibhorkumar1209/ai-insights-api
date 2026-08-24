@@ -961,6 +961,7 @@ export interface SalesPlay2WinTheme {
   theme: string;
   focusArea: string;
   trigger: string;
+  source?: string;
 }
 
 export interface SalesPlay2Opportunity {

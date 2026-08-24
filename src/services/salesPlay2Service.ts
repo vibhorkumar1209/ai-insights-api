@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { SalesPlay2Input, SalesPlay2Result } from '@ai-insights/types';
 import { researchSalesPlayContext, researchVendorRelationship } from './parallelAI';
 import { synthesizeSalesPlay2 } from './claudeAI';
+import { filterLiveUrlsOnRows } from './urlValidator';
 
 const jobs = new Map<string, SalesPlay2Result>();
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
@@ -110,13 +111,20 @@ export async function runSalesPlay2(jobId: string, input: SalesPlay2Input): Prom
       emit(jobId, 'progress', j);
     });
 
+    job = update(jobId, { progress: 97, currentStep: 'Verifying source links…' });
+    emit(jobId, 'progress', job);
+    // '' fallback: if every URL Claude cited for a trigger turns out dead,
+    // drop the source note entirely rather than showing generic placeholder
+    // text after the trigger sentence.
+    const winThemes = await filterLiveUrlsOnRows(result.winThemes, '');
+
     const completedAt = new Date().toISOString();
     job = update(jobId, {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
       completedAt,
-      winThemes: result.winThemes,
+      winThemes,
       opportunities: result.opportunities,
       competitors: result.competitors,
     });

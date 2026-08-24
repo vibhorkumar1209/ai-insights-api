@@ -3123,14 +3123,14 @@ ${hasResearch ? `\nRESEARCH:\n${research.slice(0, 12000)}` : '\n[No live researc
 ${hasIncumbencyResearch ? `\nVENDOR INCUMBENCY CHECK (web search results for "competitor + ${input.targetAccount}" — use this to determine if a competitor already has a deployment/relationship there):\n${incumbencyResearch.slice(0, 4000)}` : ''}
 
 Generate:
-1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency. Each theme must have a short "focusArea" label (2-4 words, e.g. "Cloud Migration", "Cybersecurity Modernization"). Win Themes and triggers must be about ${input.targetAccount}'s own business context (priorities, pain points, initiatives) — do NOT mention any competitor by name in the theme or trigger text.
+1. Win Themes — 4-5 specific themes tied to ${input.targetAccount}'s business context with triggers that create urgency. Each "theme" must be a short punchy label (3-6 words, not a full sentence — e.g. "Cloud Cost Optimization Pressure", not a paragraph explaining it). Each theme must have a short "focusArea" label (2-4 words, e.g. "Cloud Migration", "Cybersecurity Modernization"). Win Themes and triggers must be about ${input.targetAccount}'s own business context (priorities, pain points, initiatives) — do NOT mention any competitor by name in the theme or trigger text. For each trigger, also give "source": a real, currently-live URL (annual report, press release, news article, earnings call transcript) that supports the trigger claim — omit "source" entirely if you cannot name a real URL, never invent one.
 2. Opportunity Mapping — 4-5 opportunity areas showing how ${input.yourCompany} solves real problems with realistic deal sizes
 3. Competitive Positioning — generate ONE entry for EACH of these competitors, in this exact order: ${competitors.join(', ')}. For each, give specific strengths, weaknesses, and how ${input.yourCompany} differentiates. If the VENDOR INCUMBENCY CHECK above shows credible evidence (a case study, partnership announcement, deployment, or customer reference) that this competitor already serves ${input.targetAccount}, set "incumbencyNote" to a short factual note (e.g. "Existing vendor since 2021 — confirmed via case study") citing what was found. If no such evidence exists, omit "incumbencyNote" entirely (do not guess or fabricate).
 
 Output JSON:
 {
   "winThemes": [
-    { "theme": "...", "focusArea": "...", "trigger": "..." }
+    { "theme": "...", "focusArea": "...", "trigger": "...", "source": "https://... (omit if none known)" }
   ],
   "opportunities": [
     {
