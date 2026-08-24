@@ -76,11 +76,15 @@ export async function filterLiveUrls(source: string | undefined, fallback = 'Com
       cleaned = cleaned.split(url).join('').trim();
     }
   }
-  // Tidy up now-dangling separators/labels left behind after removing dead URLs
+  // Tidy up now-dangling separators/labels left behind after removing dead
+  // URLs — a label like "Reuters coverage of X 2023:" with no digits-only
+  // restriction, since source years/report codes (FY2024, 2023) are common
+  // and the original [A-Za-z ]+ char class silently left those dangling.
   cleaned = cleaned
-    .replace(/\|\s*\|/g, '|')
-    .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
-    .replace(/[A-Za-z ]+:\s*(\||$)/g, '$1')
+    .split('|')
+    .map((part) => part.replace(/[^:|]*:\s*$/, '').trim())
+    .filter((part) => part.length > 0)
+    .join(' | ')
     .trim();
 
   return cleaned || fallback;
