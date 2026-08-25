@@ -31,12 +31,20 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     domain: typeof domain === 'string' && domain.trim() ? domain.trim() : undefined,
   };
 
+  // Wider window than the 3-minute default (jobDedupe.ts) — this endpoint
+  // was seen being hit for the same company on an automated ~3-5 minute
+  // cadence for hours (first "iMerit Technology", now "SBI Life Insurance
+  // Co. Ltd."), and the 3-minute default was too short to catch pings
+  // spaced just past it (e.g. exactly 3:01 apart). 10 minutes comfortably
+  // covers the observed cadence while still being short enough not to
+  // block a genuine same-company re-run after a real gap.
   const { jobId, isNew } = dedupeJobStart(
     'business-description',
     input,
     (id) => getBusinessDescriptionJob(id)?.status,
     (status) => status === 'error',
-    () => createBusinessDescriptionJob()
+    () => createBusinessDescriptionJob(),
+    10 * 60 * 1000
   );
   if (isNew) {
     registerJobStart('business-description', jobId, extractLabel(req.body));
