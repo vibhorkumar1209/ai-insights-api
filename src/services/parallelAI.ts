@@ -800,11 +800,13 @@ Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<human-readab
 
   return `${getSearchRecencyInstruction()}${identityAnchor}Provide a comprehensive breakdown of the annual revenue for "${companyName}"${domain ? ` (${domain})` : ''}, structured as follows:
 
-1. CORE REVENUE DATA — ${scopeHint}
+1. CORE REVENUE DATA (the only REQUIRED part — find this first, and report it even if you cannot confidently fill in parts 2-5 below) — ${scopeHint}
 2. CURRENCY CONVERSION — state the figure in its native reported currency; USD conversion is handled deterministically in code from the raw figure you provide (see RAW AMOUNT RULE), not by you.
-3. GROWTH & TRENDS — the year-over-year (YoY) growth percentage, and the primary revenue drivers (specific product lines, geographic regions, or recent acquisitions) behind that growth.
-4. REGIONAL OR SEGMENT BREAKDOWN — if disclosed, revenue by major geographic region or business subsidiary/segment.
-5. DATA SOURCES & TRANSPARENCY — explicitly state whether this figure comes from an official regulatory filing (e.g. SEC 10-K, a regional company registrar) or a third-party intelligence platform (e.g. ZoomInfo, Tracxn, RocketReach, a news report) — never leave this unstated.
+3. GROWTH & TRENDS (optional — fill in if known) — the year-over-year (YoY) growth percentage, and the primary revenue drivers (specific product lines, geographic regions, or recent acquisitions) behind that growth.
+4. REGIONAL OR SEGMENT BREAKDOWN (optional — fill in only if disclosed) — revenue by major geographic region or business subsidiary/segment.
+5. DATA SOURCES & TRANSPARENCY (optional — best effort) — state whether this figure comes from an official regulatory filing (e.g. SEC 10-K, a regional company registrar) or a third-party intelligence platform (e.g. ZoomInfo, Tracxn, RocketReach, a news report) if you can tell; use null if genuinely unclear rather than withholding the revenue figure over it.
+
+IMPORTANT: parts 3-5 are enrichment, not gates. A found revenue number with those three fields null is a SUCCESS, not a reason to return {"latestRevenue": null} — only return null for latestRevenue itself if you truly cannot find any credible revenue figure at all.
 
 ${rawAmountRule}
 
@@ -821,7 +823,7 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
   "source": "the specific publication, filing, or platform the figure came from, e.g. 'SEC 10-K FY2025' or 'ZoomInfo'",
   "revenueDrivers": "1-2 sentences on the primary drivers behind the revenue/growth — specific product lines, geographic regions, or recent acquisitions — or null if not determinable",
   "regionalBreakdown": "revenue by major geographic region or business subsidiary if disclosed, e.g. 'North America: $2.1B, EMEA: $1.4B, APAC: $0.9B', or null if not disclosed",
-  "sourceType": "EXACTLY one of: 'Official regulatory filing' or 'Third-party intelligence platform' — must always be stated when latestRevenue is non-null"
+  "sourceType": "EXACTLY one of: 'Official regulatory filing' or 'Third-party intelligence platform', or null if genuinely unclear — do not withhold latestRevenue just because this is uncertain"
 }
 
 If you cannot find a credible, sourced revenue figure, return exactly: {"latestRevenue": null}`;
