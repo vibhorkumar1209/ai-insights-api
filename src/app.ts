@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { corsMiddleware } from './middleware/cors';
 import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
 import { requestLogger } from './middleware/requestLogger';
+import { ipBlocklist } from './middleware/ipBlocklist';
 import competitorsRouter from './routes/competitors';
 import peersRouter from './routes/peers';
 import benchmarkRouter from './routes/benchmark';
@@ -53,6 +54,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // ── Global middleware ────────────────────────────────────────────────────────
+// ipBlocklist first — ahead of body parsing, so a blocked IP is rejected
+// before any parsing/limiter work runs at all, not just before route logic.
+app.use(ipBlocklist);
 app.use(helmet());
 app.use(corsMiddleware);
 app.use(express.json({ limit: '500kb' }));
