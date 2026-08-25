@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 import {
   createOutsourcingReportJob,
   getOutsourcingReportJob,
@@ -30,9 +31,17 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     focusSegment: focusSegment?.trim() || 'the most attractive target segment for this vertical (use your own judgement to select the single most relevant one)',
   };
 
-  const jobId = createOutsourcingReportJob(input);
-  registerJobStart('industry-outsourcing-report', jobId, extractLabel(req.body));
-  runOutsourcingReportJob(jobId, input).catch(() => {});
+  const { jobId, isNew } = dedupeJobStart(
+    'industry-outsourcing-report',
+    input,
+    (id) => getOutsourcingReportJob(id)?.status,
+    (status) => status === 'error',
+    () => createOutsourcingReportJob(input)
+  );
+  if (isNew) {
+    registerJobStart('industry-outsourcing-report', jobId, extractLabel(req.body));
+    runOutsourcingReportJob(jobId, input).catch(() => {});
+  }
   res.status(202).json({ jobId });
 });
 

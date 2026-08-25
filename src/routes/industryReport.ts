@@ -12,6 +12,7 @@ import {
 } from '../services/industryReportService';
 import { handleJobError } from '../utils/jobErrorHandler';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -61,12 +62,21 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
   };
 
   const input = { query: scope.industry, geography: scope.geography };
-  const jobId = createIndustryReportJob(input);
-  registerJobStart('industry-report', jobId, extractLabel(req.body));
-  const manager = getIndustryJobManager();
-  runIndustryReportV2(jobId, enrichedScope).catch((err) =>
-    handleJobError(jobId, err, manager)
+
+  const { jobId, isNew } = dedupeJobStart(
+    'industry-report',
+    enrichedScope,
+    (id) => getIndustryReportJob(id)?.status,
+    (status) => status === 'error',
+    () => createIndustryReportJob(input)
   );
+  if (isNew) {
+    registerJobStart('industry-report', jobId, extractLabel(req.body));
+    const manager = getIndustryJobManager();
+    runIndustryReportV2(jobId, enrichedScope).catch((err) =>
+      handleJobError(jobId, err, manager)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

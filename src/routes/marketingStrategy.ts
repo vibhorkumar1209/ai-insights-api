@@ -9,6 +9,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/marketingStrategyService';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const VALID_FRAMEWORKS: StrategyFramework[] = [
   'BCG Matrix', 'SWOT', 'Porters Five Forces', 'Ansoff Matrix',
@@ -32,10 +33,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createMarketingStrategyJob();
-  registerJobStart('marketing-strategy', jobId, extractLabel(req.body));
-
-  runMarketingStrategy(jobId, {
+  const input = {
     industryOrSegment: industryOrSegment.trim().slice(0, 300),
     framework,
     productContext:    typeof productContext    === 'string' && productContext.trim()    ? productContext.trim().slice(0, 5000)    : undefined,
@@ -44,7 +42,19 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     companyDomain:     typeof companyDomain     === 'string' && companyDomain.trim()     ? companyDomain.trim().slice(0, 200)     : undefined,
     focusTech:         typeof focusTech         === 'string' && focusTech.trim()         ? focusTech.trim().slice(0, 500)         : undefined,
     otherContext:      typeof otherContext       === 'string' && otherContext.trim()      ? otherContext.trim().slice(0, 2000)     : undefined,
-  }).catch((err) => console.error('[marketingStrategy] Unhandled error:', err));
+  };
+
+  const { jobId, isNew } = dedupeJobStart(
+    'marketing-strategy',
+    input,
+    (id) => getMarketingStrategyJob(id)?.status,
+    (status) => status === 'error',
+    () => createMarketingStrategyJob()
+  );
+  if (isNew) {
+    registerJobStart('marketing-strategy', jobId, extractLabel(req.body));
+    runMarketingStrategy(jobId, input).catch((err) => console.error('[marketingStrategy] Unhandled error:', err));
+  }
 
   res.status(202).json({ jobId });
 });

@@ -9,6 +9,7 @@ import {
 } from '../services/themesService';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -41,12 +42,19 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     companyDomain: companyDomain ? String(companyDomain).slice(0, 200) : undefined,
   };
 
-  const jobId = createThemeJob();
-  registerJobStart('business-themes', jobId, extractLabel(req.body));
-
-  runThemesAnalysis(jobId, input).catch((err) => {
-    console.error(`[themes] Job ${jobId} failed:`, err);
-  });
+  const { jobId, isNew } = dedupeJobStart(
+    'themes',
+    input,
+    (id) => getThemeJob(id)?.status,
+    (status) => status === 'error',
+    () => createThemeJob()
+  );
+  if (isNew) {
+    registerJobStart('business-themes', jobId, extractLabel(req.body));
+    runThemesAnalysis(jobId, input).catch((err) => {
+      console.error(`[themes] Job ${jobId} failed:`, err);
+    });
+  }
 
   return res.status(202).json({ jobId });
 });

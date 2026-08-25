@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 import {
   createIndustryTrendsJob,
   getIndustryTrendsJob,
@@ -20,15 +21,24 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createIndustryTrendsJob();
-  registerJobStart('industry-trends', jobId, extractLabel(req.body));
-
-  runIndustryTrends(jobId, {
+  const input = {
     industrySegment: industrySegment.trim().slice(0, 300),
     geography: typeof geography === 'string' && geography.trim()
       ? geography.trim().slice(0, 100)
       : 'Global',
-  }).catch((err) => console.error('[industryTrends] Unhandled error:', err));
+  };
+
+  const { jobId, isNew } = dedupeJobStart(
+    'industry-trends',
+    input,
+    (id) => getIndustryTrendsJob(id)?.status,
+    (status) => status === 'error',
+    () => createIndustryTrendsJob()
+  );
+  if (isNew) {
+    registerJobStart('industry-trends', jobId, extractLabel(req.body));
+    runIndustryTrends(jobId, input).catch((err) => console.error('[industryTrends] Unhandled error:', err));
+  }
 
   res.status(202).json({ jobId });
 });

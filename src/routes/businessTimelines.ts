@@ -10,6 +10,7 @@ import {
 } from '../services/businessTimelinesService';
 import { handleJobError } from '../utils/jobErrorHandler';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -22,17 +23,24 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createBusinessTimelinesJob(
-    companyName.trim().slice(0, 200),
-    typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined
-  );
-  registerJobStart('business-timelines', jobId, extractLabel(req.body));
+  const name = companyName.trim().slice(0, 200);
+  const domain = typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined;
 
-  // Run async (fire and forget)
-  const manager = getTimelinesJobManager();
-  runBusinessTimelinesAnalysis(jobId, companyName.trim(), companyDomain).catch((err: Error) =>
-    handleJobError(jobId, err, manager)
+  const { jobId, isNew } = dedupeJobStart(
+    'business-timelines',
+    { companyName: name, companyDomain: domain },
+    (id) => getBusinessTimelinesJob(id)?.status,
+    (status) => status === 'error',
+    () => createBusinessTimelinesJob(name, domain)
   );
+  if (isNew) {
+    registerJobStart('business-timelines', jobId, extractLabel(req.body));
+    // Run async (fire and forget)
+    const manager = getTimelinesJobManager();
+    runBusinessTimelinesAnalysis(jobId, name, domain).catch((err: Error) =>
+      handleJobError(jobId, err, manager)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

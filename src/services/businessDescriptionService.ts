@@ -24,54 +24,18 @@ const cleanupTimer = setInterval(() => {
 }, 30 * 60 * 1000);
 cleanupTimer.unref();
 
-// ── Duplicate-submission dedupe ────────────────────────────────────────────
-//
-// This endpoint was observed being hit 200+ times for the exact same
-// company within ~26 minutes on production (every few seconds at first,
-// tapering as each run took longer) — whatever the caller (a stuck client
-// retry loop, a misbehaving script, or repeated manual resubmission), every
-// one of those was a wasted Claude + Parallel.AI call for an answer that
-// was already in flight or already sitting in the job store. Rather than
-// try to prove or police who/what is calling it, dedupe at the source: an
-// identical companyName+domain request within DEDUPE_WINDOW_MS gets back
-// the existing job instead of starting a new one.
-const recentByKey = new Map<string, string>(); // normalized key → jobId
-const DEDUPE_WINDOW_MS = 3 * 60 * 1000;
-
-function dedupeKey(companyName: string, domain?: string): string {
-  return `${companyName.trim().toLowerCase()}|${(domain || '').trim().toLowerCase()}`;
-}
-
 export function getBusinessDescriptionJob(jobId: string): BusinessDescriptionResult | undefined {
   return jobs.get(jobId);
 }
 
-/**
- * Returns an existing jobId if an identical (companyName+domain) request is
- * still pending/running/recently-completed, otherwise creates and returns a
- * new one. Callers should treat the returned jobId as "the job to poll" in
- * both cases — a 202 response with a pre-existing jobId behaves identically
- * to a fresh one from the client's perspective.
- */
-export function createBusinessDescriptionJob(input: BusinessDescriptionInput): { jobId: string; isNew: boolean } {
-  const key = dedupeKey(input.companyName, input.domain);
-  const existingId = recentByKey.get(key);
-  if (existingId) {
-    const existing = jobs.get(existingId);
-    if (existing && existing.status !== 'error') {
-      console.log(`[businessDescription] Deduping repeat request for "${input.companyName}" — reusing job ${existingId}`);
-      return { jobId: existingId, isNew: false };
-    }
-    recentByKey.delete(key);
-  }
-
+// Duplicate-submission dedupe (this endpoint was observed being hit 200+
+// times for the exact same company within ~26 minutes in production) now
+// lives in the shared jobDedupe.ts helper, applied at the route layer along
+// with every other job-creating module — see businessDescription.ts.
+export function createBusinessDescriptionJob(): string {
   const jobId = uuidv4();
   jobs.set(jobId, { jobId, status: 'pending', progress: 0, createdAt: new Date().toISOString() });
-  recentByKey.set(key, jobId);
-  setTimeout(() => {
-    if (recentByKey.get(key) === jobId) recentByKey.delete(key);
-  }, DEDUPE_WINDOW_MS).unref();
-  return { jobId, isNew: true };
+  return jobId;
 }
 
 function updateJob(jobId: string, update: Partial<BusinessDescriptionResult>) {

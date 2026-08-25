@@ -9,6 +9,7 @@ import {
 } from '../services/challengesGrowthService';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -27,11 +28,19 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     companyDomain: companyDomain ? String(companyDomain).slice(0, 200) : undefined,
   };
 
-  const jobId = createChallengesGrowthJob();
-  registerJobStart('challenges-growth', jobId, extractLabel(req.body));
-  runChallengesGrowth(jobId, input).catch((err) =>
-    console.error(`[challenges-growth] Job ${jobId} failed:`, err)
+  const { jobId, isNew } = dedupeJobStart(
+    'challenges-growth',
+    input,
+    (id) => getChallengesGrowthJob(id)?.status,
+    (status) => status === 'error',
+    () => createChallengesGrowthJob()
   );
+  if (isNew) {
+    registerJobStart('challenges-growth', jobId, extractLabel(req.body));
+    runChallengesGrowth(jobId, input).catch((err) =>
+      console.error(`[challenges-growth] Job ${jobId} failed:`, err)
+    );
+  }
 
   return res.status(202).json({ jobId });
 });

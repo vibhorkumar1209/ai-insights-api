@@ -10,6 +10,7 @@ import {
 import { discoverEmergingTechsQuick } from '../services/claudeAI';
 import { TechHeatMapInput } from '@ai-insights/types';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -37,12 +38,19 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createTechnologyHeatMapJob();
-  registerJobStart('technology-heat-map', jobId, extractLabel(req.body));
-
-  runTechnologyHeatMap(jobId, input).catch((err) =>
-    console.error('[technologyHeatMap] Unhandled error:', err)
+  const { jobId, isNew } = dedupeJobStart(
+    'technology-heat-map',
+    input,
+    (id) => getTechnologyHeatMapJob(id)?.status,
+    (status) => status === 'error',
+    () => createTechnologyHeatMapJob()
   );
+  if (isNew) {
+    registerJobStart('technology-heat-map', jobId, extractLabel(req.body));
+    runTechnologyHeatMap(jobId, input).catch((err) =>
+      console.error('[technologyHeatMap] Unhandled error:', err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

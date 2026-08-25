@@ -9,6 +9,7 @@ import {
 } from '../services/nicheIndustryService';
 import { NicheOutputMode, NicheSegmentationDepth } from '@ai-insights/types';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -35,10 +36,7 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createNicheIndustryJob();
-  registerJobStart('niche-industries', jobId, extractLabel(req.body));
-
-  runNicheIndustryAnalysis(jobId, {
+  const input = {
     industryVertical: industryVertical.trim().slice(0, 2000),
     subSegmentOrTheme: typeof subSegmentOrTheme === 'string' && subSegmentOrTheme.trim()
       ? subSegmentOrTheme.trim().slice(0, 1000) : undefined,
@@ -49,7 +47,19 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
       ? additionalContext.trim().slice(0, 5000) : undefined,
     numberOfTopics: VALID_TOPICS.includes(Number(numberOfTopics)) ? Number(numberOfTopics) : 12,
     segmentationDepth: VALID_DEPTHS.includes(segmentationDepth) ? segmentationDepth : 'standard',
-  }).catch((err) => console.error('[nicheIndustry] Unhandled error:', err));
+  };
+
+  const { jobId, isNew } = dedupeJobStart(
+    'niche-industries',
+    input,
+    (id) => getNicheIndustryJob(id)?.status,
+    (status) => status === 'error',
+    () => createNicheIndustryJob()
+  );
+  if (isNew) {
+    registerJobStart('niche-industries', jobId, extractLabel(req.body));
+    runNicheIndustryAnalysis(jobId, input).catch((err) => console.error('[nicheIndustry] Unhandled error:', err));
+  }
 
   res.status(202).json({ jobId });
 });

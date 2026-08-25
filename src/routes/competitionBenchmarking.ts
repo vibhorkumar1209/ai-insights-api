@@ -6,6 +6,7 @@ import {
 } from '../services/competitionBenchmarkingService';
 import { CompetitionBenchmarkingInput } from '@ai-insights/types';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -43,9 +44,17 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     selectedCompetitors: Array.isArray(selectedCompetitors) ? selectedCompetitors.map(String).slice(0, 5) : undefined,
   };
 
-  const jobId = createCompetitionBenchmarkingJob(input);
-  registerJobStart('competition-benchmarking', jobId, extractLabel(req.body));
-  runCompetitionBenchmarking(jobId, input).catch(() => {});
+  const { jobId, isNew } = dedupeJobStart(
+    'competition-benchmarking',
+    input,
+    (id) => getCompetitionBenchmarkingJob(id)?.status,
+    (status) => status === 'error',
+    () => createCompetitionBenchmarkingJob(input)
+  );
+  if (isNew) {
+    registerJobStart('competition-benchmarking', jobId, extractLabel(req.body));
+    runCompetitionBenchmarking(jobId, input).catch(() => {});
+  }
   res.status(202).json({ jobId });
 });
 

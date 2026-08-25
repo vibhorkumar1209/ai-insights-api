@@ -10,6 +10,7 @@ import {
 } from '../services/businessSegmentsService';
 import { handleJobError } from '../utils/jobErrorHandler';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -22,17 +23,24 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createBusinessSegmentsJob(
-    companyName.trim().slice(0, 200),
-    typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined
-  );
-  registerJobStart('business-segments', jobId, extractLabel(req.body));
+  const name = companyName.trim().slice(0, 200);
+  const domain = typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined;
 
-  // Run async (fire and forget)
-  const manager = getSegmentsJobManager();
-  runBusinessSegmentsAnalysis(jobId, companyName.trim(), companyDomain).catch((err: Error) =>
-    handleJobError(jobId, err, manager)
+  const { jobId, isNew } = dedupeJobStart(
+    'business-segments',
+    { companyName: name, companyDomain: domain },
+    (id) => getBusinessSegmentsJob(id)?.status,
+    (status) => status === 'error',
+    () => createBusinessSegmentsJob(name, domain)
   );
+  if (isNew) {
+    registerJobStart('business-segments', jobId, extractLabel(req.body));
+    // Run async (fire and forget)
+    const manager = getSegmentsJobManager();
+    runBusinessSegmentsAnalysis(jobId, name, domain).catch((err: Error) =>
+      handleJobError(jobId, err, manager)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

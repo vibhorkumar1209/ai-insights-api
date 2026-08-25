@@ -11,6 +11,7 @@ import {
 import { aiLimiter } from '../middleware/rateLimiter';
 import { handleJobError } from '../utils/jobErrorHandler';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -59,14 +60,21 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     selectedCompetitors: selectedCompetitors.map((c: unknown) => String(c).slice(0, 200)),
   };
 
-  const jobId = createJob();
-  registerJobStart('peer-benchmarking', jobId, extractLabel(req.body));
-
-  // Run benchmark asynchronously — client streams progress via SSE
-  const manager = getBenchmarkJobManager();
-  runBenchmark(jobId, input).catch((err) => {
-    handleJobError(jobId, err, manager);
-  });
+  const { jobId, isNew } = dedupeJobStart(
+    'peer-benchmarking',
+    input,
+    (id) => getJob(id)?.status,
+    (status) => status === 'error',
+    () => createJob()
+  );
+  if (isNew) {
+    registerJobStart('peer-benchmarking', jobId, extractLabel(req.body));
+    // Run benchmark asynchronously — client streams progress via SSE
+    const manager = getBenchmarkJobManager();
+    runBenchmark(jobId, input).catch((err) => {
+      handleJobError(jobId, err, manager);
+    });
+  }
 
   return res.status(202).json({ jobId });
 });

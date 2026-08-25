@@ -9,6 +9,7 @@ import {
 } from '../services/businessDescriptionService';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -30,7 +31,13 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     domain: typeof domain === 'string' && domain.trim() ? domain.trim() : undefined,
   };
 
-  const { jobId, isNew } = createBusinessDescriptionJob(input);
+  const { jobId, isNew } = dedupeJobStart(
+    'business-description',
+    input,
+    (id) => getBusinessDescriptionJob(id)?.status,
+    (status) => status === 'error',
+    () => createBusinessDescriptionJob()
+  );
   if (isNew) {
     registerJobStart('business-description', jobId, extractLabel(req.body));
     runBusinessDescription(jobId, input).catch((err) =>

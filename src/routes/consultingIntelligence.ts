@@ -8,6 +8,7 @@ import {
   subscribeToConsultingJob,
   unsubscribeFromConsultingJob,
 } from '../services/consultingIntelligenceService.js';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -29,15 +30,21 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     ? geography
     : 'Global';
 
-  const jobId = createConsultingIntelligenceJob({
-    topic: topic.trim().slice(0, 2000),
-    geography: geoValue,
-  });
-  registerJobStart('consulting-intelligence', jobId, extractLabel(req.body));
+  const params = { topic: topic.trim().slice(0, 2000), geography: geoValue };
 
-  runConsultingIntelligenceAnalysis(jobId).catch((err) =>
-    console.error('[consultingIntelligence] Unhandled error:', err)
+  const { jobId, isNew } = dedupeJobStart(
+    'consulting-intelligence',
+    params,
+    (id) => getConsultingIntelligenceJob(id)?.status,
+    (status) => status === 'error',
+    () => createConsultingIntelligenceJob(params)
   );
+  if (isNew) {
+    registerJobStart('consulting-intelligence', jobId, extractLabel(req.body));
+    runConsultingIntelligenceAnalysis(jobId).catch((err) =>
+      console.error('[consultingIntelligence] Unhandled error:', err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

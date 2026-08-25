@@ -8,6 +8,7 @@ import {
   subscribeToVucaJob,
   unsubscribeFromVucaJob,
 } from '../services/vucaAnalysisService.js';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -24,17 +25,26 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
   }
 
   const { companyName, companyDomain } = req.body;
-  const jobId = createVucaJob({
+  const params = {
     industry: industry.trim().slice(0, 200),
     geography: geography.trim().slice(0, 100),
     companyName: typeof companyName === 'string' ? companyName.trim().slice(0, 200) : undefined,
     companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 200) : undefined,
-  });
-  registerJobStart('vuca-analysis', jobId, extractLabel(req.body));
+  };
 
-  runVucaAnalysis(jobId).catch((err) =>
-    console.error('[vucaAnalysis] Unhandled error:', err)
+  const { jobId, isNew } = dedupeJobStart(
+    'vuca-analysis',
+    params,
+    (id) => getVucaJob(id)?.status,
+    (status) => status === 'error',
+    () => createVucaJob(params)
   );
+  if (isNew) {
+    registerJobStart('vuca-analysis', jobId, extractLabel(req.body));
+    runVucaAnalysis(jobId).catch((err) =>
+      console.error('[vucaAnalysis] Unhandled error:', err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

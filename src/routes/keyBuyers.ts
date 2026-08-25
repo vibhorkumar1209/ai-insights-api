@@ -9,6 +9,7 @@ import {
 } from '../services/keyBuyersService';
 import { KeyBuyersInput } from '@ai-insights/types';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -26,13 +27,20 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined,
   };
 
-  const jobId = createKeyBuyersJob();
-  registerJobStart('key-buyers', jobId, extractLabel(req.body));
-
-  // Fire-and-forget — result delivered via SSE
-  runKeyBuyers(jobId, input).catch((err) =>
-    console.error('[keyBuyers] Unhandled error:', err)
+  const { jobId, isNew } = dedupeJobStart(
+    'key-buyers',
+    input,
+    (id) => getKeyBuyersJob(id)?.status,
+    (status) => status === 'error',
+    () => createKeyBuyersJob()
   );
+  if (isNew) {
+    registerJobStart('key-buyers', jobId, extractLabel(req.body));
+    // Fire-and-forget — result delivered via SSE
+    runKeyBuyers(jobId, input).catch((err) =>
+      console.error('[keyBuyers] Unhandled error:', err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

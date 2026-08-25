@@ -9,6 +9,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/objectionHandlingService';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -53,11 +54,19 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     competitorWeaknesses: competitorWeaknesses?.trim() || undefined,
   };
 
-  const jobId = createObjectionHandlingJob(input);
-  registerJobStart('objection-handling', jobId, extractLabel(req.body));
-  runObjectionHandling(jobId, input).catch((err) =>
-    console.error('[objectionHandling] Unhandled error:', err)
+  const { jobId, isNew } = dedupeJobStart(
+    'objection-handling',
+    input,
+    (id) => getObjectionHandlingJob(id)?.status,
+    (status) => status === 'error',
+    () => createObjectionHandlingJob(input)
   );
+  if (isNew) {
+    registerJobStart('objection-handling', jobId, extractLabel(req.body));
+    runObjectionHandling(jobId, input).catch((err) =>
+      console.error('[objectionHandling] Unhandled error:', err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

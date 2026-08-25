@@ -11,6 +11,7 @@ import {
 import { FinancialAnalysisInput } from '@ai-insights/types';
 import { handleJobError } from '../utils/jobErrorHandler';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -28,20 +29,25 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     return;
   }
 
-  const jobId = createFinancialJob({
+  const input: FinancialAnalysisInput = {
     companyName: companyName.trim().slice(0, 200),
     companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined,
     isPublic: typeof isPublic === 'boolean' ? isPublic : undefined,
-  });
-  registerJobStart('financial-analysis', jobId, extractLabel(req.body));
+  };
 
-  // Run async (fire and forget)
-  const manager = getFinancialJobManager();
-  runFinancialAnalysis(jobId, {
-    companyName: companyName.trim().slice(0, 200),
-    companyDomain: typeof companyDomain === 'string' ? companyDomain.trim().slice(0, 100) : undefined,
-    isPublic: typeof isPublic === 'boolean' ? isPublic : undefined,
-  }).catch((err: Error) => handleJobError(jobId, err, manager));
+  const { jobId, isNew } = dedupeJobStart(
+    'financial-analysis',
+    input,
+    (id) => getFinancialJob(id)?.status,
+    (status) => status === 'error',
+    () => createFinancialJob(input)
+  );
+  if (isNew) {
+    registerJobStart('financial-analysis', jobId, extractLabel(req.body));
+    // Run async (fire and forget)
+    const manager = getFinancialJobManager();
+    runFinancialAnalysis(jobId, input).catch((err: Error) => handleJobError(jobId, err, manager));
+  }
 
   res.status(202).json({ jobId });
 });

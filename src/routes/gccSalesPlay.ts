@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 import {
   createGccSalesPlayJob,
   getGccSalesPlayJob,
@@ -27,9 +28,17 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     coreIndustrySegment: coreIndustrySegment.trim(),
   };
 
-  const jobId = createGccSalesPlayJob(input);
-  registerJobStart('gcc-sales-play', jobId, extractLabel(req.body));
-  runGccSalesPlayJob(jobId, input).catch(() => {});
+  const { jobId, isNew } = dedupeJobStart(
+    'gcc-sales-play',
+    input,
+    (id) => getGccSalesPlayJob(id)?.status,
+    (status) => status === 'error',
+    () => createGccSalesPlayJob(input)
+  );
+  if (isNew) {
+    registerJobStart('gcc-sales-play', jobId, extractLabel(req.body));
+    runGccSalesPlayJob(jobId, input).catch(() => {});
+  }
   res.status(202).json({ jobId });
 });
 

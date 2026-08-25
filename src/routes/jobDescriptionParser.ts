@@ -6,6 +6,7 @@ import {
 } from '../services/jobDescriptionParserService';
 import { JobPostingInput } from '@ai-insights/types';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -42,9 +43,17 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     });
   }
 
-  const jobId = createJobDescriptionParserJob(cleaned);
-  registerJobStart('job-description-parser', jobId, extractLabel(req.body));
-  runJobDescriptionParser(jobId, cleaned).catch(() => {});
+  const { jobId, isNew } = dedupeJobStart(
+    'job-description-parser',
+    cleaned,
+    (id) => getJobDescriptionParserJob(id)?.status,
+    (status) => status === 'error',
+    () => createJobDescriptionParserJob(cleaned)
+  );
+  if (isNew) {
+    registerJobStart('job-description-parser', jobId, extractLabel(req.body));
+    runJobDescriptionParser(jobId, cleaned).catch(() => {});
+  }
   res.status(202).json({ jobId });
 });
 

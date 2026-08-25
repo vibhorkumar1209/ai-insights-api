@@ -9,6 +9,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/salesPlayService';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -52,12 +53,20 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     competitorWeaknesses: competitorWeaknesses?.trim() || undefined,
   };
 
-  const jobId = createSalesPlayJob(input);
-  registerJobStart('sales-play', jobId, extractLabel(req.body));
-  // Fire-and-forget — result delivered via SSE
-  runSalesPlay(jobId, input).catch((err) =>
-    console.error('[salesPlay] Unhandled error:', err)
+  const { jobId, isNew } = dedupeJobStart(
+    'sales-play',
+    input,
+    (id) => getSalesPlayJob(id)?.status,
+    (status) => status === 'error',
+    () => createSalesPlayJob(input)
   );
+  if (isNew) {
+    registerJobStart('sales-play', jobId, extractLabel(req.body));
+    // Fire-and-forget — result delivered via SSE
+    runSalesPlay(jobId, input).catch((err) =>
+      console.error('[salesPlay] Unhandled error:', err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });

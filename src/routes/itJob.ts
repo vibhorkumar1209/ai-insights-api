@@ -3,6 +3,7 @@ import { aiLimiter } from '../middleware/rateLimiter';
 import { createItJobJob, getItJobJob, runItJobSearch, subscribeToJob, unsubscribeFromJob } from '../services/itJobService';
 import { normalizeDomain } from '../services/yahooFinance';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -43,9 +44,18 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   const normalizedLinkedinHandle = typeof linkedinHandle === 'string' ? normalizeLinkedinHandle(linkedinHandle) : undefined;
 
   const input = { companyName: companyName.trim(), companyDomain: normalizedDomain, linkedinHandle: normalizedLinkedinHandle };
-  const jobId = createItJobJob(input);
-  registerJobStart('it-jobs', jobId, extractLabel(req.body));
-  runItJobSearch(jobId, input).catch(() => {});
+
+  const { jobId, isNew } = dedupeJobStart(
+    'it-jobs',
+    input,
+    (id) => getItJobJob(id)?.status,
+    (status) => status === 'error',
+    () => createItJobJob(input)
+  );
+  if (isNew) {
+    registerJobStart('it-jobs', jobId, extractLabel(req.body));
+    runItJobSearch(jobId, input).catch(() => {});
+  }
   res.status(202).json({ jobId });
 });
 

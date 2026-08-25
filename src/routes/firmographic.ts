@@ -3,6 +3,7 @@ import { aiLimiter } from '../middleware/rateLimiter';
 import { createFirmographicJob, getFirmographicJob, runFirmographicJob, subscribeToJob, unsubscribeFromJob } from '../services/firmographicService';
 import { normalizeDomain } from '../services/yahooFinance';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
+import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
@@ -17,9 +18,19 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
   // Claude/Gemini prompts) gets a bare hostname regardless of whether the
   // user pasted a full URL, included "www.", or mixed case.
   const normalizedDomain = normalizeDomain(companyDomain);
-  const jobId = createFirmographicJob({ companyName: companyName.trim(), companyDomain: normalizedDomain });
-  registerJobStart('firmographic', jobId, extractLabel(req.body));
-  runFirmographicJob(jobId, { companyName: companyName.trim(), companyDomain: normalizedDomain }).catch(() => {});
+  const input = { companyName: companyName.trim(), companyDomain: normalizedDomain };
+
+  const { jobId, isNew } = dedupeJobStart(
+    'firmographic',
+    input,
+    (id) => getFirmographicJob(id)?.status,
+    (status) => status === 'error',
+    () => createFirmographicJob(input)
+  );
+  if (isNew) {
+    registerJobStart('firmographic', jobId, extractLabel(req.body));
+    runFirmographicJob(jobId, input).catch(() => {});
+  }
   res.status(202).json({ jobId });
 });
 
