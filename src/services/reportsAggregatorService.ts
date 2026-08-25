@@ -19,6 +19,7 @@ import { getMarketingStrategyJob } from './marketingStrategyService';
 import { getNicheIndustryJob } from './nicheIndustryService';
 import { getObjectionHandlingJob } from './objectionHandlingService';
 import { getOutsourcingReportJob } from './outsourcingReportService';
+import { getPeersJob } from './peersService';
 import { getSalesPlayJob } from './salesPlayService';
 import { getSalesPlay2Job } from './salesPlay2Service';
 import { getSpendJob } from './spendService';
@@ -61,6 +62,7 @@ const GETTERS: Record<string, (jobId: string) => any> = {
   'niche-industries': getNicheIndustryJob,
   'objection-handling': getObjectionHandlingJob,
   'industry-outsourcing-report': getOutsourcingReportJob,
+  'peers': getPeersJob,
   'sales-play': getSalesPlayJob,
   'sales-play-2': getSalesPlay2Job,
   'spend': getSpendJob,

@@ -7,6 +7,7 @@ import { corsMiddleware } from './middleware/cors';
 import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
 import { requestLogger } from './middleware/requestLogger';
 import competitorsRouter from './routes/competitors';
+import peersRouter from './routes/peers';
 import benchmarkRouter from './routes/benchmark';
 import themesRouter from './routes/themes';
 import challengesGrowthRouter from './routes/challengesGrowth';
@@ -64,6 +65,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/competitors', memoryGuard, competitorsRouter);
+app.use('/api/peers', memoryGuard, peersRouter);
 app.use('/api/benchmark', memoryGuard, benchmarkRouter);
 app.use('/api/themes', memoryGuard, themesRouter);
 app.use('/api/challenges-growth', memoryGuard, challengesGrowthRouter);

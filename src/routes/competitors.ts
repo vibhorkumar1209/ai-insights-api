@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { discoverCompetitorsFast, generateBusinessDescription } from '../services/claudeAI';
+import { discoverCompetitorsFast } from '../services/claudeAI';
 import { researchCompanyOverview } from '../services/parallelAI';
 import { aiLimiter } from '../middleware/rateLimiter';
 
@@ -22,10 +22,6 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'targetCompany is required and must be a string' });
   }
 
-  if (!companyDomain || typeof companyDomain !== 'string' || !companyDomain.trim()) {
-    return res.status(400).json({ error: 'companyDomain is required — it is used to verify company identity before researching peers, since company names are frequently shared by unrelated businesses' });
-  }
-
   if (targetCompany.length > 200 || (industryContext && String(industryContext).length > 500)) {
     return res.status(400).json({ error: 'Input too long' });
   }
@@ -34,31 +30,39 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     ? industryContext.trim()
     : undefined;
 
-  const domain = companyDomain.trim();
+  // Optional (was previously required — Peer Benchmarking's setup wizard has
+  // never collected a domain and was silently 400ing on every call as a
+  // result). discoverCompetitorsFast already has a safe no-domain fallback:
+  // it warns Claude the name may be ambiguous and instructs it to return []
+  // rather than guess when it can't confidently identify the company, so
+  // omitting domain degrades disambiguation strength rather than removing
+  // the safety net entirely.
+  const domain = typeof companyDomain === 'string' && companyDomain.trim() ? companyDomain.trim() : undefined;
 
   try {
-    const research = await researchCompanyOverview(targetCompany.trim(), domain).catch((err) => {
+    // This route is still a single blocking request (Peer Benchmarking's
+    // wizard needs an immediate array, not a job to poll), so it's the most
+    // latency-sensitive caller of researchCompanyOverview in the app — cap
+    // the wait at 40s rather than the ~180s worst case, same reasoning as
+    // businessDescriptionService.ts/peersService.ts.
+    const research = await Promise.race([
+      researchCompanyOverview(targetCompany.trim(), domain),
+      new Promise<string>((resolve) => setTimeout(() => resolve(''), 40_000)),
+    ]).catch((err) => {
       console.warn('[competitors] Research failed, proceeding with training knowledge:', err);
       return '';
     });
 
-    // Get a verified identity/description first (same pipeline as Business Description) —
-    // this is a much stronger disambiguation signal than raw research text, since it forces
-    // Claude to commit to a specific factual identity before reasoning about competitors.
-    let verifiedDescription = await generateBusinessDescription(targetCompany.trim(), domain, research).catch((err) => {
-      console.warn('[competitors] Verified description failed, proceeding without it:', err);
-      return '';
-    });
-    if (verifiedDescription.includes('No business description can be ascertained')) {
-      verifiedDescription = '';
-    }
-
+    // discoverCompetitorsFast already anchors identity strongly using the
+    // domain + raw research text directly (see its own groundingBlock
+    // logic) — the extra generateBusinessDescription round-trip that used
+    // to run here was a full sequential Claude call for a marginal
+    // additional disambiguation signal. Dropped for latency.
     const competitors = await discoverCompetitorsFast(
       targetCompany.trim(),
       industry,
       domain,
-      research,
-      verifiedDescription
+      research
     );
 
     return res.json({

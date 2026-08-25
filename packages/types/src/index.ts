@@ -23,6 +23,27 @@ export interface CompetitorDiscoveryResult {
   competitors: Competitor[];
 }
 
+// ── Peers (async job wrapper around competitor discovery) ────────────────────
+
+export interface PeersInput {
+  targetCompany: string;
+  companyDomain: string;
+  industryContext?: string;
+}
+
+export interface PeersResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  targetCompany?: string;
+  industryContext?: string;
+  competitors?: Competitor[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface BenchmarkCell {
   value: string;
   notes?: string;

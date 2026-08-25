@@ -77,9 +77,20 @@ export async function runBusinessDescription(
     updateJob(jobId, { companyName: input.companyName, domain: input.domain });
 
     step(`Researching ${input.companyName}...`, 15, 'researching');
+    // researchCompanyOverview's own worst case (Parallel.AI's 90s timeout x
+    // up to 2 attempts, run in parallel with a 45s Gemini webpage fetch) can
+    // run to ~180s — reasonable for a deep multi-source research module, but
+    // this is a 100-150 word bio that doesn't need exhaustive depth. Cap the
+    // wait at 40s; past that, proceed with whatever training knowledge
+    // Claude has rather than making a short bio wait on the same budget as
+    // a full report. The abandoned research call keeps running in the
+    // background but its result is simply discarded if it loses the race.
     let research = '';
     try {
-      research = await researchCompanyOverview(input.companyName, input.domain);
+      research = await Promise.race([
+        researchCompanyOverview(input.companyName, input.domain),
+        new Promise<string>((resolve) => setTimeout(() => resolve(''), 40_000)),
+      ]);
     } catch (err) {
       console.warn('[businessDescription] Research failed, proceeding with training knowledge:', err);
     }
