@@ -5,6 +5,7 @@ import express, { Express } from 'express';
 import helmet from 'helmet';
 import { corsMiddleware } from './middleware/cors';
 import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
+import { requestLogger } from './middleware/requestLogger';
 import competitorsRouter from './routes/competitors';
 import benchmarkRouter from './routes/benchmark';
 import themesRouter from './routes/themes';
@@ -54,6 +55,7 @@ process.on('unhandledRejection', (reason) => {
 app.use(helmet());
 app.use(corsMiddleware);
 app.use(express.json({ limit: '500kb' }));
+app.use(requestLogger);
 app.use(apiLimiter);
 
 // ── Routes ───────────────────────────────────────────────────────────────────

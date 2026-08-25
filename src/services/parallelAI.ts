@@ -122,6 +122,16 @@ async function createTask(input: string, processor: 'base' | 'ultra' = 'base'): 
 
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 402) {
+      // Distinct from a transient network/rate-limit failure — this means
+      // the account itself is out of credit and EVERY research call across
+      // every module will keep failing identically until billing is fixed
+      // at platform.parallel.ai. Loud and grep-able on purpose so this
+      // doesn't go unnoticed again the way it did in production before this
+      // logging existed (every caller gracefully degrades to Claude-only
+      // synthesis, so nothing else in the stack surfaces this loudly).
+      console.error(`[parallelAI] 🚨 BILLING: Parallel.AI account has insufficient credit — every research call will fail until this is resolved. ${body}`);
+    }
     throw new Error(`Parallel.AI task creation failed (${res.status}): ${body}`);
   }
 
@@ -213,6 +223,16 @@ async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'):
     } catch (err) {
       logParallelUsage({ source, processor, success: false, durationMs: Date.now() - startedAt });
       lastError = err instanceof Error ? err : new Error(String(err));
+      // This is the only place the real failure reason was visible before —
+      // logParallelUsage only records a success:false stat, never the
+      // message, and every caller up the chain (researchCompanySegments,
+      // researchCompanyOverview, etc.) catches this and gracefully falls
+      // back to Claude-only synthesis without ever printing why. That's the
+      // right behavior for uptime, but it let a real account-billing
+      // failure (Parallel.AI returning 402 "Insufficient credit") run
+      // silently in production with every research call degrading to
+      // training-knowledge-only and no error loud enough to notice.
+      console.error(`[parallelAI] runResearch (${source}) failed:`, lastError.message);
       const isTimeout = lastError.message.includes('timed out');
       if (isTimeout && attempt < MAX_RETRIES) {
         console.warn(`[parallelAI] Attempt ${attempt + 1} timed out — retrying...`);
