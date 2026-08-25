@@ -228,16 +228,16 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
 
     const geminiResult = await geminiRevenueLookup(input.companyName, input.companyDomain, isPublic);
 
-    if (!geminiResult) {
-      job = update(jobId, {
-        status: 'error',
-        error: `Could not find a verifiable revenue figure for ${input.companyName}.`,
-      });
-      emit(jobId, 'error', job);
-      return;
-    }
-
-    await enrichAndComplete(jobId, input, {
+    // A missed revenue figure used to hard-fail the whole job here, which
+    // meant a single Gemini search miss (common for private companies with
+    // limited public disclosure, or an occasional grounding-search miss —
+    // Xebia succeeded on a same-input retry immediately after failing this
+    // way) threw away company profile enrichment (HQ, founded year,
+    // employees, website, LinkedIn) that enrichAndComplete below could
+    // still gather independently. Degrade instead: complete with revenue
+    // fields left undefined (frontend already renders "N/A" for a missing
+    // latestRevenue) rather than failing the entire lookup over one field.
+    await enrichAndComplete(jobId, input, geminiResult ? {
       dataSource:      'Google Search (Gemini)',
       latestRevenue:   geminiResult.latestRevenue,
       revenueYear:     geminiResult.revenueYear,
@@ -245,7 +245,7 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
       yoyGrowth:       geminiResult.yoyGrowth,
       previousRevenue: geminiResult.previousRevenue,
       previousYear:    geminiResult.previousYear,
-    });
+    } : {});
 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Firmographic lookup failed';
