@@ -1,22 +1,23 @@
 import type { Request, Response, NextFunction } from 'express';
 
-// Confirmed via Render's HTTP access logs: 20.204.232.87 has been hammering
-// POST /api/business-description continuously (dozens of requests visible
-// in a single log page, most within milliseconds of each other) with an
-// empty User-Agent and never once following up with a GET to poll the job
-// it supposedly created — a real browser or a legitimate integration always
-// sends a User-Agent and, for this endpoint, always polls for its result.
-// That combination (no UA, no result retrieval, sustained high frequency)
-// is a bot/scanner signature, not a misconfigured client. Blocking outright
-// rather than relying on rate limiting alone: express.json() runs before
-// apiLimiter/aiLimiter in the middleware chain, so a request that fails
-// during body parsing never reaches either limiter — this sits above all
-// of that, before any parsing or route logic runs.
+// General-purpose IP blocklist, driven entirely by the BLOCKED_IPS env var
+// (comma-separated) so IPs can be added or removed without a code change or
+// redeploy. No IPs are blocked by default.
 //
-// Configurable via BLOCKED_IPS (comma-separated) so an IP can be added or
-// removed without a code change — the hardcoded default below covers the
-// one already confirmed.
-const DEFAULT_BLOCKED_IPS = ['20.204.232.87'];
+// This previously hardcoded 20.204.232.87, which had been sending POSTs to
+// /api/business-description every ~60s with an empty User-Agent. That block
+// was removed at the owner's direction — the traffic is expected, not
+// hostile. Repeat-submission cost is instead absorbed by the dedupe window
+// in jobDedupe.ts (10 minutes for this route, see businessDescription.ts):
+// identical repeat requests return the in-flight job's id rather than
+// starting fresh Claude/Parallel/Gemini work, so the AI spend is capped
+// regardless of how often the endpoint is called.
+//
+// Kept in place (rather than deleted) because it sits above body parsing in
+// the middleware chain — express.json() runs before apiLimiter/aiLimiter, so
+// a request that errors during parsing never reaches either limiter. If an
+// IP ever does need blocking, BLOCKED_IPS is the fastest lever.
+const DEFAULT_BLOCKED_IPS: string[] = [];
 
 function loadBlockedIps(): Set<string> {
   const fromEnv = (process.env.BLOCKED_IPS || '')
