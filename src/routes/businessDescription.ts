@@ -30,11 +30,13 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
     domain: typeof domain === 'string' && domain.trim() ? domain.trim() : undefined,
   };
 
-  const jobId = createBusinessDescriptionJob();
-  registerJobStart('business-description', jobId, extractLabel(req.body));
-  runBusinessDescription(jobId, input).catch((err) =>
-    console.error(`[business-description] Job ${jobId} failed:`, err)
-  );
+  const { jobId, isNew } = createBusinessDescriptionJob(input);
+  if (isNew) {
+    registerJobStart('business-description', jobId, extractLabel(req.body));
+    runBusinessDescription(jobId, input).catch((err) =>
+      console.error(`[business-description] Job ${jobId} failed:`, err)
+    );
+  }
 
   res.status(202).json({ jobId });
 });
