@@ -79,15 +79,23 @@ export async function runMarketingStrategy(
     });
     emit(jobId, 'progress', job);
 
-    const research = await researchMarketingStrategy(
-      input.industryOrSegment,
-      input.framework,
-      input.productContext,
-      input.companyName,
-      input.companyDomain,
-      input.focusTech,
-      input.otherContext
-    );
+    // A research-provider hiccup used to kill the whole job outright here —
+    // sibling modules (gccSalesPlay, itJob, keyBuyers) already treat this as
+    // non-fatal and fall back to Claude-only synthesis; matching that.
+    let research = '';
+    try {
+      research = await researchMarketingStrategy(
+        input.industryOrSegment,
+        input.framework,
+        input.productContext,
+        input.companyName,
+        input.companyDomain,
+        input.focusTech,
+        input.otherContext
+      );
+    } catch (err) {
+      console.warn('[marketingStrategy] Research failed, proceeding with training knowledge:', err);
+    }
 
     // Step 2: Synthesize with Claude
     job = update(jobId, {

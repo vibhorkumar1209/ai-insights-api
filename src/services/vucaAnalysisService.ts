@@ -185,12 +185,14 @@ export async function runVucaAnalysis(jobId: string): Promise<void> {
 
       results = await runVucaSynthesis(industry, geography, analysisDate!, combinedResearch, companyCtx);
     } catch (synthErr) {
+      // Previously swallowed here and substituted an empty result — the job
+      // still completed with status:'complete' and every table blank, which
+      // is worse than a normal error: the user sees a "finished" report with
+      // no visible sign anything failed. Re-throw so the outer catch below
+      // marks the job status:'error' instead, which the frontend already
+      // has a display path for.
       console.error(`[vucaAnalysis] synthesis error for ${jobId}:`, synthErr);
-      results = {
-        vuca4w1hMatrix: [], itSpendImpact: [],
-        itSpendSummaryTotal: { netDelta: 'N/A', dominantDirection: '▲ EXPAND' },
-        clientITImpact: [], geopoliticalStress: [],
-      };
+      throw synthErr;
     } finally {
       clearInterval(synthHB);
     }

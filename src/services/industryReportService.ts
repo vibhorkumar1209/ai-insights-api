@@ -329,7 +329,17 @@ export async function runIndustryReportV2(
 
     // ── Step 5: Executive summary (88-100%) ──
     step('Generating executive summary...', 92, 'summarizing');
-    const executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
+    // A failure here used to hit the outer catch and mark the whole job
+    // status:'error', discarding every section drafted in step 4 (60-88% of
+    // the job's real work) over one summary call. Degrade instead: complete
+    // without executiveSummary (already optional on IndustryReportResult)
+    // rather than losing a fully-drafted report.
+    let executiveSummary: Awaited<ReturnType<typeof synthesizeExecutiveSummary>> | undefined;
+    try {
+      executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
+    } catch (summaryErr) {
+      console.error(`[industryReport] Executive summary failed for ${jobId}, completing without it:`, summaryErr);
+    }
     checkAbort(jobId);
 
     // ── Complete ──

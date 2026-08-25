@@ -69,7 +69,15 @@ export async function runIndustryTrends(
     });
     emit(jobId, 'progress', { progress: 10, currentStep: `Researching business & technology trends in ${input.industrySegment}${geoLabel}…` });
 
-    const research = await researchIndustryTrends(input.industrySegment, geography);
+    // A research-provider hiccup used to kill the whole job outright here —
+    // sibling modules (gccSalesPlay, itJob, keyBuyers) already treat this as
+    // non-fatal and fall back to Claude-only synthesis; matching that.
+    let research = '';
+    try {
+      research = await researchIndustryTrends(input.industrySegment, geography);
+    } catch (err) {
+      console.warn('[industryTrends] Research failed, proceeding with training knowledge:', err);
+    }
 
     updateJob(jobId, {
       status: 'synthesizing',
