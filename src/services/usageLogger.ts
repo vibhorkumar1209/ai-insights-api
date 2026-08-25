@@ -1,7 +1,12 @@
+import { loadJson, saveJsonDebounced } from './persistentStore';
+
 // Real Gemini usage logging — replaces the char-length/4 cost estimates used
 // in ad-hoc cost analyses with actual `usageMetadata` figures Gemini returns
-// on every response. In-memory only (same tradeoff as the job stores
-// elsewhere in this codebase — wiped on redeploy), but each entry is also
+// on every response. Held in memory and mirrored to the persistent store
+// when one is configured (see persistentStore.ts) so the per-report cost
+// figures in Report History survive a redeploy — previously every deploy
+// wiped these buffers and older reports silently lost their cost data. Each
+// entry is also
 // written to stdout as a single structured JSON line so it survives in
 // Render's log retention even across restarts, and can be piped into any
 // log aggregator later without changing this module.
@@ -18,6 +23,40 @@ export interface GeminiUsageEntry {
 
 const MAX_ENTRIES = 5000;
 const entries: GeminiUsageEntry[] = [];
+
+const USAGE_STORE_KEY = 'usage-logs-v1';
+
+interface UsageSnapshot {
+  gemini?: GeminiUsageEntry[];
+  claude?: ClaudeUsageEntry[];
+  parallel?: ParallelUsageEntry[];
+}
+
+function snapshotUsage(): UsageSnapshot {
+  return { gemini: entries, claude: claudeEntries, parallel: parallelEntries };
+}
+
+function scheduleUsageSave(): void {
+  // Longer debounce than dedupe: these buffers are much larger and append
+  // constantly during a report run, so coalescing writes matters more than
+  // being current to the second.
+  saveJsonDebounced(USAGE_STORE_KEY, snapshotUsage, 10000);
+}
+
+/** Rehydrate usage buffers at startup so cost data survives a restart. */
+export async function restoreUsageLogsFromStore(): Promise<void> {
+  const snap = await loadJson<UsageSnapshot>(USAGE_STORE_KEY);
+  if (!snap) return;
+  if (Array.isArray(snap.gemini)) entries.push(...snap.gemini.slice(-MAX_ENTRIES));
+  if (Array.isArray(snap.claude)) claudeEntries.push(...snap.claude.slice(-MAX_ENTRIES));
+  if (Array.isArray(snap.parallel)) parallelEntries.push(...snap.parallel.slice(-MAX_ENTRIES));
+  const total = entries.length + claudeEntries.length + parallelEntries.length;
+  if (total > 0) console.log(`[usageLogger] restored ${total} usage entries from persistent store`);
+}
+
+export function getUsageFlushTarget(): { key: string; getValue: () => unknown } {
+  return { key: USAGE_STORE_KEY, getValue: snapshotUsage };
+}
 
 export function logGeminiUsage(params: {
   source: string;
@@ -42,6 +81,7 @@ export function logGeminiUsage(params: {
 
   // Structured single-line log — grep-able as `[gemini-usage]` in Render logs.
   console.log('[gemini-usage]', JSON.stringify(entry));
+  scheduleUsageSave();
 }
 
 export function getGeminiUsageEntries(): GeminiUsageEntry[] {
@@ -135,6 +175,7 @@ export function logClaudeUsage(params: {
   claudeEntries.push(entry);
   if (claudeEntries.length > MAX_ENTRIES) claudeEntries.shift();
   console.log('[claude-usage]', JSON.stringify(entry));
+  scheduleUsageSave();
 }
 
 export function getClaudeUsageEntries(): ClaudeUsageEntry[] {
@@ -199,6 +240,7 @@ export function logParallelUsage(params: {
   parallelEntries.push(entry);
   if (parallelEntries.length > MAX_ENTRIES) parallelEntries.shift();
   console.log('[parallel-usage]', JSON.stringify(entry));
+  scheduleUsageSave();
 }
 
 export function getParallelUsageEntries(): ParallelUsageEntry[] {

@@ -1,3 +1,5 @@
+import { loadJson, saveJsonDebounced } from './persistentStore';
+
 // Shared duplicate-submission guard for every job-creating module.
 //
 // Business Description was found to have been hit 200+ times for the exact
@@ -18,6 +20,43 @@ interface DedupeEntry {
 }
 
 const recentByKey = new Map<string, DedupeEntry>();
+
+// Persisted so the window survives a restart. Without this, the first
+// request after every deploy started fresh AI work regardless of how
+// recently an identical one had been deduped — and with autoDeploy on every
+// push, that was defeating the protection exactly when it mattered most.
+// No-ops unless REDIS_URL or DATA_DIR is configured (see persistentStore.ts).
+const DEDUPE_STORE_KEY = 'job-dedupe-v1';
+
+function snapshotDedupe(): Record<string, DedupeEntry> {
+  return Object.fromEntries(recentByKey);
+}
+
+function scheduleDedupeSave(): void {
+  // Short debounce: this state is only useful if it's current at the moment
+  // a restart happens, and the payload is tiny.
+  saveJsonDebounced(DEDUPE_STORE_KEY, snapshotDedupe, 2000);
+}
+
+/** Rehydrate the dedupe window at startup. Expired entries are discarded. */
+export async function restoreDedupeFromStore(): Promise<void> {
+  const snapshot = await loadJson<Record<string, DedupeEntry>>(DEDUPE_STORE_KEY);
+  if (!snapshot) return;
+
+  const now = Date.now();
+  let restored = 0;
+  for (const [key, entry] of Object.entries(snapshot)) {
+    if (entry && typeof entry.jobId === 'string' && typeof entry.expiresAt === 'number' && entry.expiresAt > now) {
+      recentByKey.set(key, entry);
+      restored++;
+    }
+  }
+  if (restored > 0) console.log(`[jobDedupe] restored ${restored} live dedupe entries from persistent store`);
+}
+
+export function getDedupeFlushTarget(): { key: string; getValue: () => unknown } {
+  return { key: DEDUPE_STORE_KEY, getValue: snapshotDedupe };
+}
 
 // Deterministic JSON stringify (sorted object keys) so two requests with the
 // same fields in a different order still dedupe against each other.
@@ -86,5 +125,6 @@ export function dedupeJobStart<TStatus>(
 
   const jobId = startNew();
   recentByKey.set(key, { jobId, expiresAt: now + windowMs });
+  scheduleDedupeSave();
   return { jobId, isNew: true };
 }

@@ -23,6 +23,7 @@
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "node-fetch": "^2.7.0",
+    "redis": "~6.2.1",
     "uuid": "^9.0.1",
     "yahoo-finance2": "^3.13.2"
   },

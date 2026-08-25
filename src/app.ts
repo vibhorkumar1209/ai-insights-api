@@ -7,6 +7,9 @@ import { corsMiddleware } from './middleware/cors';
 import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
 import { requestLogger } from './middleware/requestLogger';
 import { ipBlocklist } from './middleware/ipBlocklist';
+import { initPersistentStore, flushPendingSaves } from './services/persistentStore';
+import { restoreUsageLogsFromStore, getUsageFlushTarget } from './services/usageLogger';
+import { restoreDedupeFromStore, getDedupeFlushTarget } from './services/jobDedupe';
 import competitorsRouter from './routes/competitors';
 import peersRouter from './routes/peers';
 import benchmarkRouter from './routes/benchmark';
@@ -52,6 +55,34 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection] caught — keeping process alive:', reason);
 });
+
+// ── Persistent state (usage logs + dedupe window) ────────────────────────────
+// Fire-and-forget: never block startup or crash on a storage problem. Until
+// this resolves the app simply behaves as it always did (empty in-memory
+// buffers), so a slow or failed store degrades rather than breaks anything.
+void (async () => {
+  try {
+    await initPersistentStore();
+    await Promise.all([restoreUsageLogsFromStore(), restoreDedupeFromStore()]);
+  } catch (err) {
+    console.warn('[persistentStore] init/restore failed, continuing without persistence:', err instanceof Error ? err.message : err);
+  }
+})();
+
+// Render sends SIGTERM on redeploy/shutdown — flush pending debounced writes
+// so the final few usage entries and dedupe updates aren't lost in the very
+// restart this feature exists to survive. Bounded so a hung store can't
+// block shutdown indefinitely.
+let shuttingDown = false;
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    const flush = flushPendingSaves([getUsageFlushTarget(), getDedupeFlushTarget()]);
+    const timeout = new Promise((resolve) => setTimeout(resolve, 3000));
+    void Promise.race([flush, timeout]).finally(() => process.exit(0));
+  });
+}
 
 // ── Global middleware ────────────────────────────────────────────────────────
 // ipBlocklist first — ahead of body parsing, so a blocked IP is rejected
