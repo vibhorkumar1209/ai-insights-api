@@ -372,20 +372,22 @@ export async function generateBusinessDescription(
   const domainHint = domain ? ` (website: ${domain})` : '';
   const hasResearch = !!research && !isEmptyResearch(research);
 
-  const userPrompt = `Write a concise business description of "${companyName}"${domainHint} in 100-150 words.
+  const userPrompt = `Write a short company bio for "${companyName}"${domainHint} — the kind of crisp, polished 100-150 word profile that stands alone on an executive briefing, pitch deck cover, or CRM record.
+
+WORD COUNT IS A HARD LIMIT: 100-150 words, no exceptions. Before finalizing, count the words — if you're over 150, cut detail (drop the least essential fact, tighten phrasing) rather than running long; if you're under 100, you've likely omitted something from the list below.
 
 ${hasResearch ? `RESEARCH (use this as your primary source — it is more current than your training knowledge):\n${research!.slice(0, 12000)}` : '[No live research available — use training knowledge, but be conservative about specific numbers that may be outdated.]'}
 
-Include:
-- Core products and services. If this is a professional/consulting/advisory firm, name EVERY line of business it operates (e.g. do not describe a firm as only doing "advisory and tax" if it also does audit/assurance — check the research for all named service lines).
+Cover, in flowing prose (not a checklist):
+- Core products and services — name its primary lines of business; if it has many, name the 2-3 most significant concisely rather than an exhaustive enumeration (an exhaustive list is not worth blowing the word budget on in a bio this short).
 - Industry and primary markets
-- Key competitive strengths (concrete, not generic — avoid vague claims like "committed to quality")
-- Approximate scale (revenue, employees, number of countries) — only state figures found in the research above; if unavailable, omit rather than guess
+- One concrete competitive strength (specific, not generic — avoid vague claims like "committed to quality")
+- Approximate scale (revenue, employees, number of countries) if it fits within budget — only state figures found in the research above; if unavailable or there's no room left, omit rather than guess
 
-Write in professional business language, third person. No headers, bullet points, or markdown. Do NOT use the company's marketing tagline, mission statement, or purpose slogan (e.g. avoid phrasing like "build trust in society" or "solve important problems") as descriptive content — only factual, operating information.
+Write it as a bio a reader could hand to someone unfamiliar with the company and have them understand what it does and why it matters in one read — every sentence should earn its place. Professional business language, third person, no headers, bullet points, or markdown. Do NOT use the company's marketing tagline, mission statement, or purpose slogan (e.g. avoid phrasing like "build trust in society" or "solve important problems") as descriptive content — only factual, operating information.
 If you cannot find sufficient verifiable information, respond only with: "No business description can be ascertained."`;
 
-  const systemPrompt = `You are a business intelligence analyst. Write factual, concise company descriptions grounded in the research provided. Never substitute a company's marketing slogan or mission statement for actual business facts. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+  const systemPrompt = `You are a business intelligence analyst who writes short, polished company bios — the kind that read as a finished, standalone profile, not a dense fact-dump. Precision over completeness: a bio that covers fewer facts gracefully within 100-150 words beats one that crams in every available fact and runs long or reads like a list. Grounded strictly in the research provided — never substitute a company's marketing slogan or mission statement for actual business facts. If you cannot find sufficient verifiable information about the company, respond with exactly: "No business description can be ascertained." — nothing else. Do not suggest where to look, do not explain why, do not recommend alternatives. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, 1024, SYNTHESIS_MODEL);
   return text.trim();
