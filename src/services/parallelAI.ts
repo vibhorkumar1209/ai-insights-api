@@ -766,13 +766,16 @@ export interface GeminiRevenueResult {
   previousRevenueRaw?: number; // raw numeric amount, in native currency units
   previousYear?: string;
   source?: string;             // publication / filing cited
+  revenueDrivers?: string;     // primary growth drivers — product lines, regions, acquisitions
+  regionalBreakdown?: string;  // revenue by geography/segment/subsidiary, if disclosed
+  sourceType?: string;         // explicit transparency: official filing vs third-party estimate
 }
 
 function buildRevenuePrompt(companyName: string, domain: string | undefined, isPublic: boolean | undefined, simplified: boolean): string {
   const identityAnchor = buildDomainIdentityAnchor(companyName, domain);
   const scopeHint = isPublic === false
-    ? 'This is a privately-held company — look for news coverage, funding announcements, industry reports, or press releases that cite a revenue figure.'
-    : 'This is a publicly-traded company — look for its latest annual revenue as reported in its financial statements (10-K / annual report), Yahoo Finance, or Google Finance.';
+    ? 'This is a privately-held company — provide the best available estimate from reliable business intelligence databases (e.g. ZoomInfo, Tracxn, RocketReach), industry reports, funding announcements, or press releases that cite a revenue figure.'
+    : "This is a publicly-traded company — provide the latest audited FY (Fiscal Year) or TTM (Trailing Twelve Months) revenue as reported in its financial statements (10-K / annual report / regional regulatory filing), Yahoo Finance, or Google Finance.";
 
   // Ask for the raw native-currency number rather than trusting the model to do
   // USD conversion/formatting itself — that step is done deterministically in
@@ -781,7 +784,7 @@ function buildRevenuePrompt(companyName: string, domain: string | undefined, isP
   const rawAmountRule = `RAW AMOUNT RULE (critical — apply to latestRevenueRaw AND previousRevenueRaw):
 - These must be the PLAIN NUMBER in the company's NATIVE reporting currency's base unit (e.g. dollars, rupees, euros) — NOT abbreviated, NOT in millions/billions/lakhs/crore, and NOT converted to USD.
 - Example: if revenue is "₹9 Lakh", latestRevenueRaw is 900000 (not 9, not "9L"). If revenue is "$485 million", latestRevenueRaw is 485000000.
-- latestRevenue/previousRevenue (the display strings) can be a human-readable figure in the native currency for reference, but latestRevenueRaw/previousRevenueRaw MUST be the precise unabbreviated number.`;
+- latestRevenue/previousRevenue (the display strings) can be a human-readable figure in the native currency for reference, but latestRevenueRaw/previousRevenueRaw MUST be the precise unabbreviated number. USD conversion of these figures is handled deterministically in code afterwards — do not attempt the conversion yourself.`;
 
   if (simplified) {
     // Fallback prompt: fewer constraints, in case the structured version made the
@@ -792,12 +795,16 @@ function buildRevenuePrompt(companyName: string, domain: string | undefined, isP
 
 ${rawAmountRule}
 
-Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<human-readable figure in native currency>", "latestRevenueRaw": <plain unabbreviated number in native currency, per the rule above>, "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code of the company's NATIVE reporting currency>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure in native currency, or null>", "previousRevenueRaw": <plain unabbreviated number or null>, "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>"}`;
+Reply with ONLY this JSON object, nothing else: {"latestRevenue": "<human-readable figure in native currency>", "latestRevenueRaw": <plain unabbreviated number in native currency, per the rule above>, "revenueYear": "<fiscal year label>", "currency": "<3-letter ISO code of the company's NATIVE reporting currency>", "yoyGrowth": <number or null>, "previousRevenue": "<prior year figure in native currency, or null>", "previousRevenueRaw": <plain unabbreviated number or null>, "previousYear": "<prior fiscal year label or null>", "source": "<where this came from>", "revenueDrivers": "<primary revenue drivers — product lines, regions, or acquisitions — or null>", "regionalBreakdown": "<revenue by region/segment if available, or null>", "sourceType": "<'Official regulatory filing' or 'Third-party intelligence platform', or null>"}`;
   }
 
-  return `${getSearchRecencyInstruction()}${identityAnchor}Using Google Search, find the latest annual revenue for "${companyName}".
+  return `${getSearchRecencyInstruction()}${identityAnchor}Provide a comprehensive breakdown of the annual revenue for "${companyName}"${domain ? ` (${domain})` : ''}, structured as follows:
 
-${scopeHint}
+1. CORE REVENUE DATA — ${scopeHint}
+2. CURRENCY CONVERSION — state the figure in its native reported currency; USD conversion is handled deterministically in code from the raw figure you provide (see RAW AMOUNT RULE), not by you.
+3. GROWTH & TRENDS — the year-over-year (YoY) growth percentage, and the primary revenue drivers (specific product lines, geographic regions, or recent acquisitions) behind that growth.
+4. REGIONAL OR SEGMENT BREAKDOWN — if disclosed, revenue by major geographic region or business subsidiary/segment.
+5. DATA SOURCES & TRANSPARENCY — explicitly state whether this figure comes from an official regulatory filing (e.g. SEC 10-K, a regional company registrar) or a third-party intelligence platform (e.g. ZoomInfo, Tracxn, RocketReach, a news report) — never leave this unstated.
 
 ${rawAmountRule}
 
@@ -805,13 +812,16 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
   "latestRevenue": "human-readable figure in the company's native currency, e.g. ₹9 Lakh or $485 million",
   "latestRevenueRaw": <plain unabbreviated number in native currency, per the RAW AMOUNT RULE above>,
-  "revenueYear": "fiscal year label, e.g. FY2025 or 2025",
+  "revenueYear": "fiscal year label, e.g. FY2025 or 2025 (or 'TTM' if using trailing twelve months)",
   "currency": "3-letter ISO code of the company's NATIVE reporting currency, e.g. INR",
   "yoyGrowth": <number, year-over-year growth percent, or null if unknown>,
   "previousRevenue": "prior year figure in native currency, or null",
   "previousRevenueRaw": <plain unabbreviated number in native currency, or null>,
   "previousYear": "prior fiscal year label, or null",
-  "source": "the publication, filing, or site the figure came from"
+  "source": "the specific publication, filing, or platform the figure came from, e.g. 'SEC 10-K FY2025' or 'ZoomInfo'",
+  "revenueDrivers": "1-2 sentences on the primary drivers behind the revenue/growth — specific product lines, geographic regions, or recent acquisitions — or null if not determinable",
+  "regionalBreakdown": "revenue by major geographic region or business subsidiary if disclosed, e.g. 'North America: $2.1B, EMEA: $1.4B, APAC: $0.9B', or null if not disclosed",
+  "sourceType": "EXACTLY one of: 'Official regulatory filing' or 'Third-party intelligence platform' — must always be stated when latestRevenue is non-null"
 }
 
 If you cannot find a credible, sourced revenue figure, return exactly: {"latestRevenue": null}`;
@@ -1135,6 +1145,9 @@ export async function geminiRevenueLookup(
         previousRevenueRaw: previousRaw ?? undefined,
         previousYear: parsed.previousYear || undefined,
         source: parsed.source || undefined,
+        revenueDrivers: parsed.revenueDrivers || undefined,
+        regionalBreakdown: parsed.regionalBreakdown || undefined,
+        sourceType: parsed.sourceType || undefined,
       };
     } catch (err) {
       console.warn(`[gemini] Revenue lookup failed for ${companyName} (simplified=${simplified}):`, err instanceof Error ? err.message : err);

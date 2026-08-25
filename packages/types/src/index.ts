@@ -1227,6 +1227,9 @@ export interface FirmographicResult {
   previousRevenue?: string;     // formatted prior year
   previousYear?: string;
   dataSource?: string;          // 'Yahoo Finance' | 'Google Finance' | 'Google Search (Gemini)'
+  revenueDrivers?: string;      // primary growth drivers — product lines, regions, acquisitions (Gemini path only)
+  regionalBreakdown?: string;   // revenue by geography/segment/subsidiary, if disclosed (Gemini path only)
+  revenueSourceType?: string;   // 'Official regulatory filing' | 'Third-party intelligence platform' (Gemini path only)
   companyInfo?: CompanyInfo;
   // Firmographic profile — researched after revenue via Gemini grounded search
   foundedYear?: string;

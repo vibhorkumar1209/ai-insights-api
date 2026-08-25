@@ -238,13 +238,16 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
     // fields left undefined (frontend already renders "N/A" for a missing
     // latestRevenue) rather than failing the entire lookup over one field.
     await enrichAndComplete(jobId, input, geminiResult ? {
-      dataSource:      'Google Search (Gemini)',
-      latestRevenue:   geminiResult.latestRevenue,
-      revenueYear:     geminiResult.revenueYear,
-      currency:        geminiResult.currency,
-      yoyGrowth:       geminiResult.yoyGrowth,
-      previousRevenue: geminiResult.previousRevenue,
-      previousYear:    geminiResult.previousYear,
+      dataSource:        'Google Search (Gemini)',
+      latestRevenue:     geminiResult.latestRevenue,
+      revenueYear:       geminiResult.revenueYear,
+      currency:          geminiResult.currency,
+      yoyGrowth:         geminiResult.yoyGrowth,
+      previousRevenue:   geminiResult.previousRevenue,
+      previousYear:      geminiResult.previousYear,
+      revenueDrivers:    geminiResult.revenueDrivers,
+      regionalBreakdown: geminiResult.regionalBreakdown,
+      revenueSourceType: geminiResult.sourceType,
     } : {});
 
   } catch (err) {
