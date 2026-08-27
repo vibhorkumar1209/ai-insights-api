@@ -393,6 +393,43 @@ If you cannot find sufficient verifiable information, respond only with: "No bus
   return text.trim();
 }
 
+// ── Biz Descrip (Claude-only — no Parallel.AI/Gemini research step) ──────────
+//
+// Deliberately a separate, simpler pipeline from generateBusinessDescription
+// above, not a re-enable of it: single Claude call on training knowledge
+// only, identity-anchored by domain (required) and LinkedIn URL (used as an
+// anchor when supplied, never fabricated or fetched — this app has no tool
+// access to actually browse a URL from a plain Claude API call, so the
+// company's LinkedIn presence is treated as a stated identity signal, the
+// same way domain already is elsewhere in this codebase).
+export async function generateBizDescrip(
+  companyName: string,
+  companyDomain: string,
+  linkedinUrl?: string
+): Promise<string> {
+  const identityAnchor = `COMPANY TO DESCRIBE: "${companyName}", operating at the domain ${companyDomain}.${linkedinUrl ? ` Its LinkedIn company page is ${linkedinUrl} — treat this as a second, authoritative identity signal alongside the domain: if you recall a different company under a similar name that does NOT match both this domain and this LinkedIn page, discard that recollection entirely.` : ''} Company names are frequently shared by unrelated businesses — confirm you are describing the specific company identified by ${linkedinUrl ? 'the domain AND LinkedIn page above' : 'the domain above'} before writing anything.`;
+
+  const userPrompt = `${identityAnchor}
+
+Using only your own training knowledge (no external research is performed for this module), write a 100-200 word description of what this company does.
+
+WORD COUNT IS A HARD LIMIT: 100-200 words. Count before finalizing — trim detail if over, add a genuinely relevant fact (not filler) if under.
+
+Cover, in flowing prose (not a checklist):
+- Core products and services — its primary lines of business; name the most significant ones rather than an exhaustive list
+- Industry and primary markets it serves
+- What differentiates it competitively, if you know something specific (skip this rather than writing something generic)
+- Approximate scale (revenue, employees, geographic footprint) ONLY if you are confident of the figure — omit rather than guess or use outdated numbers you're unsure of
+
+Write it as a standalone profile a reader unfamiliar with the company could read once and understand what it does and why it matters. Professional business language, third person, no headers, bullet points, or markdown. Do NOT use the company's marketing tagline or mission statement as descriptive content — only factual, operating information. Do NOT claim to have visited or read the LinkedIn page or domain above — they are identity anchors for you to confirm which company you mean, not sources you fetched.
+If you are not confident which specific company this refers to, or lack enough training knowledge to describe it, respond only with: "No business description can be ascertained."`;
+
+  const systemPrompt = `You are a business intelligence analyst who writes concise, accurate company descriptions from training knowledge alone — this module has no live research or web access, so never imply otherwise (never say "according to their website," "as listed on LinkedIn," etc.) and never invent a specific figure or fact you are not confident of. If you cannot confidently identify or describe the company, respond with exactly: "No business description can be ascertained." — nothing else. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 1200, SYNTHESIS_MODEL);
+  return text.trim();
+}
+
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
 
 export async function synthesizeBenchmarkingTable(

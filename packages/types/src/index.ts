@@ -1229,6 +1229,31 @@ export interface BusinessDescriptionResult {
   completedAt?: string;
 }
 
+// ── Biz Descrip ──────────────────────────────────────────────────────────────
+// Deliberately separate from Business Description (blocked as of 2026-08-27):
+// Claude-only, no Parallel.AI/Gemini research step at all — a different,
+// simpler pipeline, not a re-enable of the blocked one.
+
+export interface BizDescripInput {
+  companyName: string;
+  companyDomain: string;
+  linkedinUrl?: string;
+}
+
+export interface BizDescripResult {
+  jobId: string;
+  status: 'pending' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName?: string;
+  companyDomain?: string;
+  linkedinUrl?: string;
+  description?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface FirmographicResult {
   jobId: string;
   status: 'pending' | 'detecting' | 'fetching' | 'enriching' | 'complete' | 'error';
