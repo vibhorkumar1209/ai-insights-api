@@ -13,8 +13,21 @@ import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
+// Blocked at the owner's explicit request (2026-08-27) — until they ask for
+// it to be revived. Only the job-CREATING call is gated; GET snapshot/stream
+// stay open so anything already in flight when this flipped can still be
+// polled to completion. To revive: set this back to false (nothing else
+// needs to change — dedupeJobStart, registerJobStart, and the rest of the
+// pipeline below are untouched).
+const BLOCKED = true;
+
 /** POST /api/business-description — start job */
 router.post('/', aiLimiter, (req: Request, res: Response): void => {
+  if (BLOCKED) {
+    res.status(503).json({ error: 'The Business Description module is temporarily disabled. Ask the owner to have it revived.' });
+    return;
+  }
+
   const { companyName, domain } = req.body;
 
   if (!companyName || typeof companyName !== 'string') {
