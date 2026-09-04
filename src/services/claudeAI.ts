@@ -2196,7 +2196,17 @@ export async function draftSectionsBatchV2(
   // conservative — 50k chars is roughly 13k tokens) AND split evenly across
   // the research sources so every query is represented rather than just the
   // first.
-  const safeResearch = balancedResearchExcerpt(allResearch, 50000);
+  // Analytical-framework sections synthesise over already-established market
+  // analysis rather than citing a long tail of fresh events, so they don't
+  // need the full research budget. Keeping their payload smaller matters
+  // because swot/porters_five_forces/tei_analysis are drafted LAST, after 9+
+  // prior Claude calls in the same report, which is precisely where
+  // accumulated rate-limiting causes them to fail (see the retry/backoff
+  // comment in industryReportService.ts). 20k is still 2.5x the 8k budget
+  // that previously applied to every section.
+  const ANALYTICAL_SECTIONS = new Set(['swot', 'porters_five_forces', 'tei_analysis', 'forecast']);
+  const researchBudget = sectionIds.every((id) => ANALYTICAL_SECTIONS.has(id)) ? 20000 : 50000;
+  const safeResearch = balancedResearchExcerpt(allResearch, researchBudget);
 
   // CRITICAL: Include ALL sub-segments but keep context compact
   const segmentContext = scope.selectedSegments?.length

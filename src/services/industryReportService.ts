@@ -232,9 +232,15 @@ export async function runIndustryReportV2(
     checkAbort(jobId);
 
     // ── Step 4: Section drafting (60-88%) — dynamic batches ──
+    // Fallback when no explicit selection is supplied (e.g. a direct API call
+    // rather than the wizard). This previously listed only the 9 "core"
+    // sections, silently omitting swot / porters_five_forces / tei_analysis —
+    // so those three never appeared for API callers at all, and only appeared
+    // from the UI if the user manually ticked them. Now defaults to the full
+    // set, matching batchDefs below.
     const selected = scope.selectedSections?.length
       ? scope.selectedSections
-      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'ma_jv_partnerships', 'market_innovation', 'market_opportunities'];
+      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'ma_jv_partnerships', 'market_innovation', 'market_opportunities', 'swot', 'porters_five_forces', 'tei_analysis'];
 
     // Group into batches — each batch with 1-2 sections max to reduce JSON complexity
     const batchDefs = [
