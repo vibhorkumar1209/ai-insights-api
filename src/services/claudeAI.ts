@@ -271,11 +271,38 @@ function getForecastEndYear(baseYear: number): number {
   return baseYear + 5;
 }
 
+// Today's date, written out. Claude has no inherent knowledge of the current
+// date, so every recency instruction must state it explicitly — otherwise the
+// model anchors on its training cutoff and silently produces stale content.
+function getTodayLabel(): string {
+  return new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 // ── Shared recency directive (injected into all system prompts) ─────────────
+//
+// Previously this collapsed two very different needs into a single "base
+// year", which was the lagged getBaseYear() (current year - 1 for Jan-Sep).
+// That was defensible for market SIZING — you cannot cite a complete 2026
+// market size in September 2026 — but it was applied to everything, so the
+// prompt literally told the model "Base year is 2025, prioritize 2025, then
+// 2024, then 2023" and never once named the current year. Combined with a
+// cutoff of baseYear-2, that legitimised three-year-old material across
+// trends, news, examples and citations, which is exactly the "only presents
+// information that is 2-3 years old" symptom.
+//
+// These are now separated: sizing keeps the lagged complete-reporting-year
+// base, while all narrative content is anchored to today's date and the
+// current calendar year.
 function getRecencyDirective(): string {
-  const baseYear = getBaseYear();
-  const cutoffYear = baseYear - 2; // 3-year max lookback
-  return `RECENCY RULE: Base year is ${baseYear}. For market sizing sections (market_overview, market_size_by_segment): Prioritize ${baseYear} data first, then ${baseYear - 1}, then ${baseYear - 2}. For all other sections: prioritise data from the last 12 months first, then last 2 years, then last 3 years (${cutoffYear}). Do NOT use data older than ${cutoffYear} unless essential for historical trend context and explicitly labelled "(pre-${cutoffYear} historical)". ALL citations and examples must be from the last 12 months where possible, and no older than ${cutoffYear}. Present all information in REVERSE CHRONOLOGICAL ORDER — most recent first.`;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const today = getTodayLabel();
+  const sizingBaseYear = getBaseYear(); // last COMPLETE reporting year
+  const forecastEnd = getForecastEndYear(sizingBaseYear);
+  return `RECENCY RULE — today's date is ${today}; the current year is ${currentYear}.
+1. NARRATIVE AND QUALITATIVE CONTENT (trends, news, examples, citations, M&A and deals, regulatory changes, partnerships, executive quotes, player moves, case studies): prioritise the LAST 12 MONTHS first, then the 12 months before that. ${currentYear} developments MUST be surfaced ahead of ${currentYear - 1} ones, and ${currentYear} must be represented wherever such developments exist. Material from ${currentYear - 2} or earlier may appear ONLY as explicitly labelled historical context, never presented as the current state of the market.
+2. MARKET SIZING AND FORECAST ONLY (market_overview, market_size_by_segment, forecast): the most recent COMPLETE reporting year is ${sizingBaseYear}, so use ${sizingBaseYear} as the sizing base year and forecast ${sizingBaseYear} through ${forecastEnd}. Where ${currentYear} partial-year, run-rate, or year-to-date figures exist, include them and label them as such (e.g. "${currentYear} YTD"). Never present ${sizingBaseYear} figures as though they were ${currentYear} figures.
+3. ORDERING: present ALL tables, rows, lists, examples and citations in REVERSE CHRONOLOGICAL ORDER — most recent first. Attach the date or year to every citation, example and data point so its recency is visible to the reader.`;
 }
 
 
@@ -1784,7 +1811,7 @@ RULES:
 - Description should be 3-8 words maximum, highlighting player's position or focus.
 - CRITICAL: NO special characters, NO quotes or newlines in any string, NO markdown.
 - Sub-segment names: 1-3 words, clear market terminology. No abbreviations.
-- searchQueries: 6-10 words, simple English, current year focused.
+- searchQueries: 6-10 words, simple English, and explicitly focused on the CURRENT year (${new Date().getFullYear()}) — include "${new Date().getFullYear()}" in at least two of the queries so the research engine retrieves current-year material rather than defaulting to older indexed content.
 - Output must be VALID JSON with proper commas, no trailing commas.
 `.trim();
 
@@ -2033,11 +2060,19 @@ export const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: 
     chartHint: 'Include a "combo" chart (in chartSpec) showing current market size and historical CAGR. data: [{label: "2020", value: <size_in_billions>, growth: <yoy_percent>}, {label: "2021", ...}, ...for 5 years], series: [{key: "value", name: "Market Size (USD Bn)", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %". ALL data values MUST be numbers.',
     subsectionHint: 'Structure the section as follows:\n1. bodyParagraphs[0]: Current market size (value + volume if available), historical CAGR, and overall growth characterization (tag as HIGH GROWTH / MEDIUM GROWTH / LOW GROWTH).\n2. Subsection "Growth Insights": MUST have "content" field (3-5 bullet points). Explicitly classify growth as High, Medium, or Low. Explain key growth drivers, inflection points, and growth trajectory.\n3. Subsection "Market Concentration & Fragmentation": MUST have "content" field (3-5 bullet points). Whether market is concentrated (top 3-5 players dominate) or fragmented (many small players), organized vs unorganized market split (with % estimates), HHI-equivalent assessment.\n4. Subsection "Major Players & Key Insights": MUST have "content" field (3-5 bullet points). Top 3-5 ACTIVE players with market share %, key differentiators, recent strategic moves, plus any other key market insights. Only list companies that are currently operating — do NOT include companies that have shut down, gone bankrupt, or exited the market. If any notable players have recently shut down or filed for bankruptcy, mention them separately with a ⚠ marker and brief context (e.g. "⚠ XYZ Corp filed for Chapter 11 in 2024 due to…").\nCRITICAL: Every subsection MUST have a non-empty "content" string with substantive analysis (at least 3 bullet points using • character). Do NOT leave content empty.',
   },
-  market_size_by_segment: {
-    title: 'Market Size by Segment',
-    tableHint: 'For each segment subsection, include keyTable with headers: ["Sub-segment", "Market Size", "% of Segment", "CAGR", "Key Players"]. Show ALL sub-segments from input. CRITICAL: For each year, the sum of all sub-segment market sizes MUST match the total market size declared in the Market Overview section for that same year (tolerance: ±2% for rounding). If Market Overview shows 2025 total = $75.2B, all segment sub-segments for 2025 must sum to approximately $75.2B.',
-    chartHint: 'For each segment, build stacked_bar chart: data=[{label:"2024","<sub1>":<val>,"<sub2>":<val>,"cagrTrend":<pct>},{label:"2025",...}], series=[{key:"<sub1>",name:"Sub-seg 1",type:"bar",stack:"segment"},{key:"cagrTrend",name:"CAGR %",type:"line",yAxisId:"right"}].',
-    subsectionHint: 'Create ONE subsection PER SEGMENT LISTED IN THE "MARKET SEGMENTS" CONTEXT ABOVE — and ONLY those segments (e.g., "By Geography", "By Product Type"). Do NOT create subsections for any other segmentation dimension, even if research data suggests additional ways to segment the market. If the MARKET SEGMENTS context is empty, identify 4-6 from research as a fallback. Each subsection: title=segment name (exactly as given), content=3-5 bullets analyzing that segment\'s breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. YEAR PRIORITY: Market sizing prioritizes 2025 (base year), then 2024, then 2023. Ensure all years reference appropriate historical data.',
+  // Getter (like `forecast` below) so the year labels are computed at access
+  // time. These were previously hardcoded as "2024"/"2025" chart labels and a
+  // literal "prioritizes 2025 (base year), then 2024, then 2023" instruction,
+  // which silently went stale as the calendar advanced and contradicted the
+  // shared recency directive.
+  get market_size_by_segment() {
+    const by = getBaseYear();
+    return {
+      title: 'Market Size by Segment',
+      tableHint: `For each segment subsection, include keyTable with headers: ["Sub-segment", "Market Size", "% of Segment", "CAGR", "Key Players"]. Show ALL sub-segments from input. CRITICAL: For each year, the sum of all sub-segment market sizes MUST match the total market size declared in the Market Overview section for that same year (tolerance: ±2% for rounding). If Market Overview shows ${by} total = $75.2B, all segment sub-segments for ${by} must sum to approximately $75.2B.`,
+      chartHint: `For each segment, build stacked_bar chart: data=[{label:"${by - 1}","<sub1>":<val>,"<sub2>":<val>,"cagrTrend":<pct>},{label:"${by}",...}], series=[{key:"<sub1>",name:"Sub-seg 1",type:"bar",stack:"segment"},{key:"cagrTrend",name:"CAGR %",type:"line",yAxisId:"right"}].`,
+      subsectionHint: `Create ONE subsection PER SEGMENT LISTED IN THE "MARKET SEGMENTS" CONTEXT ABOVE — and ONLY those segments (e.g., "By Geography", "By Product Type"). Do NOT create subsections for any other segmentation dimension, even if research data suggests additional ways to segment the market. If the MARKET SEGMENTS context is empty, identify 4-6 from research as a fallback. Each subsection: title=segment name (exactly as given), content=3-5 bullets analyzing that segment's breakdown and trends, keyTable=all sub-segments with market size/CAGR, chartSpec=stacked bar. YEAR PRIORITY: Market sizing uses ${by} as the base year, then ${by - 1}, then ${by - 2}. Where ${new Date().getFullYear()} year-to-date or run-rate segment figures exist, include them labelled as such.`,
+    };
   },
   market_dynamics: {
     title: 'Market Dynamics',
@@ -2106,6 +2141,36 @@ export const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: 
   },
 };
 
+// Delimiter industryReportService.ts uses when joining the per-query research
+// results. Kept in sync with that join.
+const RESEARCH_SOURCE_DELIMITER = '--- NEXT RESEARCH SOURCE ---';
+
+/**
+ * Trims combined multi-query research to a character budget WITHOUT letting
+ * the first query monopolise it. A naive head-slice silently dropped whole
+ * research queries (see the call site in draftSectionsBatchV2); this splits
+ * the budget evenly across sources so trends/competitive/regulatory research
+ * survives alongside market sizing.
+ */
+export function balancedResearchExcerpt(allResearch: string, maxChars: number): string {
+  if (!allResearch || allResearch.length <= maxChars) return allResearch;
+
+  const parts = allResearch
+    .split(RESEARCH_SOURCE_DELIMITER)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (parts.length <= 1) return allResearch.slice(0, maxChars);
+
+  const perSource = Math.floor(maxChars / parts.length);
+  return parts
+    .map((part, i) => {
+      const body = part.length > perSource ? `${part.slice(0, perSource)}\n[...truncated]` : part;
+      return `--- RESEARCH SOURCE ${i + 1} of ${parts.length} ---\n${body}`;
+    })
+    .join('\n\n');
+}
+
 /**
  * V2 Section Drafting — uses SECTION_DEFINITIONS_V2, supports swotData/portersData/teiData.
  */
@@ -2115,8 +2180,23 @@ export async function draftSectionsBatchV2(
   marketSizing: MarketSizingData,
   sectionIds: string[]
 ): Promise<ReportSection[]> {
-  // Reduce research size to stay within token limits — 8KB is optimal for detailed analysis without overflow
-  const safeResearch = allResearch.length > 8000 ? allResearch.slice(0, 8000) : allResearch;
+  // Research budget for section drafting.
+  //
+  // This previously took the FIRST 8,000 chars of allResearch. Because the
+  // four research queries are concatenated in order (query 1 = market size /
+  // TAM / forecast, 2 = trends & drivers, 3 = competitive landscape, 4 =
+  // technology & regulatory), and each can return up to 25,000 chars, that
+  // head-slice kept roughly the market-sizing query alone and discarded up to
+  // ~92% of the research — including essentially all of the trend, player and
+  // regulatory material. Those are exactly the sections where recent examples
+  // and events live, so the model fell back on training knowledge for them,
+  // which reads as stale regardless of how strict the recency prompt is.
+  //
+  // Now: a much larger budget (8k of ~200k-token context was needlessly
+  // conservative — 50k chars is roughly 13k tokens) AND split evenly across
+  // the research sources so every query is represented rather than just the
+  // first.
+  const safeResearch = balancedResearchExcerpt(allResearch, 50000);
 
   // CRITICAL: Include ALL sub-segments but keep context compact
   const segmentContext = scope.selectedSegments?.length
@@ -3448,7 +3528,7 @@ export async function runVucaSynthesis(
   const ctx = researchText.slice(0, 5000);
   const clientMode = !!(companyContext?.name && companyContext?.profile);
 
-  const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks. Use 2024–2026 data. Cite sources inline where available.`;
+  const systemPrompt = `You are a senior industry analyst. OUTPUT IS VALID JSON ONLY — no prose, no markdown fences, no code blocks. Use data from the last 24 months, prioritising ${new Date().getFullYear()} first. Cite sources inline where available, always with the date.`;
 
   // ── Call 1a: VUCA Driver, Effects & Demand table ─────────────────────────
   const call1a = `Industry: ${industry} | Geography: ${geography} | Date: ${analysisDate}
