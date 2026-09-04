@@ -2310,7 +2310,15 @@ CRITICAL RULES:
 `.trim();
 
   // Prioritize quality over token reduction — use sufficient tokens for detailed analysis
-  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis'].includes(id));
+  // market_dynamics and regulatory_overview each emit FOUR tables (see their
+  // tableHint in SECTION_DEFINITIONS_V2) but were not classified as heavy, so
+  // they were capped at 8k output tokens. Verified live on a US Drone
+  // Industry report: market_dynamics failed with "Retry returned zero
+  // sections" — the NDJSON came back truncated mid-object and parsed to
+  // nothing, which is the signature of hitting the output cap rather than a
+  // rate-limit or API error. Both four-table sections now get the same 10k
+  // budget already given to the other structurally large sections.
+  const isHeavySection = sectionIds.some((id) => ['market_size_by_segment', 'key_players_analysis', 'market_dynamics', 'regulatory_overview'].includes(id));
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
   const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
