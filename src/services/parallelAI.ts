@@ -46,7 +46,14 @@ function buildDomainIdentityAnchor(companyName: string, domain?: string): string
 
 const BASE_URL = 'https://api.parallel.ai';
 const TASK_POLL_INTERVAL_MS = 4000;
-const TASK_TIMEOUT_MS = 90000;  // 90 seconds — Render Pro has more headroom
+// 180s. Measured live: a typical Industry Report 'base' research query
+// completes in ~57s, which left almost no headroom against the previous 90s
+// cap — slower/broader queries blew through it, retried, and timed out again.
+// That produced the observed "4 of 6 attempts failed" (2 queries x 2 attempts)
+// while only 2 queries returned data, silently halving research depth.
+// Queries are dispatched concurrently (Promise.allSettled), so raising this
+// bounds worst-case wall clock by the slowest single query, not the sum.
+const TASK_TIMEOUT_MS = 180000;
 const MAX_RETRIES = 1;          // 1 retry — Render Pro can afford it
 
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────
@@ -200,7 +207,7 @@ async function pollTask(runId: string): Promise<string> {
     }
   }
 
-  throw new Error('Parallel.AI task timed out after 5 minutes');
+  throw new Error(`Parallel.AI task timed out after ${Math.round(TASK_TIMEOUT_MS / 1000)}s`);
 }
 
 /** Public single-query wrapper used by consultingIntelligenceService */
@@ -2111,7 +2118,12 @@ export async function researchIndustryReport(
   queries: string[],
   onQueryDone?: (completedIdx: number, total: number) => void
 ): Promise<string[]> {
-  const limited = queries.slice(0, 4);
+  // 6 (was 4). The scope wizard typically produces 8 queries covering market
+  // size, trends, competitive landscape, regulation, applications and
+  // innovation; capping at 4 discarded entire research dimensions before any
+  // request was made. These run concurrently and each successful call costs
+  // ~$0.01, so the extra depth is cheap in both time and money.
+  const limited = queries.slice(0, 6);
   // The queries themselves come from Claude's scope-extraction step (see
   // extractScopeWithWizard in claudeAI.ts) and do not carry any recency
   // instruction of their own, so prepend it here before dispatching to the

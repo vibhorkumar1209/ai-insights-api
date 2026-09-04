@@ -312,6 +312,41 @@ export async function runIndustryReportV2(
       updateJob(jobId, { sections: allSections, failedSections: failedSections.length ? failedSections : undefined });
       checkAbort(jobId);
     }
+
+    // ── Step 4a: Final recovery sweep ──
+    // Last line of defence so a report is not silently delivered with a
+    // missing section. By this point 12+ Claude calls have been made in quick
+    // succession, and the dominant cause of a section failing both its batch
+    // attempt and its immediate retries is accumulated rate-limiting, which a
+    // longer cooldown clears far better than the short in-loop backoffs.
+    if (failedSections.length > 0) {
+      step(`Recovering ${failedSections.length} section(s)...`, 86, 'drafting');
+      const stillFailed: typeof failedSections = [];
+      for (const f of failedSections) {
+        checkAbort(jobId);
+        await new Promise((r) => setTimeout(r, 15000));
+        try {
+          const recovered = await draftSectionsBatchV2(scope, allResearch, marketSizing, [f.id]);
+          if (recovered.length === 0) throw new Error('Sweep returned zero sections');
+          allSections = [...allSections, ...recovered];
+          console.log(`[industryReport] Sweep recovered section ${f.id}`);
+        } catch (sweepErr) {
+          console.error(`[industryReport] Sweep failed for ${f.id}:`, sweepErr instanceof Error ? sweepErr.message : sweepErr);
+          stillFailed.push(f);
+        }
+      }
+      failedSections.length = 0;
+      failedSections.push(...stillFailed);
+    }
+
+    // Restore canonical section order. Individual retries and the sweep append
+    // recovered sections at the end, so without this a recovered section (e.g.
+    // market_dynamics) would render after tei_analysis instead of in its
+    // proper position in the report.
+    const sectionOrder = new Map(selected.map((id, idx) => [id, idx]));
+    allSections.sort((a, b) => (sectionOrder.get(a.id) ?? 999) - (sectionOrder.get(b.id) ?? 999));
+
+    updateJob(jobId, { sections: allSections, failedSections: failedSections.length ? failedSections : undefined });
     step('All sections drafted', 88, 'drafting');
 
     // ── Step 4b: Market size consistency validation ──
