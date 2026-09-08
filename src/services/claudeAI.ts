@@ -1913,11 +1913,11 @@ BOTTOM-UP: Estimate from known player revenues, unit volumes, or customer counts
 
 Return ONLY valid JSON with this exact shape:
 {
-  "currentMarketSize": "$XX.XB (2024)" or range if uncertain,
-  "projectedMarketSize": "$XX.XB (2030)" or range,
-  "cagr": "X.X% (2024-2030)",
-  "currentVolume": "XX.X million units (2024) — include ONLY if volume/unit data is available with medium-high confidence from the research. For physical products, vehicles, devices, etc. this is usually available. Omit this field entirely if not available.",
-  "projectedVolume": "XX.X million units (2030) — same rule as currentVolume",
+  "currentMarketSize": "$XX.XB (${getBaseYear()})" or range if uncertain,
+  "projectedMarketSize": "$XX.XB (${getForecastEndYear(getBaseYear())})" or range,
+  "cagr": "X.X% (${getBaseYear()}-${getForecastEndYear(getBaseYear())})",
+  "currentVolume": "XX.X million units (${getBaseYear()}) — include ONLY if volume/unit data is available with medium-high confidence from the research. For physical products, vehicles, devices, etc. this is usually available. Omit this field entirely if not available.",
+  "projectedVolume": "XX.X million units (${getForecastEndYear(getBaseYear())}) — same rule as currentVolume",
   "methodology": "2-3 sentence summary of how estimates were derived using both methods",
   "dataPoints": [
     { "metric": "descriptive metric name", "value": "$XX.XB or XX%", "source": "Primary source only — e.g. company filing, government/trade body data, Reuters/Bloomberg, or 'Analyst estimate' if no named source; NEVER a syndicated market-research publisher, Year" },
@@ -1999,7 +1999,7 @@ Return ONLY valid JSON with this exact shape:
     "type": "combo",
     "title": "Market Size: Historical & Projected",
     "xLabel": "Year", "yLabel": "Market Size (USD Bn)", "yRightLabel": "CAGR %",
-    "data": [{"label": "2020", "value": <size>, "growth": <cagr>}, {"label": "2021", ...}, ... up to projected year],
+    "data": [{"label": "${getBaseYear() - 4}", "value": <size>, "growth": <cagr>}, {"label": "${getBaseYear() - 3}", ...}, ... through "${getBaseYear()}" and on to the projected year],
     "series": [
       {"key": "value", "name": "Market Size", "type": "bar", "yAxisId": "left"},
       {"key": "growth", "name": "CAGR %", "type": "line", "yAxisId": "right"}
@@ -2054,11 +2054,14 @@ RULES:
 // ── V2 Section Definitions (enhanced report with SWOT, Porter's, TEI) ───────
 
 export const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: string; chartHint: string; subsectionHint: string }> = {
-  market_overview: {
+  get market_overview() {
+    const by = getBaseYear();
+    return {
     title: 'Market Overview',
-    tableHint: 'Include a table (in keyTable) with headers: ["Year", "Market Size (Value)", "Market Size (Volume)", "YoY Growth (%)", "Scenario Band (Low/Base/High)"] showing historical data for n-4 to n (last 5 calendar years). Include both value (USD) and volume (units/tonnes/etc.) columns. If volume data not available, leave volume cells as "N/A".',
-    chartHint: 'Include a "combo" chart (in chartSpec) showing current market size and historical CAGR. data: [{label: "2020", value: <size_in_billions>, growth: <yoy_percent>}, {label: "2021", ...}, ...for 5 years], series: [{key: "value", name: "Market Size (USD Bn)", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %". ALL data values MUST be numbers.',
-    subsectionHint: 'Structure the section as follows:\n1. bodyParagraphs[0]: Current market size (value + volume if available), historical CAGR, and overall growth characterization (tag as HIGH GROWTH / MEDIUM GROWTH / LOW GROWTH).\n2. Subsection "Growth Insights": MUST have "content" field (3-5 bullet points). Explicitly classify growth as High, Medium, or Low. Explain key growth drivers, inflection points, and growth trajectory.\n3. Subsection "Market Concentration & Fragmentation": MUST have "content" field (3-5 bullet points). Whether market is concentrated (top 3-5 players dominate) or fragmented (many small players), organized vs unorganized market split (with % estimates), HHI-equivalent assessment.\n4. Subsection "Major Players & Key Insights": MUST have "content" field (3-5 bullet points). Top 3-5 ACTIVE players with market share %, key differentiators, recent strategic moves, plus any other key market insights. Only list companies that are currently operating — do NOT include companies that have shut down, gone bankrupt, or exited the market. If any notable players have recently shut down or filed for bankruptcy, mention them separately with a ⚠ marker and brief context (e.g. "⚠ XYZ Corp filed for Chapter 11 in 2024 due to…").\nCRITICAL: Every subsection MUST have a non-empty "content" string with substantive analysis (at least 3 bullet points using • character). Do NOT leave content empty.',
+    tableHint: `Include a table (in keyTable) with headers: ["Year", "Market Size (Value)", "Market Size (Volume)", "YoY Growth (%)", "Scenario Band (Low/Base/High)"] showing historical data for ${by - 4} through ${by} (the last 5 complete calendar years), ordered most recent year first. Include both value (USD) and volume (units/tonnes/etc.) columns. If volume data not available, leave volume cells as "N/A". Where ${new Date().getFullYear()} year-to-date or run-rate figures exist, add a "${new Date().getFullYear()} YTD" row at the top labelled as such.`,
+    chartHint: `Include a "combo" chart (in chartSpec) showing current market size and historical CAGR. data: [{label: "${by - 4}", value: <size_in_billions>, growth: <yoy_percent>}, {label: "${by - 3}", ...}, ...for 5 years ending at "${by}"], series: [{key: "value", name: "Market Size (USD Bn)", type: "bar", yAxisId: "left"}, {key: "growth", name: "YoY Growth %", type: "line", yAxisId: "right"}], yRightLabel: "Growth %". ALL data values MUST be numbers.`,
+    subsectionHint: `Structure the section as follows:\n1. bodyParagraphs[0]: Current market size (value + volume if available), historical CAGR, and overall growth characterization (tag as HIGH GROWTH / MEDIUM GROWTH / LOW GROWTH).\n2. Subsection "Growth Insights": MUST have "content" field (3-5 bullet points). Explicitly classify growth as High, Medium, or Low. Explain key growth drivers, inflection points, and growth trajectory.\n3. Subsection "Market Concentration & Fragmentation": MUST have "content" field (3-5 bullet points). Whether market is concentrated (top 3-5 players dominate) or fragmented (many small players), organized vs unorganized market split (with % estimates), HHI-equivalent assessment.\n4. Subsection "Major Players & Key Insights": MUST have "content" field (3-5 bullet points). Top 3-5 ACTIVE players with market share %, key differentiators, recent strategic moves, plus any other key market insights. Only list companies that are currently operating — do NOT include companies that have shut down, gone bankrupt, or exited the market. If any notable players have recently shut down or filed for bankruptcy, mention them separately with a ⚠ marker and brief context (e.g. "⚠ XYZ Corp filed for Chapter 11 in ${by} due to…").\nCRITICAL: Every subsection MUST have a non-empty "content" string with substantive analysis (at least 3 bullet points using • character). Do NOT leave content empty.`,
+    };
   },
   // Getter (like `forecast` below) so the year labels are computed at access
   // time. These were previously hardcoded as "2024"/"2025" chart labels and a
@@ -2284,7 +2287,7 @@ Each object structure:
   "chartSpec": {...} OR null,
   "charts": [{type, title, xLabel, yLabel, yRightLabel, data, series}, ...] OR null (for multi-chart sections like forecast),
   "subsections": [{"title": "...", "content": "paragraph text with • bullets", "keyTable": {...} OR null, "tables": [...] OR null, "chartSpec": {...} OR null, "charts": [...] OR null}] OR null,
-  "citations": ["..."] (ONLY credible sources per the SOURCE RESTRICTION rules below — e.g. "Reuters, 2025", "Snowflake Inc. 10-K, 2025", "U.S. Census Bureau, 2025". NEVER include a syndicated market-research publisher name here, including in a phrase like "X estimate: $Y" or "per X report". If no credible source applies, omit the item entirely rather than naming an uncredible one.),
+  "citations": ["..."] (ONLY credible sources per the SOURCE RESTRICTION rules below — e.g. "Reuters, ${new Date().getFullYear()}", "Snowflake Inc. 10-K, ${getBaseYear()}", "U.S. Census Bureau, ${new Date().getFullYear()}". NEVER include a syndicated market-research publisher name here, including in a phrase like "X estimate: $Y" or "per X report". If no credible source applies, omit the item entirely rather than naming an uncredible one.),
   "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null,
   "swotData": {...} OR null,
   "portersData": {...} OR null,
@@ -2469,7 +2472,7 @@ Return a JSON array of exactly ${input.numberOfTopics} objects with these keys:
     "topic_title": "Specific report title in MarketsandMarkets/Grand View Research style",
     "type": "white_space" | "bestseller",
     "estimated_cagr": "18–22%",
-    "base_market_size": "$2.4B (2024)",
+    "base_market_size": "$2.4B (${getBaseYear()})",
     "white_space_score": 8,
     "competition_level": "none" | "low" | "moderate" | "high",
     "primary_growth_driver": "One sentence naming the specific megatrend(s)",
@@ -2764,7 +2767,7 @@ Return a JSON object:
     {
       "period": "YYYY (single year only, no ranges)",
       "narrative": "15-30 word past-tense sentence describing the one verifiable milestone for that year",
-      "source": "Source attribution per the priority list above (e.g., 'Company press release, 2023', 'Reuters, 2021')"
+      "source": "Source attribution per the priority list above (e.g., 'Company press release, ${new Date().getFullYear()}', 'Reuters, ${new Date().getFullYear() - 1}') — cite the most recent source available and always include its year"
     }
   ],
   "strategicEvolution": [
@@ -2800,7 +2803,7 @@ export async function synthesizeTechHeatMap(
   input: TechHeatMapInput,
   onChunk?: (accumulated: string) => void
 ): Promise<{ headline: string; rows: TechHeatMapRow[] }> {
-  const systemPrompt = `You are a technology investment analyst. Output ONLY valid JSON. No markdown fences. ${WRITING_DIRECTIVE}`;
+  const systemPrompt = `You are a technology investment analyst. Output ONLY valid JSON. No markdown fences. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Assess technology investment levels for companies in the "${input.industry}" industry operating in "${input.geography}" over the next 6 months.
 
@@ -3129,7 +3132,7 @@ Return ONLY a valid JSON array:
 export async function discoverIndustrySegmentsQuick(
   industry: string
 ): Promise<string[]> {
-  const text = await claudeCreateDirect('', `List the top 10 segments or subsectors within the "${industry}" industry.
+  const text = await claudeCreateDirect('', `List the top 10 segments or subsectors within the "${industry}" industry as of ${new Date().getFullYear()}, reflecting how the industry is segmented today rather than historically.
 
 Return ONLY a JSON array of 10 segment names as strings. No other text.
 
@@ -3251,7 +3254,7 @@ export async function synthesizeSalesPlay2(
   const hasIncumbencyResearch = !isEmptyResearch(incumbencyResearch);
   const competitors = competitorList.length ? competitorList : [input.competitorName];
 
-  const systemPrompt = `You are an elite B2B sales strategist. Output ONLY valid JSON. No markdown fences. ${WRITING_DIRECTIVE}`;
+  const systemPrompt = `You are an elite B2B sales strategist. Output ONLY valid JSON. No markdown fences. ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
 
   const userPrompt = `Generate a Sales Play II for ${input.yourCompany} targeting ${input.targetAccount} in the ${input.targetIndustry} industry. Competitors to displace: ${competitors.join(', ')}.
 ${input.strategicPriorities?.length ? `\nTarget Account Strategic Priorities:\n${input.strategicPriorities.join('\n')}` : ''}
@@ -3425,9 +3428,11 @@ export async function synthesiseConsultingIntelligence(
 ${researchNote}
 RULES:
 - Always produce substantive, expert-level output. Never return empty arrays or vague statements.
-- Attribute ALL insights to specific named firms (e.g. "McKinsey argues…", "Gartner forecasts…", "Deloitte's 2024 survey found…").
+- Attribute ALL insights to specific named firms (e.g. "McKinsey argues…", "Gartner forecasts…", "Deloitte's ${new Date().getFullYear()} survey found…").
 - Use real statistics when available from research. When using training knowledge, frame as "According to [Firm]'s research…".
 - Identify which consulting/analyst firms appear in the research and focus on their positions.
+- Every attributed insight must carry the publication year of the report or study it came from, and the newest firm positions must be presented first.
+${getRecencyDirective()}
 Return only valid JSON with no markdown fencing.`;
 
   const researchText = hasRealResearch
@@ -3759,7 +3764,8 @@ export async function synthesizeObjectionHandling(
 Rules:
 - Each objection must have a DETAILED rebuttal (4–6 specific bullet points as a single string, using "• " prefix per bullet).
 - talkTrack must be 2–3 sentences of verbatim suggested language the rep can say out loud.
-- proofPoint must cite a specific metric, analyst finding, or case study outcome.
+- proofPoint must cite a specific metric, analyst finding, or case study outcome, with the year it was published.
+${getRecencyDirective()}
 - Categories to cover: Switching Cost / Risk, Product Capability Gap, Relationship & Politics, Commercial / Pricing, Implementation Complexity, Support & Service, Strategic Fit.
 - Generate EXACTLY 8 objections if competitor is NOT incumbent, or EXACTLY 12 if IS incumbent.
 - battleCard: concise head-to-head markdown-free paragraph (no bullets), 3–4 sentences, executive-ready.

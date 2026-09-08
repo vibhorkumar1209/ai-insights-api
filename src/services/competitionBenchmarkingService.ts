@@ -5,7 +5,7 @@ import {
   FinancialsFact, LeadershipFact, ProductNameFact, MarketShareFact, TechProofPointFact,
   BenchmarkingSection,
 } from '@ai-insights/types';
-import { runGeminiGroundedJSON } from './parallelAI';
+import { runGeminiGroundedJSON, getSearchRecencyInstruction } from './parallelAI';
 import { claudeCreateDirect } from './claudeAI';
 
 // Two model providers used deliberately, not interchangeably: Gemini's
@@ -102,7 +102,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 2): Promise<T> {
 // ── Step A: competitor selection (only if the user didn't supply a list) ────
 
 async function selectCompetitors(input: CompetitionBenchmarkingInput): Promise<CompetitorSelection | null> {
-  const prompt = `You are a market-intelligence researcher. Using current, credible sources (analyst firms such as Synergy Research, Gartner, IDC, ISG, Forrester, or reputable trade press aggregating the same), identify the 5 largest named competitors to "${input.userFirm}" in the following market:
+  const prompt = `${getSearchRecencyInstruction()}You are a market-intelligence researcher. Using current, credible sources (analyst firms such as Synergy Research, Gartner, IDC, ISG, Forrester, or reputable trade press aggregating the same), identify the 5 largest named competitors to "${input.userFirm}" in the following market:
 
 Market: ${input.userDomain}
 ${input.focusSegment ? `Focus segment: ${input.focusSegment}\n` : ''}${input.geoFocus ? `Geography: ${input.geoFocus}\n` : ''}
@@ -140,7 +140,7 @@ const CATEGORY_INSTRUCTIONS: Record<ResearchCategory, string> = {
 };
 
 function buildResearchPrompt(entityName: string, category: ResearchCategory, input: CompetitionBenchmarkingInput): string {
-  return `You are a market-intelligence researcher verifying facts for a competitive benchmarking report. Research ONLY the following, using live web search — do not rely on prior knowledge without confirming it against current sources.
+  return `${getSearchRecencyInstruction()}You are a market-intelligence researcher verifying facts for a competitive benchmarking report. Research ONLY the following, using live web search — do not rely on prior knowledge without confirming it against current sources.
 
 Company: ${entityName}
 Category: ${category}

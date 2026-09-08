@@ -958,7 +958,7 @@ export async function verifyExecutiveLinkedIn(
   title: string,
   targetAccount: string
 ): Promise<ExecutiveLinkedInVerification> {
-  const prompt = `Search for the LinkedIn profile of "${name}", reported to hold the title "${title}" at "${targetAccount}".
+  const prompt = `${getSearchRecencyInstruction()}Search for the LinkedIn profile of "${name}", reported to hold the title "${title}" at "${targetAccount}".
 
 Confirm two things:
 1. A LinkedIn profile for this specific person exists and is findable.
@@ -1023,7 +1023,7 @@ Please find:
 2. Functional Lieutenants (SVP/VP Level): Currently active Senior VPs or Vice Presidents leading sub-functions or business units in this department.
 3. Local Site/Center Leaders (if applicable): Managing Directors or site heads who oversee physical operations or regional hubs for this team.
 
-Ensure the data reflects current leaders only, active as of 2026 — never a former titleholder. Avoid listing mid-level managers or directors unless they are a primary site head. Only include a person if you have clear evidence they currently hold that role; omit any tier entirely (null) rather than guessing.
+Ensure the data reflects current leaders only, active as of ${new Date().getFullYear()} — never a former titleholder. Avoid listing mid-level managers or directors unless they are a primary site head. Only include a person if you have clear evidence they currently hold that role; omit any tier entirely (null) rather than guessing.
 
 Return ONLY this JSON, no markdown fences:
 {
@@ -1633,7 +1633,7 @@ Report on the following using annual reports, 10-K filings, investor presentatio
    - Official segment names as reported in annual filings
    - Revenue contribution per segment (% of total or absolute)
    - What each segment sells, to whom, and in which geographies
-   - Source (e.g., "10-K 2024", "Investor Day 2025")
+   - Source (e.g., "10-K ${new Date().getFullYear() - 1}", "Investor Day ${new Date().getFullYear()}") — always the most recent filing available
 
 2. RECENT STRATEGIC EVOLUTION
    - Major acquisitions, divestitures, or new business launches (last 5 years)
@@ -2197,13 +2197,13 @@ FILTER 2 — GROWTH SIGNAL: Structural CAGR ≥${input.minimumCAGR}% driven by �
 FILTER 3 — SEGMENTABILITY: Segmentable along ≥3 axes (technology type, region, end-use, company type, price tier, etc.). ${depthNote}
 
 For white-space topics: NO major research platform has a standalone report yet, OR coverage is 3+ years old. Justify why this gap exists.
-For bestseller topics: mirror highest-selling reports — specific product + specific application + geographic qualifier + near-future forecast window (2025–2032 or similar).
+For bestseller topics: mirror highest-selling reports — specific product + specific application + geographic qualifier + near-future forecast window (${new Date().getFullYear()}–${new Date().getFullYear() + 6} or similar).
 
 FOR EACH TOPIC provide:
 - A specific report title (in the style of MarketsandMarkets / Grand View Research report names)
 - Whether it is "white_space" or "bestseller"
 - Estimated CAGR range (e.g. "18–22%")
-- Base market size estimate (e.g. "$2.4B (2024)")
+- Base market size estimate (e.g. "$2.4B (${new Date().getFullYear() - 1})")
 - White space score (1–10, where 10 = completely uncovered)
 - Competition level: none/low/moderate/high
 - Primary growth driver: one sentence naming the specific megatrend(s)
@@ -2310,19 +2310,19 @@ export async function researchConsultingTLTopicBatches(
   const queries = [
     {
       label: 'strategy-consulting',
-      query: `${getSearchRecencyInstruction()}What are the latest strategic insights, frameworks, and reports on "${topic}" in ${geography} from McKinsey, BCG, Bain, Accenture, Oliver Wyman, Kearney, Roland Berger? Include report titles, key findings, statistics, market outlook, strategic recommendations, executive quotes, and URLs from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are the latest strategic insights, frameworks, and reports on "${topic}" in ${geography} from McKinsey, BCG, Bain, Accenture, Oliver Wyman, Kearney, Roland Berger? Include report titles, key findings, statistics, market outlook, strategic recommendations, executive quotes, and URLs from ${currentYearRangeLabel()}, expanding to earlier years only if insufficient recent material exists — present the newest findings first and tag every data point with its publication year.`,
     },
     {
       label: 'big4-advisory',
-      query: `${getSearchRecencyInstruction()}What are Deloitte, PwC, EY, KPMG, IBM Consulting, and Capgemini saying about "${topic}" in ${geography}? Include their published reports, white papers, industry outlooks, transformation studies, digital surveys, and key data points from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are Deloitte, PwC, EY, KPMG, IBM Consulting, and Capgemini saying about "${topic}" in ${geography}? Include their published reports, white papers, industry outlooks, transformation studies, digital surveys, and key data points from ${currentYearRangeLabel()}, expanding to earlier years only if insufficient recent material exists — present the newest findings first and tag every data point with its publication year.`,
     },
     {
       label: 'tech-analysts',
-      query: `${getSearchRecencyInstruction()}What are Gartner, Forrester, IDC, Everest Group, HFS Research, and ISG saying about "${topic}" in ${geography}? Include analyst predictions, market forecasts, hype cycles, Wave reports, technology assessments, adoption statistics, and vendor positioning from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are Gartner, Forrester, IDC, Everest Group, HFS Research, and ISG saying about "${topic}" in ${geography}? Include analyst predictions, market forecasts, hype cycles, Wave reports, technology assessments, adoption statistics, and vendor positioning from ${currentYearRangeLabel()}, expanding to earlier years only if insufficient recent material exists — present the newest findings first and tag every data point with its publication year.`,
     },
     {
       label: 'market-research',
-      query: `${getSearchRecencyInstruction()}What are the latest market size, investment trends, startup activity, and economic research findings on "${topic}" in ${geography}? Include reports from CB Insights, PitchBook, World Economic Forum, Oxford Economics, MIT Sloan, HBR, S&P Global — key statistics, growth rates, investment volumes, and strategic outlooks from 2022-2025.`,
+      query: `${getSearchRecencyInstruction()}What are the latest market size, investment trends, startup activity, and economic research findings on "${topic}" in ${geography}? Include reports from CB Insights, PitchBook, World Economic Forum, Oxford Economics, MIT Sloan, HBR, S&P Global — key statistics, growth rates, investment volumes, and strategic outlooks from ${currentYearRangeLabel()}, expanding to earlier years only if insufficient recent material exists — present the newest findings first and tag every data point with its publication year.`,
     },
   ];
 
