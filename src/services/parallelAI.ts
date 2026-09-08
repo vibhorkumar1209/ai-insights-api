@@ -821,13 +821,13 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
   "latestRevenue": "human-readable figure in the company's native currency, e.g. ₹9 Lakh or $485 million",
   "latestRevenueRaw": <plain unabbreviated number in native currency, per the RAW AMOUNT RULE above>,
-  "revenueYear": "fiscal year label, e.g. FY2025 or 2025 (or 'TTM' if using trailing twelve months)",
+  "revenueYear": "fiscal year label, e.g. FY${new Date().getFullYear()} or ${new Date().getFullYear()} (or 'TTM' if using trailing twelve months)",
   "currency": "3-letter ISO code of the company's NATIVE reporting currency, e.g. INR",
   "yoyGrowth": <number, year-over-year growth percent, or null if unknown>,
   "previousRevenue": "prior year figure in native currency, or null",
   "previousRevenueRaw": <plain unabbreviated number in native currency, or null>,
   "previousYear": "prior fiscal year label, or null",
-  "source": "the specific publication, filing, or platform the figure came from, e.g. 'SEC 10-K FY2025' or 'ZoomInfo'",
+  "source": "the specific publication, filing, or platform the figure came from, e.g. 'SEC 10-K FY${new Date().getFullYear()}' or 'ZoomInfo'",
   "revenueDrivers": "1-2 sentences on the primary drivers behind the revenue/growth — specific product lines, geographic regions, or recent acquisitions — or null if not determinable",
   "regionalBreakdown": "revenue by major geographic region or business subsidiary if disclosed, e.g. 'North America: $2.1B, EMEA: $1.4B, APAC: $0.9B', or null if not disclosed",
   "sourceType": "EXACTLY one of: 'Official regulatory filing' or 'Third-party intelligence platform', or null if genuinely unclear — do not withhold latestRevenue just because this is uncertain"
@@ -2024,7 +2024,7 @@ SOURCES TO RESEARCH (check ALL of these):
 FOR EACH INSIGHT FOUND, provide:
 1. EXECUTIVE: Full name, exact job title, and department/function (e.g. "Jane Smith, Chief Technology Officer, Technology")
 2. THEME: The strategic business focus area the executive is discussing (e.g. "AI-driven Supply Chain Optimisation", "Cloud-first Digital Transformation", "Sustainability & ESG Reporting")
-3. REFERENCE: The EVENT or OCCASION where the executive made this statement (e.g. "Annual General Meeting 2024", "Investor Day Keynote, Nov 2024", "World Economic Forum Panel, Jan 2025", "Q3 FY2025 Earnings Call", "NASSCOM Technology Leadership Forum 2024", "Banking Technology Summit, Feb 2025"). This should be the event/forum/occasion — NOT the publication or website.
+3. REFERENCE: The EVENT or OCCASION where the executive made this statement (e.g. "Annual General Meeting ${new Date().getFullYear()}", "Investor Day Keynote, Nov ${new Date().getFullYear() - 1}", "World Economic Forum Panel, Jan ${new Date().getFullYear()}", "Q3 FY${new Date().getFullYear()} Earnings Call", "NASSCOM Technology Leadership Forum ${new Date().getFullYear()}", "Banking Technology Summit, Feb ${new Date().getFullYear()}"). This should be the event/forum/occasion — NOT the publication or website.
 4. EXCERPT: The most relevant direct quote from the executive if available, OR a close paraphrase of their key statement. Prefer direct quotes in quotation marks.
 
 IMPORTANT RULES:

@@ -1,7 +1,7 @@
 {
   "name": "ai-insights-api",
   "version": "1.0.0",
-  "description": "AI Insights REST API — Peer Benchmarking & Financial Analysis",
+  "description": "AI Insights REST API \u2014 Peer Benchmarking & Financial Analysis",
   "main": "dist/app.js",
   "engines": {
     "node": "20.x"
@@ -51,6 +51,9 @@
     "collectCoverageFrom": [
       "src/**/*.ts",
       "!src/tests/**"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    }
   }
 }

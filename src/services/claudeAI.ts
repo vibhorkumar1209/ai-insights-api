@@ -1325,8 +1325,8 @@ Return a JSON object with EXACTLY this structure:
   "estimatedRevenue": "DATA ONLY — just the number or range. e.g. '$2.4B' or '$800M–$1.2B'. NO sources, NO parenthetical qualifiers, NO narrative — just the figure.",
   "profitabilityMargin": "DATA ONLY — just the margin metric. e.g. 'EBITDA ~20-25%' or 'Net margin 12%'. NO sources, NO qualifiers — just the number.",
   "estimatedYoyGrowth": "DATA ONLY — just the growth figure. e.g. '+25-35% YoY' or '+18%'. NO sources, NO qualifiers — just the number.",
-  "fundingInfo": "e.g. 'Series D | $450M total raised | Last round: $150M in 2023 (Tiger Global, Andreessen Horowitz)'",
-  "lastValuation": "e.g. '$4.5B (Series D, 2023)' or 'Not publicly disclosed'",
+  "fundingInfo": "e.g. 'Series D | $450M total raised | Last round: $150M in ${new Date().getFullYear() - 1} (Tiger Global, Andreessen Horowitz)'",
+  "lastValuation": "e.g. '$4.5B (Series D, ${new Date().getFullYear() - 1})' or 'Not publicly disclosed'",
   "privateInsights": [
     "3-5 sentence insight about the company's financial trajectory and competitive positioning",
     "Key risk factor visible from the financial and funding profile",
@@ -1550,7 +1550,7 @@ Return a JSON array with 10-15 rows, EXACTLY this shape:
   {
     "keyExecutive": "Full Name, Exact Title, Department (e.g. 'John Smith, Chief Technology Officer, Technology')",
     "theme": "The business focus area the executive is championing (e.g. 'AI-Driven Supply Chain Optimisation', 'Cloud-First Digital Transformation', 'Sustainability & Net Zero')",
-    "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting 2024', 'Investor Day Keynote, Nov 2024', 'World Economic Forum Panel, Jan 2025', 'Q3 FY2025 Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
+    "reference": "The EVENT where the executive made this statement — e.g. 'Annual General Meeting ${new Date().getFullYear()}', 'Investor Day Keynote, Nov ${new Date().getFullYear() - 1}', 'World Economic Forum Panel, Jan ${new Date().getFullYear()}', 'Q3 FY${new Date().getFullYear()} Earnings Call', 'Industry Summit Keynote'. This is NOT the source URL — it is the occasion, event, or forum where the quote originated.",
     "excerpt": "2-3 bullet points (each starting with '• ' separated by newlines): key statements or quotes from the executive about this theme — cite specific data points, programme names, or initiatives mentioned.",
     "source": "Source: ONLY include verified, legitimate sources (e.g., 'Company investor relations website', 'Earnings call transcript', 'Industry conference keynote', 'LinkedIn profile' — no invented URLs). If the source is unverifiable, write 'Based on business intelligence'."
   }
@@ -1562,9 +1562,9 @@ IMPORTANT:
 - If multiple executives speak to the same theme, include both — this shows organisational alignment.
 - Prioritise recent sources (${new Date().getFullYear() - 1}-${new Date().getFullYear()}).
 - Each row should represent a unique, actionable insight for sales pitching.
-- The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting 2024", "NASSCOM Technology Leadership Forum", "Q2 FY2025 Earnings Call", "Banking Technology Summit, Feb 2025". NOT: "LinkedIn post", "Company website", "Press release".
+- The "reference" field must describe the EVENT or OCCASION — not the publication or website. Examples: "Annual Shareholders Meeting ${new Date().getFullYear()}", "NASSCOM Technology Leadership Forum", "Q2 FY${new Date().getFullYear()} Earnings Call", "Banking Technology Summit, Feb ${new Date().getFullYear()}". NOT: "LinkedIn post", "Company website", "Press release".
 - The "keyExecutive" field MUST follow the format: "Full Name, Title, Department".
-- The "source" field must ONLY include verified, legitimate sources. Do NOT invent URLs. Examples: "Company investor relations website", "Q2 FY2025 Earnings call transcript", "LinkedIn", "Industry conference keynote". If the source cannot be verified, write "Business intelligence and market analysis".`;
+- The "source" field must ONLY include verified, legitimate sources. Do NOT invent URLs. Examples: "Company investor relations website", "Q2 FY${new Date().getFullYear()} Earnings call transcript", "LinkedIn", "Industry conference keynote". If the source cannot be verified, write "Business intelligence and market analysis".`;
 
   console.log('[claudeAI] Starting key buyers synthesis with 90s timeout');
   const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL, 90000);
@@ -2025,7 +2025,7 @@ Return ONLY valid JSON with this exact shape:
 }
 
 RULES:
-- n = previous year from the date of request (e.g. if request date is 2026, n = 2025)
+- n = previous year from the date of request (e.g. if request date is ${new Date().getFullYear()}, n = ${new Date().getFullYear() - 1})
 - tickerBoxes: include 3-5 ticker boxes. CRITICAL: If volume data is provided in MARKET SIZING above (Current Volume / Projected Volume), you MUST include the volume as secondaryValue in the Current and Projected ticker boxes. Format: "XX.X million units" or equivalent. Omit "Unorganized Market Share" ticker if not relevant to this market.
 - marketSizeChartSpec: MUST include historical years (n-4 to n) AND projected years (n+1 to n+5). Data values MUST be numbers.
 - concentrationInsights, keyPlayersInsights, topTrends, recentMaJvInsights: All required. Extract from the drafted sections.
@@ -2671,7 +2671,7 @@ Return a JSON object:
     {
       "name": "Official segment name (exactly as reported in filings for approach 1; logical business-unit name for approach 2)",
       "description": "80-90 word paragraph covering products/services, customer types, geographic regions, primary role/value delivered, and revenue share when known",
-      "source": "Source attribution (e.g., '10-K 2024', 'Annual Report FY2024', or 'Company website / market analysis' for operational segmentation)"
+      "source": "Source attribution (e.g., '10-K ${getBaseYear()}', 'Annual Report FY${getBaseYear()}', or 'Company website / market analysis' for operational segmentation)"
     }
   ],
   "strategicEvolution": [
@@ -3272,7 +3272,7 @@ Generate:
    - "targetExecutiveName" and "targetExecutiveTitle": IF you can name a specific real, current executive at ${input.targetAccount} who owns this department/theme (from the research provided or well-established public knowledge), give their full name and exact title. If you are not confident of a specific, currently-accurate individual, OMIT both fields entirely — do not guess a plausible-sounding name or a former/outdated titleholder. This will be independently re-verified against LinkedIn before being shown, so naming someone you are unsure about will simply cause it to be dropped, not accepted as-is.
    - "source": a real, currently-live URL (annual report, press release, news article, earnings call transcript) that supports the trigger claim — omit "source" entirely if you cannot name a real URL, never invent one.
 2. Opportunity Mapping — 4-5 opportunity areas showing how ${input.yourCompany} solves real problems with realistic deal sizes
-3. Competitive Positioning — generate ONE entry for EACH of these competitors, in this exact order: ${competitors.join(', ')}. For each, give specific strengths, weaknesses, and how ${input.yourCompany} differentiates. If the VENDOR INCUMBENCY CHECK above shows credible evidence (a case study, partnership announcement, deployment, or customer reference) that this competitor already serves ${input.targetAccount}, set "incumbencyNote" to a short factual note (e.g. "Existing vendor since 2021 — confirmed via case study") citing what was found. If no such evidence exists, omit "incumbencyNote" entirely (do not guess or fabricate).
+3. Competitive Positioning — generate ONE entry for EACH of these competitors, in this exact order: ${competitors.join(', ')}. For each, give specific strengths, weaknesses, and how ${input.yourCompany} differentiates. If the VENDOR INCUMBENCY CHECK above shows credible evidence (a case study, partnership announcement, deployment, or customer reference) that this competitor already serves ${input.targetAccount}, set "incumbencyNote" to a short factual note (e.g. "Existing vendor since ${new Date().getFullYear() - 4} — confirmed via case study") citing what was found. If no such evidence exists, omit "incumbencyNote" entirely (do not guess or fabricate).
 
 Output JSON:
 {
@@ -3806,7 +3806,10 @@ Return this exact JSON structure:
   "battleCard": "string"
 }`;
 
-  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 6000, 'claude-sonnet-4-6', 240000, 0.15);
+  // 6000 was not enough headroom for this schema: live runs truncated mid-array
+  // at ~25.5k characters, and a truncated tail is unrecoverable — the `{...}`
+  // regex fallback below only rescues surrounding prose, never a cut-off array.
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 10000, 'claude-sonnet-4-6', 240000, 0.15);
   const cleaned = (raw as string).replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
   let parsed: ObjectionHandlingPayload;
@@ -3832,11 +3835,13 @@ Return this exact JSON structure:
 
 import { OutsourcingReportInput } from '@ai-insights/types';
 
-const OUTSOURCING_TEMPORAL_RELEVANCE_RULE = `[CRITICAL SYSTEM RULE: TEMPORAL RELEVANCE]
+function outsourcingTemporalRelevanceRule(): string {
+  return `[CRITICAL SYSTEM RULE: TEMPORAL RELEVANCE]
 1. SOURCING WINDOW: For all data gathering, synthesis, and reporting, strictly prioritize information published within a 0-to-3-year window backward from the date the report is generated.
 2. REVERSIBILITY: Structure the entire report, including subsections and bullet points, in strict reverse chronological order (newest information first).
 3. AVAILABILITY FALLBACK: If data within the 0-to-3-year window does not exist or is unavailable for a specific sub-topic, step back incrementally (e.g., 4-5 years) only as needed.
-4. MANDATORY TIMESTAMPING: Every fact, statistic, or event cited must be explicitly prefixed with its publication date or timeframe (e.g., "[June 2026] Fact details...").`;
+4. MANDATORY TIMESTAMPING: Every fact, statistic, or event cited must be explicitly prefixed with its publication date or timeframe (e.g., "[${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}] Fact details...").`;
+}
 
 // Every fact must trace back to the RESEARCH DATA block (Gemini + Parallel.AI
 // grounded search), never to training knowledge — same rationale and wording
@@ -3850,7 +3855,7 @@ This entire report must be built from the RESEARCH DATA block provided below (li
 function outsourcingSystemPrompt(): string {
   return `You are an elite, world-class Technology Strategy Consultant, Enterprise Sales Enablement Director, and Industrial Market Analyst. Output clean Markdown only — use headers, data-dense bullet points, and GitHub-flavored Markdown tables. Do not truncate information or summarize sections broadly. Avoid generic corporate buzzwords; dive deep into technical, workload-specific, and operational realities. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE}
 
-${OUTSOURCING_TEMPORAL_RELEVANCE_RULE}
+${outsourcingTemporalRelevanceRule()}
 
 ${OUTSOURCING_RESEARCH_ONLY_RULE}`;
 }
@@ -3995,11 +4000,13 @@ import { GccSalesPlayInput } from '@ai-insights/types';
 const GCC_SCOPE_RESTRICTION_RULE = `[CRITICAL SYSTEM RULE: GCC/GDC SCOPE RESTRICTION]
 Restrict all analysis, data, and office mapping strictly to the target company's Global Capability Centers (GCC) or Global Delivery Centers (GDC). Exclude all standard sales offices, corporate headquarters, regional administrative branches, or other non-delivery facilities in any location. If a city or facility cannot be confirmed as a GCC/GDC (a captive delivery/technology/shared-services center), omit it entirely rather than including it as a assumed GCC presence.`;
 
-const GCC_TEMPORAL_RELEVANCE_RULE = `[CRITICAL SYSTEM RULE: TEMPORAL RELEVANCE]
+function gccTemporalRelevanceRule(): string {
+  return `[CRITICAL SYSTEM RULE: TEMPORAL RELEVANCE]
 1. SOURCING WINDOW: For all data gathering, synthesis, and reporting, strictly prioritize information published within a 0-to-3-year window backward from the date the report is generated.
 2. REVERSIBILITY: Structure the entire report, including subsections and bullet points, in strict reverse chronological order (newest information first).
 3. AVAILABILITY FALLBACK: If data within the 0-to-3-year window does not exist or is unavailable for a specific sub-topic, step back incrementally (e.g., 4-5 years) only as needed.
-4. MANDATORY TIMESTAMPING: Every fact, statistic, or event cited must be explicitly prefixed with its publication date or timeframe (e.g., "[June 2026] Fact details...").`;
+4. MANDATORY TIMESTAMPING: Every fact, statistic, or event cited must be explicitly prefixed with its publication date or timeframe (e.g., "[${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}] Fact details...").`;
+}
 
 // Every fact must trace back to the RESEARCH DATA block (Gemini + Parallel.AI
 // grounded search) fed into this prompt — never to the model's own training
@@ -4020,7 +4027,7 @@ function gccSalesPlaySystemPrompt(): string {
 
 ${GCC_SCOPE_RESTRICTION_RULE}
 
-${GCC_TEMPORAL_RELEVANCE_RULE}
+${gccTemporalRelevanceRule()}
 
 ${GCC_RESEARCH_ONLY_RULE}`;
 }
