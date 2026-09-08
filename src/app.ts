@@ -96,8 +96,22 @@ app.use(requestLogger);
 app.use(apiLimiter);
 
 // ── Routes ───────────────────────────────────────────────────────────────────
+// `commit` and `startedAt` exist so a caller can tell WHICH build is serving.
+// Without them /health returns ok while the previous instance is still up
+// during a deploy, which makes it impossible to know whether a verification
+// run exercised the new code or the old — a change can look like it silently
+// failed when it simply had not shipped yet.
+const BUILD_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'unknown';
+const PROCESS_STARTED_AT = new Date().toISOString();
+
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0' });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    commit: BUILD_COMMIT.slice(0, 7),
+    startedAt: PROCESS_STARTED_AT,
+  });
 });
 
 app.use('/api/competitors', memoryGuard, competitorsRouter);
