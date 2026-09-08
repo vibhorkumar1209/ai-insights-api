@@ -3391,7 +3391,12 @@ async function runClaudeStream(
   timeoutMs: number,
   source?: string,
 ): Promise<string> {
-  return claudeCreateDirect(system, userContent, maxTokens, model, timeoutMs, undefined, source || 'runClaudeStream').catch(() => '');
+  // Previously `.catch(() => '')`. Swallowing the error here turned every
+  // timeout and rate-limit into an empty string, which then failed to parse,
+  // which was itself caught and downgraded to `{}` — so a total failure of
+  // both Claude calls still returned status 'complete' with every array empty.
+  // Callers decide what is fatal; this no longer decides for them.
+  return claudeCreateDirect(system, userContent, maxTokens, model, timeoutMs, undefined, source || 'runClaudeStream');
 }
 
 // ── Helper: parse JSON robustly (handles truncation) ─────────────────────────
@@ -3464,11 +3469,29 @@ Return JSON:
   "researchMethodology": "brief string describing sources used"
 }`;
 
-  const raw1 = await runClaudeStream(SYNTHESIS_MODEL, 2500, systemPrompt, call1Prompt, 120_000, 'consultingIntelligence.call1');
+  // 2500 tokens could not hold this schema (5 insights + 4-5 trends + 3-4
+  // consensus + 2-3 contrarian + 4-5 implications + themes + 5-6
+  // recommendations), so the response truncated mid-JSON and failed to parse.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let part1: any = {};
-  try { part1 = parseJsonRobust(raw1); } catch (e) {
-    console.error('[synthesiseConsultingIntelligence] call1 parse failed:', e, 'raw:', raw1.slice(0, 200));
+  try {
+    const raw1 = await runClaudeStream(SYNTHESIS_MODEL, 6000, systemPrompt, call1Prompt, 180_000, 'consultingIntelligence.call1');
+    part1 = parseJsonRobust(raw1);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error('[synthesiseConsultingIntelligence] call1 failed:', detail);
+    throw new Error(`Consulting intelligence synthesis failed: ${detail}`);
+  }
+
+  // A parse that "succeeds" into an object carrying none of the three required
+  // payloads is not a success — without this the job completes with empty
+  // arrays and prose telling the reader to see content that does not exist.
+  const hasUsableCall1 =
+    (Array.isArray(part1.executiveSummary?.topInsights) && part1.executiveSummary.topInsights.length > 0) ||
+    (Array.isArray(part1.emergingThemes) && part1.emergingThemes.length > 0) ||
+    (Array.isArray(part1.strategicRecommendations) && part1.strategicRecommendations.length > 0);
+  if (!hasUsableCall1) {
+    throw new Error('Consulting intelligence synthesis returned no usable content (empty executive summary, themes and recommendations)');
   }
 
   // ── Call 2: Firm analyses + evidence (best-effort, won't fail the job) ────
@@ -3489,21 +3512,30 @@ Return JSON with exactly these fields:
 }
 Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Include 5-6 matrix rows.`;
 
-  const raw2 = await runClaudeStream(FAST_MODEL, 3000, systemPrompt, call2Prompt, 90_000, 'consultingIntelligence.call2');
+  // Genuinely best-effort: the report is still worth delivering without the
+  // firm-by-firm detail. 3000 tokens could not fit 5-6 firm analyses (6 fields
+  // each) plus 5-8 evidence items plus 5-6 matrix rows.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let part2: any = {};
-  try { part2 = parseJsonRobust(raw2); } catch (e) {
-    console.warn('[synthesiseConsultingIntelligence] call2 parse failed (non-fatal):', e);
+  try {
+    const raw2 = await runClaudeStream(FAST_MODEL, 8000, systemPrompt, call2Prompt, 150_000, 'consultingIntelligence.call2');
+    part2 = parseJsonRobust(raw2);
+  } catch (e) {
+    console.warn('[synthesiseConsultingIntelligence] call2 failed (non-fatal):', e instanceof Error ? e.message : e);
   }
 
-  // Always guarantee executiveSummary — never let it be undefined
+  // executiveSummary may still be absent even though call 1 was usable (the
+  // themes/recommendations branch of hasUsableCall1). Derive it from the
+  // content actually present rather than asserting a synthesis that did not
+  // happen — the old text claimed success and pointed the reader at firm
+  // analyses that were themselves empty.
   const execSummary = part1.executiveSummary ?? {
-    topInsights: [`Synthesis completed for "${topic}" in ${geography}. Research drew from ${researchBatches.filter(b => !b.rawText.includes('No data retrieved')).length} live sources and Claude training knowledge.`],
-    emergingTrends: part1.emergingThemes?.map((t: TLTheme) => t.theme) || [],
+    topInsights: (part1.emergingThemes || []).map((t: TLTheme) => t.description || t.theme).filter(Boolean).slice(0, 5),
+    emergingTrends: (part1.emergingThemes || []).map((t: TLTheme) => t.theme).filter(Boolean),
     consensusViewpoints: [],
     contrarianOpinions: [],
-    strategicImplications: part1.strategicRecommendations?.slice(0, 3) || [],
-    futureOutlook: 'Detailed synthesis available — see firm analyses and strategic recommendations below.',
+    strategicImplications: (part1.strategicRecommendations || []).slice(0, 3),
+    futureOutlook: '',
   };
 
   return {

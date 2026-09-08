@@ -123,24 +123,16 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     emit(jobId, 'progress', current);
 
     const synthHB = startHeartbeat(jobId, 71, 95, 'Synthesising insights…');
-    let results: Partial<ConsultingIntelligenceJob> = {};
+    let results: Partial<ConsultingIntelligenceJob>;
     try {
       results = await synthesiseConsultingIntelligence(topic, geography, STANDARD_FIRMS, researchBatches);
     } catch (synthErr) {
+      // This used to swallow the failure and hand back a stub with
+      // status 'complete', so the UI rendered an empty report as a finished
+      // one. A failed synthesis is a failed job: surface it so the caller can
+      // see the reason and retry, rather than silently showing nothing.
       console.error(`[consultingIntelligence] synthesis error for ${jobId}:`, synthErr);
-      // Graceful fallback — return basic result so client isn't left hanging
-      results = {
-        executiveSummary: {
-          topInsights: [`Research on "${topic}" in ${geography} completed across ${researchBatches.filter(b => !b.rawText.includes('No data')).length} source categories.`],
-          emergingTrends: [],
-          consensusViewpoints: [],
-          contrarianOpinions: [],
-          strategicImplications: [],
-          futureOutlook: 'Synthesis could not be completed. Please retry with a more specific topic.',
-        },
-        strategicRecommendations: ['Please retry — synthesis step encountered an error.'],
-        researchMethodology: `Researched ${researchBatches.length} batches. Synthesis failed: ${synthErr instanceof Error ? synthErr.message : 'unknown error'}`,
-      };
+      throw synthErr;
     } finally {
       clearInterval(synthHB);
     }
