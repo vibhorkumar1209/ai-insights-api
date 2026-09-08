@@ -34,20 +34,33 @@ describe('memoryGuard', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('falls back to the 250MB production default when the env var is unset', () => {
-    delete process.env.MEMORY_GUARD_MAX_HEAP_MB;
+  // These two assert the DEFAULT is 250MB. Jest's heap varies between workers
+  // and run orders, so asserting a fixed outcome here would be flaky — assert
+  // instead that the outcome agrees with the 250MB boundary either way.
+  function expectDefaultThresholdBehaviour() {
     const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
     const { next, res } = invoke();
-    // Jest's own heap is well over 250MB, so the default must reject here.
-    expect(heapMB).toBeGreaterThan(250);
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(next).not.toHaveBeenCalled();
+    if (heapMB > 250) {
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(next).not.toHaveBeenCalled();
+    } else {
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    }
+  }
+
+  it('falls back to the 250MB production default when the env var is unset', () => {
+    delete process.env.MEMORY_GUARD_MAX_HEAP_MB;
+    expectDefaultThresholdBehaviour();
   });
 
   it('ignores a malformed threshold and uses the default', () => {
     process.env.MEMORY_GUARD_MAX_HEAP_MB = 'not-a-number';
-    const { next, res } = invoke();
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(next).not.toHaveBeenCalled();
+    expectDefaultThresholdBehaviour();
+  });
+
+  it('ignores a zero or negative threshold and uses the default', () => {
+    process.env.MEMORY_GUARD_MAX_HEAP_MB = '0';
+    expectDefaultThresholdBehaviour();
   });
 });

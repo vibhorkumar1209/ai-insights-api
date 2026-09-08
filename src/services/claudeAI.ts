@@ -3418,6 +3418,96 @@ function parseJsonRobust(raw: string): any {
   throw new Error('unparseable JSON');
 }
 
+// ── Consulting Intelligence: shaping model output for the UI ────────────────
+// The renderer feeds chart `data` straight into recharts and maps `confidence`
+// onto a fixed colour lookup, so anything malformed reaching it degrades the
+// page rather than the field. A string like "$47B" in a numeric axis renders
+// as a broken chart, and an unrecognised confidence value renders an
+// unstyled badge. Both are filtered here instead.
+
+const CONFIDENCE_LEVELS = new Set(['high', 'medium', 'low']);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function sanitiseSourceAttribution(raw: any): TLInsight[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((r: any) => r && typeof r.insight === 'string' && r.insight.trim() && typeof r.sourceFirm === 'string' && r.sourceFirm.trim())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((r: any): TLInsight => {
+      const confidence = typeof r.confidence === 'string' ? r.confidence.toLowerCase().trim() : '';
+      return {
+        insight: String(r.insight).trim(),
+        sourceFirm: String(r.sourceFirm).trim(),
+        report: typeof r.report === 'string' ? r.report.trim() : 'Not specified',
+        publishedDate: typeof r.publishedDate === 'string' ? r.publishedDate.trim() : 'Not specified',
+        // Only keep a real http(s) URL — the prompt forbids constructing one,
+        // but a fabricated or relative link would still render as clickable.
+        ...(typeof r.url === 'string' && /^https?:\/\//i.test(r.url.trim()) ? { url: r.url.trim() } : {}),
+        confidence: (CONFIDENCE_LEVELS.has(confidence) ? confidence : 'medium') as TLInsight['confidence'],
+      };
+    });
+}
+
+// Pull a plain number out of whatever the model emitted ("$47.2B", "47.2%",
+// "1,200" …). Returns null when there is no usable figure, so the row can be
+// dropped rather than charted as NaN.
+export function coerceChartNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const match = value.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function sanitiseCharts(raw: any): TLChartSpec[] {
+  if (!Array.isArray(raw)) return [];
+  const charts: TLChartSpec[] = [];
+
+  for (const c of raw) {
+    if (!c || typeof c.title !== 'string' || !Array.isArray(c.data)) continue;
+
+    const type: TLChartSpec['type'] = c.type === 'line' || c.type === 'table' ? c.type : 'bar';
+    const xKey = typeof c.xKey === 'string' && c.xKey ? c.xKey : 'label';
+    const yKey = typeof c.yKey === 'string' && c.yKey ? c.yKey : 'value';
+
+    const data: Array<Record<string, string | number>> = [];
+    for (const row of c.data) {
+      if (!row || typeof row !== 'object') continue;
+      const label = row[xKey] ?? row.label ?? row.name;
+      const numeric = coerceChartNumber(row[yKey] ?? row.value);
+      if (label === undefined || label === null || String(label).trim() === '') continue;
+      // A table carries its rows verbatim; bar and line charts must plot a number.
+      if (type !== 'table' && numeric === null) continue;
+      data.push(type === 'table' ? { ...row } : { [xKey]: String(label), [yKey]: numeric as number });
+    }
+
+    // The prompt asks for at least 3 real points; enforce it here too, since a
+    // 1-2 point bar chart looks like a rendering failure to the reader.
+    if (data.length < 3) continue;
+
+    const quality = typeof c.dataQuality === 'string' ? c.dataQuality.toLowerCase().trim() : '';
+    // The UI filters these out anyway — drop them here so the count the reader
+    // sees matches the number of charts actually rendered.
+    if (quality === 'insufficient') continue;
+
+    charts.push({
+      type,
+      title: c.title.trim(),
+      description: typeof c.description === 'string' ? c.description.trim() : '',
+      data,
+      xKey,
+      yKey,
+      sourceFirms: Array.isArray(c.sourceFirms) ? c.sourceFirms.filter((f: unknown) => typeof f === 'string' && f.trim()) : [],
+      dataQuality: (quality === 'complete' || quality === 'partial' ? quality : 'partial') as TLChartSpec['dataQuality'],
+    });
+  }
+
+  return charts;
+}
+
 export async function synthesiseConsultingIntelligence(
   topic: string,
   geography: string,
@@ -3524,6 +3614,42 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
     console.warn('[synthesiseConsultingIntelligence] call2 failed (non-fatal):', e instanceof Error ? e.message : e);
   }
 
+  // ── Call 3: source attribution + charts (best-effort, own budget) ────────
+  // These two fields were previously hardcoded to [] and never populated, so
+  // the UI's "Source Attribution" and "Visualizations" sections silently never
+  // rendered. Given their own call rather than being folded into call 2, whose
+  // budget is already fully committed — overloading a single call is what
+  // truncated the JSON and produced empty reports in the first place.
+  const call3Prompt = `Topic: "${topic}" | Geography: ${geography} | Firms: ${firms}
+
+LIVE RESEARCH:
+${researchText.slice(0, 15000)}
+
+Return JSON with exactly these fields:
+{
+  "sourceAttribution": [
+    {"insight": "one specific finding, in a sentence", "sourceFirm": "the firm that published it", "report": "report or study title", "publishedDate": "Month YYYY or YYYY", "url": "source URL if present in the research, otherwise omit", "confidence": "high"|"medium"|"low"}
+  ],
+  "charts": [
+    {"type": "bar"|"line", "title": "string", "description": "one sentence on what the chart shows", "data": [{"label": "string", "value": <number>}], "xKey": "label", "yKey": "value", "sourceFirms": ["firm names the figures came from"], "dataQuality": "complete"|"partial"|"insufficient"}
+  ]
+}
+
+RULES:
+- Include 8-12 sourceAttribution rows, ordered most recent publication first. Set confidence to "high" only when the research text explicitly states the figure and its source; use "medium" for a firm position stated without a specific figure, and "low" for anything inferred. Only include a "url" that literally appears in the research — never construct one.
+- Include 2-3 charts built ONLY from figures that actually appear in the research or in the quantitative evidence. Every "value" MUST be a plain number with no currency symbols, units, commas or percent signs (write 47.2, not "$47.2B"), and the unit belongs in the title or description instead.
+- Each chart needs at least 3 data points. If you cannot find at least 3 real figures for a chart, omit that chart entirely rather than padding it with invented or interpolated values.
+- Set dataQuality to "complete" when every point is sourced, "partial" when some are estimated, and "insufficient" if you had to guess — charts marked insufficient are discarded, so prefer omitting a chart over inventing one.`;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let part3: any = {};
+  try {
+    const raw3 = await runClaudeStream(FAST_MODEL, 5000, systemPrompt, call3Prompt, 150_000, 'consultingIntelligence.call3');
+    part3 = parseJsonRobust(raw3);
+  } catch (e) {
+    console.warn('[synthesiseConsultingIntelligence] call3 failed (non-fatal):', e instanceof Error ? e.message : e);
+  }
+
   // executiveSummary may still be absent even though call 1 was usable (the
   // themes/recommendations branch of hasUsableCall1). Derive it from the
   // content actually present rather than asserting a synthesis that did not
@@ -3546,8 +3672,8 @@ Include 5-6 firms in firmAnalyses. Include 5-8 quantitative evidence items. Incl
     firmAnalyses: (part2.firmAnalyses || []) as TLFirmInsight[],
     quantitativeEvidence: (part2.quantitativeEvidence || []) as TLMetric[],
     comparativeMatrix: part2.comparativeMatrix || [],
-    sourceAttribution: [] as TLInsight[],
-    charts: [] as TLChartSpec[],
+    sourceAttribution: sanitiseSourceAttribution(part3.sourceAttribution),
+    charts: sanitiseCharts(part3.charts),
   };
 }
 
