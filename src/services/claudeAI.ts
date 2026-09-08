@@ -1465,7 +1465,7 @@ Return JSON:
 
 Counts: ${priorityCountNote}; industrySolutions 3-4; technologyPartners 2-3; siPartners 2-3; caseStudies EXACTLY 3; objectionRebuttals EXACTLY 3.`;
 
-  const fullText = await claudeCreateDirect(systemPrompt, userPrompt, 8192, SYNTHESIS_MODEL, 90000);
+  const fullText = await claudeCreateDirect(systemPrompt, userPrompt, 8192, SYNTHESIS_MODEL, 150000);
   onChunk?.(fullText);
   console.log(`[salesPlay] synthesis done length=${fullText.length}`);
 
@@ -2039,7 +2039,7 @@ RULES:
 `.trim();
 
   const systemPromptExec = `You are a senior market analyst producing an executive summary for C-suite readers. Be concise and specific. Output ONLY valid JSON. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
-  const raw = await claudeCreateDirect(systemPromptExec, userPrompt, 8192, SYNTHESIS_MODEL, 120000, 0.2);
+  const raw = await claudeCreateDirect(systemPromptExec, userPrompt, 8192, SYNTHESIS_MODEL, 180000, 0.2);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in executive summary response');
 
@@ -2958,7 +2958,7 @@ ${requirementsText}- adoptionStage: integer 1-5 only
 
 CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Start with { and end with }`;
 
-  const heatMapText = await claudeCreateDirect(systemPrompt, userPrompt, 12000, SYNTHESIS_MODEL);
+  const heatMapText = await claudeCreateDirect(systemPrompt, userPrompt, 12000, SYNTHESIS_MODEL, 300000);
 
   try {
     let rawText = heatMapText.trim();
@@ -3806,7 +3806,7 @@ Return this exact JSON structure:
   "battleCard": "string"
 }`;
 
-  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 6000, 'claude-sonnet-4-6', 120000, 0.15);
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 6000, 'claude-sonnet-4-6', 240000, 0.15);
   const cleaned = (raw as string).replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
   let parsed: ObjectionHandlingPayload;
