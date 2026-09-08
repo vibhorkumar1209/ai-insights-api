@@ -1,10 +1,26 @@
 import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 
-// Reject new AI jobs when heap exceeds threshold — prevents OOM crash
+// Reject new AI jobs when heap exceeds threshold — prevents OOM crash.
+//
+// The 250MB default is sized for Render's 512MB instance. It was previously
+// hardcoded, which made the guard untestable: under Jest, process.memoryUsage()
+// reports the test runner's heap (~375MB), not a server's, so every request in
+// every route test was rejected with a 503 before reaching its handler.
+// Threshold is now configurable, and the value is read per-request so tests can
+// set it without depending on module import order.
+const DEFAULT_MAX_HEAP_MB = 250;
+
+function maxHeapMb(): number {
+  const raw = process.env.MEMORY_GUARD_MAX_HEAP_MB;
+  if (!raw) return DEFAULT_MAX_HEAP_MB;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_HEAP_MB;
+}
+
 export function memoryGuard(_req: Request, res: Response, next: NextFunction) {
   const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
-  if (heapMB > 250) {
+  if (heapMB > maxHeapMb()) {
     console.warn(`[memoryGuard] heap ${heapMB.toFixed(0)}MB — rejecting request`);
     res.status(503).json({ error: 'Server busy, please retry in 30 seconds.', retryAfter: 30 });
     return;
