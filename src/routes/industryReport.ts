@@ -105,7 +105,10 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
     () => createIndustryReportJob(input)
   );
   if (isNew) {
-    registerJobStart('industry-report', jobId, extractLabel(req.body));
+    // extractLabel only inspects top-level fields, but this route nests the
+    // industry inside `scope`, so every Industry Report was registered as
+    // "Untitled" and showed that way in Report History.
+    registerJobStart('industry-report', jobId, extractLabel({ ...req.body, industry: scope.industry }));
     const manager = getIndustryJobManager();
     runIndustryReportV2(jobId, enrichedScope).catch((err) =>
       handleJobError(jobId, err, manager)

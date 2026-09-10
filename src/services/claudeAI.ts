@@ -2353,7 +2353,14 @@ CRITICAL RULES:
   const maxTokens = isHeavySection ? 10000 : 8000;  // Increased to ensure no truncation and high-quality output
 
   const systemPromptDraft = `You are a senior industry analyst. Output ONLY newline-delimited JSON (NDJSON) format: one complete JSON object per line. NO markdown, NO array wrapper, NO explanatory text. Each line must be a valid standalone JSON object. ${getRecencyDirective()} ${WRITING_DIRECTIVE} ${NO_SYNDICATED_RESEARCH_DIRECTIVE} ${CREDIBLE_SOURCE_ONLY_DIRECTIVE}`;
-  const raw = await claudeCreateDirect(systemPromptDraft, userPrompt, maxTokens, SYNTHESIS_MODEL, 120000, 0.1);
+  // 120s could not cover these token budgets. Non-streaming Sonnet emits
+  // roughly 30-60 tokens/sec, so 10000 tokens needs 170-330s — market_dynamics
+  // (4 tables, the largest section) timed out with "This operation was
+  // aborted" on a live run and was the one section missing from an otherwise
+  // complete report. Scaled to the budget actually requested, with the same
+  // 300s ceiling already used for the chunked Outsourcing and GCC calls.
+  const draftTimeoutMs = isHeavySection ? 300000 : 240000;
+  const raw = await claudeCreateDirect(systemPromptDraft, userPrompt, maxTokens, SYNTHESIS_MODEL, draftTimeoutMs, 0.1);
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}] raw length: ${raw.length}`);
 
   // Parse NDJSON format (newline-delimited JSON, more resilient to truncation)

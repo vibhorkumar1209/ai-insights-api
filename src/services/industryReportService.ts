@@ -71,9 +71,14 @@ cleanupTimer.unref();
 // non-terminal state forever — a spinner that never resolves and no error to
 // explain it. The deadline guarantees every job reaches a terminal state.
 //
-// 45 minutes is well clear of a normal run (~15-20 min with 180s research
-// timeouts and 12 sections) while still being far below the 2h TTL.
-const JOB_DEADLINE_MS = 45 * 60 * 1000;
+// Sized from an observed run, not an estimate: a full 12-section report took
+// 36 minutes end to end, so the original 45 minute value left almost no
+// headroom and risked the watchdog killing a report that was still making
+// progress. 75 minutes is comfortably clear of that while remaining well
+// below the 2h TTL, which is what the deadline actually has to stay under.
+// The deadline exists to guarantee terminality, so erring long is correct —
+// a stuck job costs extra waiting, a premature deadline destroys real work.
+const JOB_DEADLINE_MS = 75 * 60 * 1000;
 const deadlineExceeded = new Set<string>();
 const deadlineTimers = new Map<string, NodeJS.Timeout>();
 
