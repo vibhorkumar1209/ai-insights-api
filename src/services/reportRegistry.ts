@@ -16,6 +16,8 @@
 // In-memory, capped, same lifetime tradeoff as every job store and the
 // usage logs in this app — resets on redeploy.
 
+import { loadJson, saveJsonDebounced } from './persistentStore';
+
 export interface RegisteredReport {
   moduleType: string;
   jobId: string;
@@ -33,6 +35,134 @@ export function registerJobStart(moduleType: string, jobId: string, label: strin
 
 export function getRegisteredReports(): RegisteredReport[] {
   return registry;
+}
+
+// ── Completed-report archive ─────────────────────────────────────────────────
+//
+// Registering a job start was only half the story. getRecentCompletedReports()
+// looked each job up in its own module's store to read its status, and every
+// one of those stores evicts after a 2 hour TTL — so an API-generated report
+// dropped out of Report History two hours after it was made, and the frontend
+// could no longer fetch its payload to render it either. In practice that
+// meant a report was only ever visible if someone happened to open the app
+// within that window; otherwise it looked like it had never been saved.
+//
+// The archive keeps the completed payload itself, independent of the module
+// TTLs, so the report stays listable and viewable afterwards. It is bounded by
+// BOTH a count and a total serialized size, because a single Industry Report
+// runs to hundreds of KB and this process is capped at 300MB of heap — an
+// unbounded archive would trade a history bug for an OOM.
+
+export interface ArchivedReport {
+  moduleType: string;
+  jobId: string;
+  label: string;
+  createdAt: string;
+  completedAt: string;
+  bytes: number;
+  payload: unknown;
+}
+
+const MAX_ARCHIVE_ENTRIES = 120;
+const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024; // 24MB ceiling within a 300MB heap
+// A single report larger than this is listed but not archived — better to lose
+// one oversized payload than to evict many normal ones to fit it.
+const MAX_SINGLE_PAYLOAD_BYTES = 2 * 1024 * 1024;
+
+const archive = new Map<string, ArchivedReport>();
+let archiveBytes = 0;
+
+function evictOldestUntilWithinBudget(): void {
+  while (archive.size > MAX_ARCHIVE_ENTRIES || archiveBytes > MAX_ARCHIVE_BYTES) {
+    const oldestKey = archive.keys().next().value as string | undefined;
+    if (oldestKey === undefined) break;
+    const evicted = archive.get(oldestKey);
+    archive.delete(oldestKey);
+    if (evicted) archiveBytes -= evicted.bytes;
+  }
+}
+
+export function isArchived(jobId: string): boolean {
+  return archive.has(jobId);
+}
+
+export function archiveCompletedReport(entry: RegisteredReport, payload: unknown, completedAt: string): void {
+  if (archive.has(entry.jobId)) return;
+
+  let bytes: number;
+  try {
+    bytes = Buffer.byteLength(JSON.stringify(payload) ?? '', 'utf8');
+  } catch {
+    return; // unserializable (cycles) — nothing useful to keep
+  }
+  if (bytes > MAX_SINGLE_PAYLOAD_BYTES) {
+    console.warn(`[reportRegistry] ${entry.moduleType} ${entry.jobId} payload ${Math.round(bytes / 1024)}KB exceeds archive limit — listed but not archived`);
+    return;
+  }
+
+  archive.set(entry.jobId, {
+    moduleType: entry.moduleType,
+    jobId: entry.jobId,
+    label: entry.label,
+    createdAt: entry.createdAt,
+    completedAt,
+    bytes,
+    payload,
+  });
+  archiveBytes += bytes;
+  evictOldestUntilWithinBudget();
+  scheduleArchiveSave();
+}
+
+export function getArchivedReport(jobId: string): ArchivedReport | undefined {
+  return archive.get(jobId);
+}
+
+export function getArchivedReports(): ArchivedReport[] {
+  return [...archive.values()];
+}
+
+export function getArchiveStats(): { entries: number; bytes: number } {
+  return { entries: archive.size, bytes: archiveBytes };
+}
+
+// ── Persistence (same pattern as usageLogger / jobDedupe) ────────────────────
+// Without this the archive still dies on redeploy, and Render redeploys on
+// every push. Only actually persists when REDIS_URL or DATA_DIR is configured;
+// otherwise these are no-ops and behaviour is unchanged.
+
+const ARCHIVE_STORE_KEY = 'reports:archive';
+
+function scheduleArchiveSave(): void {
+  saveJsonDebounced(ARCHIVE_STORE_KEY, () => getArchiveFlushTarget().getValue());
+}
+
+export function getArchiveFlushTarget() {
+  return {
+    key: ARCHIVE_STORE_KEY,
+    getValue: () => ({ registry, archive: [...archive.values()] }),
+  };
+}
+
+export async function restoreReportArchiveFromStore(): Promise<void> {
+  const saved = await loadJson<{ registry?: RegisteredReport[]; archive?: ArchivedReport[] }>(ARCHIVE_STORE_KEY);
+  if (!saved) return;
+
+  if (Array.isArray(saved.registry)) {
+    for (const r of saved.registry.slice(-MAX_ENTRIES)) {
+      if (r && typeof r.jobId === 'string') registry.push(r);
+    }
+  }
+  if (Array.isArray(saved.archive)) {
+    for (const a of saved.archive) {
+      if (!a || typeof a.jobId !== 'string' || archive.has(a.jobId)) continue;
+      const bytes = typeof a.bytes === 'number' ? a.bytes : 0;
+      archive.set(a.jobId, { ...a, bytes });
+      archiveBytes += bytes;
+    }
+    evictOldestUntilWithinBudget();
+  }
+  console.log(`[reportRegistry] restored ${registry.length} registered, ${archive.size} archived report(s)`);
 }
 
 // Best-effort label extraction from a POST body — field names vary by

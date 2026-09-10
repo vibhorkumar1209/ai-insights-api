@@ -37,6 +37,10 @@ class JobAbortedError extends Error {
 
 function checkAbort(jobId: string) {
   if (isJobAborted(jobId)) throw new JobAbortedError();
+  // Stop the pipeline at the next checkpoint once the deadline has fired, so
+  // a timed-out report stops consuming API credits instead of running on
+  // invisibly behind an already-errored job.
+  if (deadlineExceeded.has(jobId)) throw new JobDeadlineError();
 }
 
 // TTL cleanup: remove jobs older than 2 hours (every 30 min)
@@ -44,13 +48,59 @@ const JOB_TTL_MS = 2 * 60 * 60 * 1000;
 const cleanupTimer = setInterval(() => {
   const cutoff = Date.now() - JOB_TTL_MS;
   for (const [id, job] of jobs.entries()) {
-    if (new Date(job.createdAt).getTime() < cutoff) {
-      jobs.delete(id);
-      abortedJobs.delete(id);
-    }
+    if (new Date(job.createdAt).getTime() >= cutoff) continue;
+    // Never evict a job that is still running. Eviction is keyed on
+    // createdAt, so a long report crossing the 2h mark used to be deleted
+    // mid-flight: updateJob() then silently no-opped (it returns early when
+    // the entry is gone), the pipeline kept burning credits with nowhere to
+    // write results, and the client's next poll got a 404. From the outside
+    // that is exactly "started and never completed", with no error recorded.
+    if (job.status !== 'complete' && job.status !== 'error') continue;
+    jobs.delete(id);
+    abortedJobs.delete(id);
+    deadlineExceeded.delete(id);
+    const timer = deadlineTimers.get(id);
+    if (timer) { clearTimeout(timer); deadlineTimers.delete(id); }
   }
 }, 30 * 60 * 1000);
 cleanupTimer.unref();
+
+// ── Hard deadline ────────────────────────────────────────────────────────────
+// Every individual step has its own timeout, but nothing bounded the run as a
+// whole, so any step that stalled without throwing left the job pinned in a
+// non-terminal state forever — a spinner that never resolves and no error to
+// explain it. The deadline guarantees every job reaches a terminal state.
+//
+// 45 minutes is well clear of a normal run (~15-20 min with 180s research
+// timeouts and 12 sections) while still being far below the 2h TTL.
+const JOB_DEADLINE_MS = 45 * 60 * 1000;
+const deadlineExceeded = new Set<string>();
+const deadlineTimers = new Map<string, NodeJS.Timeout>();
+
+class JobDeadlineError extends Error {
+  constructor() { super(`Report generation exceeded the ${Math.round(JOB_DEADLINE_MS / 60000)} minute limit and was stopped.`); this.name = 'JobDeadlineError'; }
+}
+
+function startDeadline(jobId: string): void {
+  clearDeadline(jobId);
+  const timer = setTimeout(() => {
+    const job = jobs.get(jobId);
+    if (!job || job.status === 'complete' || job.status === 'error') return;
+    deadlineExceeded.add(jobId);
+    const error = new JobDeadlineError().message;
+    console.error(`[industryReport] job ${jobId} hit the hard deadline at step: ${job.currentStep || 'unknown'}`);
+    updateJob(jobId, { status: 'error', error });
+    emit(jobId, 'error', { error });
+  }, JOB_DEADLINE_MS);
+  timer.unref();
+  deadlineTimers.set(jobId, timer);
+}
+
+function clearDeadline(jobId: string): void {
+  const timer = deadlineTimers.get(jobId);
+  if (timer) { clearTimeout(timer); deadlineTimers.delete(jobId); }
+  deadlineExceeded.delete(jobId);
+}
 
 // ── Public API helpers ───────────────────────────────────────────────────────
 
@@ -208,6 +258,8 @@ export async function runIndustryReportV2(
     updateJob(jobId, { currentStep: msg, progress, status });
     emit(jobId, 'progress', { currentStep: msg, progress, status });
   };
+
+  startDeadline(jobId);
 
   try {
     // ── Step 1: Update scope on job ──
@@ -399,10 +451,20 @@ export async function runIndustryReportV2(
       abortedJobs.delete(jobId);
       return;
     }
+    // The deadline handler has already marked the job errored and notified
+    // subscribers; re-marking would only overwrite that with the same thing.
+    if (err instanceof JobDeadlineError) {
+      console.error(`[industryReport] V2 Job ${jobId} stopped at the hard deadline.`);
+      return;
+    }
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[industryReport] V2 Job ${jobId} failed:`, errorMsg);
     updateJob(jobId, { status: 'error', error: errorMsg });
     emit(jobId, 'error', { error: errorMsg });
+  } finally {
+    // Runs on success, failure, abort and deadline alike — a leaked timer
+    // would fire later and error a job that had already finished.
+    clearDeadline(jobId);
   }
 }
 

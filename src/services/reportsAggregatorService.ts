@@ -1,4 +1,4 @@
-import { getRegisteredReports } from './reportRegistry';
+import { getRegisteredReports, archiveCompletedReport, isArchived, getArchivedReports, getArchivedReport } from './reportRegistry';
 import { getJob as getBenchmarkJob } from './benchmarkService';
 import { getBusinessDescriptionJob } from './businessDescriptionService';
 import { getBizDescripJob } from './bizDescripService';
@@ -82,28 +82,112 @@ export interface RecentReportSummary {
   completedAt?: string;
 }
 
-// Cross-references the registry (jobs started) against each module's own
-// job store (current status) — a job that's still running, errored, or has
-// since fallen out of its module's TTL-based store (2h, same as every job
-// store in this app) is simply omitted rather than shown as a broken row.
+// Captures a completed report into the archive before its module's 2h TTL
+// evicts it. Runs on a timer rather than being called from each module's
+// completion path, because that would mean touching all 26 routes and every
+// future one would have to remember to do it.
+//
+// 60s is comfortably inside the 2h window even if several sweeps are missed,
+// and the work is trivial: already-archived jobs are skipped by an O(1) check,
+// so a steady state sweep does nothing.
+const ARCHIVE_SWEEP_MS = 60 * 1000;
+
+export function sweepCompletedReportsIntoArchive(): void {
+  for (const r of getRegisteredReports()) {
+    if (isArchived(r.jobId)) continue;
+    const getter = GETTERS[r.moduleType];
+    if (!getter) continue;
+    let job;
+    try {
+      job = getter(r.jobId);
+    } catch {
+      continue; // a module getter throwing must not stop the sweep
+    }
+    if (!job || job.status !== 'complete') continue;
+    archiveCompletedReport(r, job, job.completedAt || new Date().toISOString());
+  }
+}
+
+const sweepTimer = setInterval(() => {
+  try {
+    sweepCompletedReportsIntoArchive();
+  } catch (err) {
+    console.warn('[reportsAggregator] archive sweep failed:', err instanceof Error ? err.message : err);
+  }
+}, ARCHIVE_SWEEP_MS);
+sweepTimer.unref();
+
+// Serves the archived payload for a job whose module store has since evicted
+// it, so "View" on an older Report History row still opens the real report
+// instead of a 404.
+export function getArchivedReportPayload(jobId: string): unknown | undefined {
+  return getArchivedReport(jobId)?.payload;
+}
+
+// Cross-references the registry (jobs started) against each module's own job
+// store, falling back to the archive for anything that store has since
+// evicted. Previously a report simply vanished from Report History once its
+// module's 2h TTL elapsed; the archive is what makes it durable.
 export function getRecentCompletedReports(limit = 100): RecentReportSummary[] {
   const registered = getRegisteredReports();
   const results: RecentReportSummary[] = [];
+  const seen = new Set<string>();
+
+  // Sweep first so a report that completed since the last tick is included in
+  // this response rather than only in the next one.
+  sweepCompletedReportsIntoArchive();
 
   for (let i = registered.length - 1; i >= 0 && results.length < limit; i--) {
     const r = registered[i];
     const getter = GETTERS[r.moduleType];
     if (!getter) continue;
     const job = getter(r.jobId);
-    if (!job || job.status !== 'complete') continue;
-    results.push({
-      jobId: r.jobId,
-      moduleType: r.moduleType,
-      label: r.label,
-      status: job.status,
-      createdAt: job.createdAt || r.createdAt,
-      completedAt: job.completedAt,
-    });
+
+    if (job && job.status === 'complete') {
+      seen.add(r.jobId);
+      results.push({
+        jobId: r.jobId,
+        moduleType: r.moduleType,
+        label: r.label,
+        status: 'complete',
+        createdAt: job.createdAt || r.createdAt,
+        completedAt: job.completedAt,
+      });
+      continue;
+    }
+
+    // Live job gone (TTL) — fall back to what was archived while it existed.
+    const archived = getArchivedReport(r.jobId);
+    if (archived) {
+      seen.add(r.jobId);
+      results.push({
+        jobId: archived.jobId,
+        moduleType: archived.moduleType,
+        label: archived.label,
+        status: 'complete',
+        createdAt: archived.createdAt,
+        completedAt: archived.completedAt,
+      });
+    }
+  }
+
+  // Archived reports whose registry entry has itself aged out (the registry is
+  // capped at 500) would otherwise be silently unreachable.
+  if (results.length < limit) {
+    const orphans = getArchivedReports()
+      .filter((a) => !seen.has(a.jobId))
+      .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
+    for (const a of orphans) {
+      if (results.length >= limit) break;
+      results.push({
+        jobId: a.jobId,
+        moduleType: a.moduleType,
+        label: a.label,
+        status: 'complete',
+        createdAt: a.createdAt,
+        completedAt: a.completedAt,
+      });
+    }
   }
 
   return results;

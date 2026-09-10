@@ -10,6 +10,7 @@ import { ipBlocklist } from './middleware/ipBlocklist';
 import { initPersistentStore, flushPendingSaves } from './services/persistentStore';
 import { restoreUsageLogsFromStore, getUsageFlushTarget } from './services/usageLogger';
 import { restoreDedupeFromStore, getDedupeFlushTarget } from './services/jobDedupe';
+import { restoreReportArchiveFromStore, getArchiveFlushTarget } from './services/reportRegistry';
 import competitorsRouter from './routes/competitors';
 import peersRouter from './routes/peers';
 import benchmarkRouter from './routes/benchmark';
@@ -64,7 +65,7 @@ process.on('unhandledRejection', (reason) => {
 void (async () => {
   try {
     await initPersistentStore();
-    await Promise.all([restoreUsageLogsFromStore(), restoreDedupeFromStore()]);
+    await Promise.all([restoreUsageLogsFromStore(), restoreDedupeFromStore(), restoreReportArchiveFromStore()]);
   } catch (err) {
     console.warn('[persistentStore] init/restore failed, continuing without persistence:', err instanceof Error ? err.message : err);
   }
@@ -79,7 +80,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    const flush = flushPendingSaves([getUsageFlushTarget(), getDedupeFlushTarget()]);
+    const flush = flushPendingSaves([getUsageFlushTarget(), getDedupeFlushTarget(), getArchiveFlushTarget()]);
     const timeout = new Promise((resolve) => setTimeout(resolve, 3000));
     void Promise.race([flush, timeout]).finally(() => process.exit(0));
   });
