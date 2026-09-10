@@ -166,6 +166,49 @@ app.get('/api/debug-claude', async (_req, res) => {
   }
 });
 
+// ── Service index ────────────────────────────────────────────────────────────
+// Hitting the bare host used to return {"error":"Route not found"}, which reads
+// as a dead service when the API is perfectly healthy — nothing was ever
+// mounted at "/". This lists what is actually here, derived from the router
+// stack so it cannot drift out of date the way a hand-maintained array would.
+function mountedApiPaths(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stack = (app as any)?._router?.stack;
+  if (!Array.isArray(stack)) return [];
+  const paths = new Set<string>();
+  for (const layer of stack) {
+    // Express stores a mount path as a regexp whose source looks like
+    // "^\\/api\\/peers\\/?(?=\\/|$)". Strip the anchors and the trailing
+    // lookahead, then unescape the slashes. fast_slash means "/" (not a mount).
+    const source: string | undefined = layer?.regexp?.source;
+    if (!source || layer.regexp.fast_slash) continue;
+    const path = source
+      .replace(/^\^/, '')
+      .replace(/\\\/\?\(\?=.*$/, '')
+      .replace(/\$$/, '')
+      .replace(/\\\//g, '/');
+    if (/^\/api\/[A-Za-z0-9-]+$/.test(path)) paths.add(path);
+  }
+  return [...paths].sort();
+}
+
+app.get('/', (_req, res) => {
+  const modules = mountedApiPaths();
+  res.json({
+    service: 'ai-insights-api',
+    status: 'ok',
+    commit: BUILD_COMMIT.slice(0, 7),
+    startedAt: PROCESS_STARTED_AT,
+    docs: {
+      health: '/health',
+      recentReports: '/api/reports/recent',
+      archiveStats: '/api/reports/archive-stats',
+    },
+    moduleCount: modules.length,
+    modules,
+  });
+});
+
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });
