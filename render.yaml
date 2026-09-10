@@ -11,5 +11,25 @@ services:
         value: 4000
       - key: NODE_VERSION
         value: 20.18.1
+      # Report History, usage logs and dedupe state all live in memory, and
+      # Render redeploys on every push to main — so without a store outside
+      # the process, a redeploy wipes them. persistentStore.ts picks up
+      # REDIS_URL automatically and falls back to in-memory when it is absent,
+      # so this is additive: nothing breaks if the key value service is not
+      # provisioned, the state just stays ephemeral.
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: ai-insights-kv
+          property: connectionString
     healthCheckPath: /health
     autoDeploy: true
+
+  # Render renamed its Redis product to "Key Value"; older blueprints use
+  # `type: redis` with the same fields.
+  - type: keyvalue
+    name: ai-insights-kv
+    plan: free
+    # Empty allow list = no public access; only Render services in this
+    # workspace can connect, over the internal network.
+    ipAllowList: []

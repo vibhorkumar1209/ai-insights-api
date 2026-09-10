@@ -399,6 +399,23 @@ export async function runIndustryReportV2(
     allSections.sort((a, b) => (sectionOrder.get(a.id) ?? 999) - (sectionOrder.get(b.id) ?? 999));
 
     updateJob(jobId, { sections: allSections, failedSections: failedSections.length ? failedSections : undefined });
+
+    // A report with no sections is not a report. This previously ran on to
+    // completion and returned status 'complete' at progress 100 with an empty
+    // sections array and an executive summary summarising nothing — the job
+    // looked finished while carrying no content, which is indistinguishable
+    // from "it never completed" to whoever is waiting for it. Fail loudly
+    // instead, naming the underlying cause so it is actionable.
+    if (allSections.length === 0) {
+      const distinct = [...new Set(failedSections.map((f) => f.reason).filter(Boolean))];
+      const detail = distinct.length === 1
+        ? ` All ${failedSections.length} sections failed with: ${distinct[0]}`
+        : distinct.length > 1
+          ? ` Causes: ${distinct.slice(0, 3).join(' | ')}`
+          : '';
+      throw new Error(`Report generation produced no sections.${detail}`);
+    }
+
     step('All sections drafted', 88, 'drafting');
 
     // ── Step 4b: Market size consistency validation ──

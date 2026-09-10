@@ -53,6 +53,40 @@ router.post('/generate', aiLimiter, (req: Request, res: Response) => {
     return;
   }
 
+  // Reject a malformed selection up front. Previously these went straight
+  // through: a null or shapeless entry then threw while building each
+  // section's prompt, failing all 12 identically AFTER a full research pass
+  // had already run — roughly 12 minutes and a report's worth of API credits
+  // spent to produce nothing. Note segments are keyed by `label` and players
+  // by `name`, an easy thing to get wrong when calling the API directly, so
+  // the error says which field is expected rather than just "invalid".
+  const badSelection = (items: unknown, kind: 'segment' | 'player'): string | null => {
+    if (items === undefined || items === null) return null;
+    if (!Array.isArray(items)) return `${kind}s must be an array`;
+    const key = kind === 'segment' ? 'label' : 'name';
+    const bad = items.findIndex((it) => {
+      if (typeof it === 'string') return !it.trim();
+      if (!it || typeof it !== 'object') return true;
+      const rec = it as Record<string, unknown>;
+      const value = rec[key] ?? rec[kind === 'segment' ? 'name' : 'label'];
+      return typeof value !== 'string' || !value.trim();
+    });
+    if (bad === -1) return null;
+    return `selected${kind === 'segment' ? 'Segments' : 'Players'}[${bad}] is not usable — each entry must be a non-empty string or an object with a non-empty "${key}"`;
+  };
+
+  for (const [items, kind] of [
+    [selectedSegments, 'segment'],
+    [selectedPlayers, 'player'],
+    [allPlayers, 'player'],
+  ] as const) {
+    const problem = badSelection(items, kind);
+    if (problem) {
+      res.status(400).json({ error: problem });
+      return;
+    }
+  }
+
   // Merge selections into scope
   const enrichedScope = {
     ...scope,

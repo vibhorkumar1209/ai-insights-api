@@ -259,6 +259,27 @@ function safeParseJsonArray(raw: string): unknown[] | null {
   return objects.length > 0 ? objects : null;
 }
 
+// ── Scope entry accessors ───────────────────────────────────────────────────
+// selectedSegments / selectedPlayers / allPlayers come straight from a
+// caller-supplied scope, so they cannot be assumed well-formed. Reading
+// `.label` or `.name` off a null entry threw while BUILDING the prompt, which
+// meant it hit every section identically — a whole report failing after a full
+// research pass had already been paid for. The two collections are also keyed
+// differently (segments by `label`, players by `name`), which is exactly the
+// sort of thing an API caller gets wrong, so both spellings are accepted.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function segmentLabel(s: any): string {
+  return typeof s === 'string' ? s : (s && (s.label || s.name)) || '';
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function playerName(p: any): string {
+  return typeof p === 'string' ? p : (p && (p.name || p.label)) || '';
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function playerShare(p: any): string {
+  return (p && typeof p === 'object' && p.marketShare) || 'N/A';
+}
+
 // ── Dynamic base year logic ─────────────────────────────────────────────────
 // Jan–Sep → base year = current calendar year - 1 (data lags ~1 year)
 // Oct–Dec → base year = current calendar year (late-year data available)
@@ -1975,8 +1996,8 @@ MARKET SIZING:
 
 SECTION SUMMARIES:
 ${sectionSummaries}
-${scope.selectedPlayers?.length ? `\nSELECTED KEY PLAYERS (profiled):\n${scope.selectedPlayers.map((p) => `- ${p.name} — ${p.marketShare || 'N/A'} share`).join('\n')}` : ''}
-${(() => { const selNames = new Set((scope.selectedPlayers || []).map((p) => p.name)); const others = (scope.allPlayers || []).filter((p) => !selNames.has(p.name)); return others.length ? `\nOTHER KNOWN PLAYERS (not profiled but MUST be mentioned):\n${others.map((p) => `- ${p.name} — ${p.marketShare || 'N/A'} share`).join('\n')}` : ''; })()}
+${scope.selectedPlayers?.length ? `\nSELECTED KEY PLAYERS (profiled):\n${scope.selectedPlayers.filter((p) => playerName(p)).map((p) => `- ${playerName(p)} — ${playerShare(p)} share`).join('\n')}` : ''}
+${(() => { const selNames = new Set((scope.selectedPlayers || []).map(playerName).filter(Boolean)); const others = (scope.allPlayers || []).filter((p) => playerName(p) && !selNames.has(playerName(p))); return others.length ? `\nOTHER KNOWN PLAYERS (not profiled but MUST be mentioned):\n${others.map((p) => `- ${playerName(p)} — ${playerShare(p)} share`).join('\n')}` : ''; })()}
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -2211,26 +2232,33 @@ export async function draftSectionsBatchV2(
   const researchBudget = sectionIds.every((id) => ANALYTICAL_SECTIONS.has(id)) ? 20000 : 50000;
   const safeResearch = balancedResearchExcerpt(allResearch, researchBudget);
 
-  // CRITICAL: Include ALL sub-segments but keep context compact
-  const segmentContext = scope.selectedSegments?.length
-    ? `\nMARKET SEGMENTS:\n${scope.selectedSegments.slice(0, 8).map((s) => `${s.label}: ${(s.subSegments || []).join(', ')}`).join('\n')}`
+  // Segments and players arrive from a caller-supplied scope, so they cannot
+  // be assumed well-formed. A null or shapeless entry here used to throw
+  // "Cannot read properties of null (reading 'label')" — and because that
+  // throw happens while building the prompt, it hit EVERY section identically,
+  // failing all 12 and burning a full research pass first. Note the two
+  // collections are keyed differently (segments by `label`, players by
+  // `name`), which is exactly the kind of detail an API caller gets wrong.
+  const usableSegments = (scope.selectedSegments || []).filter((s) => segmentLabel(s));
+  const segmentContext = usableSegments.length
+    ? `\nMARKET SEGMENTS:\n${usableSegments.slice(0, 8).map((s) => `${segmentLabel(s)}: ${((s && s.subSegments) || []).join(', ')}`).join('\n')}`
     : '';
 
-  const selectedNames = new Set((scope.selectedPlayers || []).map((p) => p.name));
-  const allPlayers = scope.allPlayers || scope.selectedPlayers || [];
-  const unselectedPlayers = allPlayers.filter((p) => !selectedNames.has(p.name));
+  const selectedNames = new Set((scope.selectedPlayers || []).map(playerName).filter(Boolean));
+  const allPlayers = (scope.allPlayers || scope.selectedPlayers || []).filter((p) => playerName(p));
+  const unselectedPlayers = allPlayers.filter((p) => !selectedNames.has(playerName(p)));
 
   // Compact format: selected players with shares, all players for BCG
   const playerContext = scope.selectedPlayers?.length
-    ? `\nKEY PLAYERS FOR PROFILING: ${scope.selectedPlayers.slice(0, 10).map((p) => `${p.name} (${p.marketShare || '?'})`).join(' | ')}`
+    ? `\nKEY PLAYERS FOR PROFILING: ${scope.selectedPlayers.filter((p) => playerName(p)).slice(0, 10).map((p) => `${playerName(p)} (${playerShare(p)})`).join(' | ')}`
     : '';
 
   const allPlayersList = allPlayers.length > 0
-    ? `\nALL PLAYERS (for BCG matrix): ${allPlayers.slice(0, 20).map((p) => `${p.name} ${p.marketShare ? `(${p.marketShare})` : ''}`).join(' | ')}`
+    ? `\nALL PLAYERS (for BCG matrix): ${allPlayers.slice(0, 20).map((p) => `${playerName(p)} ${(p && p.marketShare) ? `(${p.marketShare})` : ''}`).join(' | ')}`
     : '';
 
   const unselectedPlayerContext = unselectedPlayers.length > 0
-    ? `\nOTHER PLAYERS: ${unselectedPlayers.slice(0, 10).map((p) => p.name).join(', ')}`
+    ? `\nOTHER PLAYERS: ${unselectedPlayers.slice(0, 10).map(playerName).join(', ')}`
     : '';
 
   const sectionInstructions = sectionIds.map((id) => {
