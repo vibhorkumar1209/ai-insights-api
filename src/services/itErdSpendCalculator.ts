@@ -17,13 +17,19 @@ import {
   EMERGING_TECH_EXCLUSION,
 } from '../data/itErdSpendData';
 
-// ── Base year (Jan-Sep -> last year, Oct-Dec -> this year — same convention used elsewhere) ──
-function getBaseYear(): number {
-  const month = new Date().getMonth() + 1;
-  return month <= 9 ? new Date().getFullYear() - 1 : new Date().getFullYear();
-}
-
 const YEARS = [2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030];
+
+// ── Base year — the current calendar year, clamped into the 2022-2030 table range.
+// This is the year every breakdown ($ allocation) is anchored to and the year the
+// trend series' historical/forecast CAGR split pivots on. It deliberately does NOT
+// use the Jan-Sep -> last-year recency convention the disclosed-financials modules
+// use: this module is a forward-looking budget benchmark, not a filings lookup, and
+// the reference outputs + live UI both label the headline figures with the current
+// calendar year (build notes §13 Q1, decided 2026-09-10). ──
+function getBaseYear(): number {
+  const year = new Date().getFullYear();
+  return Math.min(Math.max(year, YEARS[0]), YEARS[YEARS.length - 1]);
+}
 
 export type Region = 'US' | 'EU' | 'APAC' | 'ROW1' | 'ROW2';
 export type RevenueTier = '>$5B' | '$1B-$5B' | '$500M-$1B' | '$100M-$500M' | '$10M-$100M' | '<$10M';
@@ -107,13 +113,20 @@ export interface Level3BreakdownRow {
  * for rounding drift, not a real renormalization (build-notes §13, Q7 is now moot —
  * the earlier 84-98%-sum data source this note referred to has been superseded).
  *
- * Exclusion + redistribution (2026-07-27): if `revenueUsdMillion` is provided, any
- * Level-3 item flagged excluded for this industry/revenue-tier (per
- * IT_LEVEL3_EXCLUSION — e.g. "MPLS & Dedicated Transport Core" is not warranted below
- * $500M revenue) is forced to 0%, and its % is redistributed EQUALLY among the other
- * still-active items in the same Level-2 group (not proportionally — a flat split).
- * If every item in a Level-2 group is excluded, that group's total simply drops to 0
- * (nothing to redistribute into).
+ * Exclusion + redistribution (2026-07-27, cascade added 2026-09-10): if
+ * `revenueUsdMillion` is provided, any Level-3 item flagged excluded for this
+ * industry/revenue-tier (per IT_LEVEL3_EXCLUSION — e.g. "MPLS & Dedicated Transport
+ * Core" is not warranted below $500M revenue) is forced to 0%, and its % is
+ * redistributed EQUALLY among the other still-active items in the same Level-2 group
+ * (not proportionally — a flat split).
+ *
+ * When a Level-2 group has no surviving item at all (e.g. both Satellite Comms items
+ * are excluded for every tier below $500M — this hits 29 of the 37 industries at the
+ * smallest tier), the freed % cascades outward: first to the still-active items of
+ * the same Level-1 group, and if that whole Level-1 is dead too, across every active
+ * item in the taxonomy. Without the cascade the breakdown silently summed to as
+ * little as 95.8% of the headline IT budget, so the charts would not add up to the
+ * KPI figure above them.
  */
 export function computeItLevel3Breakdown(industry: string, baseUsdMillion: number, revenueUsdMillion?: number): Level3BreakdownRow[] {
   const rawPct = IT_LEVEL3_PCT[industry];
@@ -138,22 +151,40 @@ export function computeItLevel3Breakdown(industry: string, baseUsdMillion: numbe
     normalized.filter((r) => (IT_LEVEL3_EXCLUSION[r.level3]?.[industry]?.[tierIdx] ?? 0) === 1).map((r) => r.level3)
   );
 
-  // Redistribute each excluded item's % equally among the other active items in the same Level-2 group.
+  // Redistribute each excluded item's % equally among the other active items in the
+  // same Level-2 group; cascade to the Level-1 group, then to the whole taxonomy,
+  // whenever the narrower scope has no surviving item to absorb it.
   const adjustedPct = new Map<string, number>(normalized.map((r) => [r.level3, excluded.has(r.level3) ? 0 : r.pct]));
-  const level2Groups = new Map<string, typeof normalized>();
-  for (const r of normalized) {
-    if (!level2Groups.has(r.level2)) level2Groups.set(r.level2, []);
-    level2Groups.get(r.level2)!.push(r);
-  }
-  for (const [, items] of level2Groups) {
-    const excludedInGroup = items.filter((r) => excluded.has(r.level3));
-    const activeInGroup = items.filter((r) => !excluded.has(r.level3));
-    if (excludedInGroup.length === 0 || activeInGroup.length === 0) continue;
-    const freedPct = excludedInGroup.reduce((sum, r) => sum + r.pct, 0);
-    const share = freedPct / activeInGroup.length;
-    for (const r of activeInGroup) {
-      adjustedPct.set(r.level3, (adjustedPct.get(r.level3) ?? 0) + share);
+  const active = normalized.filter((r) => !excluded.has(r.level3));
+
+  const groupBy = (key: (r: (typeof normalized)[number]) => string) => {
+    const map = new Map<string, typeof normalized>();
+    for (const r of normalized) {
+      if (!map.has(key(r))) map.set(key(r), []);
+      map.get(key(r))!.push(r);
     }
+    return map;
+  };
+  const level2Groups = groupBy((r) => `${r.level1}|${r.level2}`);
+
+  const spreadEqually = (freedPct: number, targets: typeof normalized) => {
+    if (freedPct <= 0 || targets.length === 0) return;
+    const share = freedPct / targets.length;
+    for (const r of targets) adjustedPct.set(r.level3, (adjustedPct.get(r.level3) ?? 0) + share);
+  };
+
+  for (const [groupKey, items] of level2Groups) {
+    const freedPct = items.filter((r) => excluded.has(r.level3)).reduce((sum, r) => sum + r.pct, 0);
+    if (freedPct <= 0) continue;
+    const activeInLevel2 = items.filter((r) => !excluded.has(r.level3));
+    if (activeInLevel2.length > 0) {
+      spreadEqually(freedPct, activeInLevel2);
+      continue;
+    }
+    // Whole Level-2 group excluded — cascade to the Level-1 group, then to everything.
+    const level1 = groupKey.split('|')[0];
+    const activeInLevel1 = active.filter((r) => r.level1 === level1);
+    spreadEqually(freedPct, activeInLevel1.length > 0 ? activeInLevel1 : active);
   }
 
   return normalized.map((r) => {
