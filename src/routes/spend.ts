@@ -1,6 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
-import { createSpendJob, getSpendJob, runSpendJob, subscribeToJob, unsubscribeFromJob } from '../services/spendService';
+import {
+  createSpendJob,
+  getSpendJob,
+  runSpendJob,
+  subscribeToJob,
+  unsubscribeFromJob,
+  calculateItSpend,
+  calculateErdSpend,
+} from '../services/spendService';
 import { SPEND_CALCULATOR_INDUSTRIES } from '../services/claudeAI';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import { dedupeJobStart } from '../services/jobDedupe';
@@ -54,6 +62,67 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
     runSpendJob(jobId, input).catch(() => {});
   }
   res.status(202).json({ jobId });
+});
+
+// ── Synchronous calculator routes ────────────────────────────────────────────
+// POST /api/spend/it and POST /api/spend/erd return the industry-benchmark figures
+// in one round trip: no Gemini research, no job/SSE polling. They are declared
+// before GET /:jobId purely for readability — the methods differ, so there is no
+// route collision. No aiLimiter: neither route spends an AI call, so the global
+// apiLimiter applied in app.ts is the only limit they need (adding it again here
+// would count every request twice against the same budget).
+
+interface CalculatorInput {
+  companyName: string;
+  industry: string;
+  revenueUsdMillion: number;
+  geography?: string;
+}
+
+/** Shared validation: same rules as POST /api/spend, minus companyDomain (nothing is
+ *  researched here, so there is no company identity to disambiguate) and with
+ *  geography optional (a blank/unknown HQ falls back to the US region). */
+function parseCalculatorInput(body: Record<string, unknown>): { input: CalculatorInput } | { error: string } {
+  const { companyName, industry, revenueUsdMillion, geography } = body;
+
+  if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
+    return { error: 'companyName is required (min 2 characters)' };
+  }
+  if (!industry || typeof industry !== 'string' || !SPEND_CALCULATOR_INDUSTRIES.includes(industry.trim())) {
+    return { error: `industry is required and must be one of: ${SPEND_CALCULATOR_INDUSTRIES.join(', ')}` };
+  }
+  if (typeof revenueUsdMillion !== 'number' || !isFinite(revenueUsdMillion) || revenueUsdMillion <= 0) {
+    return { error: 'revenueUsdMillion is required and must be a positive number (annual revenue in USD millions)' };
+  }
+  if (geography != null && typeof geography !== 'string') {
+    return { error: 'geography must be a string (HQ country) when provided' };
+  }
+
+  return {
+    input: {
+      companyName: companyName.trim(),
+      industry: industry.trim(),
+      revenueUsdMillion,
+      geography: typeof geography === 'string' && geography.trim() ? geography.trim() : undefined,
+    },
+  };
+}
+
+// POST /api/spend/it — IT spend: 2022-2030 trend, 117-item Level-3 breakdown
+// (revenue-tier/industry exclusions applied), 8 Emerging Tech lines, CAGR.
+router.post('/it', (req: Request, res: Response) => {
+  const parsed = parseCalculatorInput(req.body ?? {});
+  if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
+  res.json(calculateItSpend(parsed.input));
+});
+
+// POST /api/spend/erd — ER&D spend: 2022-2030 trend, 14-category breakdown, CAGR.
+// Returns 200 with { applicable: false, message } for the 23 industries with no ER&D
+// benchmark — not applicable is an answer, not a client error.
+router.post('/erd', (req: Request, res: Response) => {
+  const parsed = parseCalculatorInput(req.body ?? {});
+  if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
+  res.json(calculateErdSpend(parsed.input));
 });
 
 // GET /api/spend/:jobId — snapshot
