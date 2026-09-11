@@ -26,7 +26,7 @@ const YEARS = [2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030];
 // use: this module is a forward-looking budget benchmark, not a filings lookup, and
 // the reference outputs + live UI both label the headline figures with the current
 // calendar year (build notes §13 Q1, decided 2026-09-10). ──
-function getBaseYear(): number {
+export function getBaseYear(): number {
   const year = new Date().getFullYear();
   return Math.min(Math.max(year, YEARS[0]), YEARS[YEARS.length - 1]);
 }

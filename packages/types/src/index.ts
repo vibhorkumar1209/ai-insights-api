@@ -1593,6 +1593,33 @@ export interface ErdSpendPayload {
   erdCAGR_Historical: number;
 }
 
+// ── Synchronous calculator endpoints (POST /api/spend/it, POST /api/spend/erd) ──
+// Same numbers as the async research job's calculator half, minus the Gemini
+// disclosed-figure lookup — pure table maths, so they answer in one round trip.
+
+export interface SpendCalculatorInput {
+  companyName: string;       // display only, echoed back in the payload
+  industry: string;          // one of the 37 fixed industry names
+  revenueUsdMillion: number; // annual revenue, USD millions
+  geography?: string;        // HQ country; defaults to the US region when blank/unknown
+}
+
+export interface ItSpendCalculatorResult {
+  applicable: boolean;       // false only when the industry has no IT benchmark row
+  message?: string;          // why, when applicable is false
+  revenueTier?: string;
+  baseYear?: number;         // the year the breakdown dollars are anchored to
+  itSpend?: ItSpendPayload;
+}
+
+export interface ErdSpendCalculatorResult {
+  applicable: boolean;       // false for the 23 industries with no ER&D benchmark
+  message?: string;
+  revenueTier?: string;
+  baseYear?: number;
+  erdSpend?: ErdSpendPayload;
+}
+
 export interface SpendResult {
   jobId: string;
   status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
