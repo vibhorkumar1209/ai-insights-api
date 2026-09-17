@@ -63,7 +63,15 @@ export interface ArchivedReport {
   payload: unknown;
 }
 
-const MAX_ARCHIVE_ENTRIES = 120;
+// Observed live: 120 entries held only 843KB — 3.5% of the byte budget below.
+// The count cap, not memory, was doing all the evicting, and it evicts oldest
+// first regardless of cost. A stream of small reports (biz-descrip,
+// firmographic, themes, timelines, segments ran 110 of those 120) pushed out
+// every Industry Report, which takes 20-40 minutes and roughly a dollar to
+// produce, for the sake of a 1.4KB one. Bytes are the real constraint on a
+// 300MB heap, so the count is now high enough to let the byte ceiling be what
+// actually bounds the archive.
+const MAX_ARCHIVE_ENTRIES = 2000;
 const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024; // 24MB ceiling within a 300MB heap
 // A single report larger than this is listed but not archived — better to lose
 // one oversized payload than to evict many normal ones to fit it.

@@ -53,14 +53,25 @@ describe('report archive', () => {
   });
 
   it('evicts oldest entries to stay under the entry cap', () => {
-    for (let i = 0; i < 140; i++) {
+    for (let i = 0; i < 2100; i++) {
       archiveCompletedReport(entry(`cap-${i}`), { i }, new Date().toISOString());
     }
     const { entries } = getArchiveStats();
-    expect(entries).toBeLessThanOrEqual(120);
+    expect(entries).toBeLessThanOrEqual(2000);
     // The most recent survive; the earliest were evicted.
-    expect(isArchived('cap-139')).toBe(true);
+    expect(isArchived('cap-2099')).toBe(true);
     expect(isArchived('cap-0')).toBe(false);
+  });
+
+  // The cap that matters. Live, 120 entries held 843KB — so a 120-entry limit
+  // was evicting expensive Industry Reports while using 3.5% of the memory
+  // actually budgeted for them.
+  it('keeps far more than the old 120-entry limit when payloads are small', () => {
+    for (let i = 0; i < 400; i++) {
+      archiveCompletedReport(entry(`small-${i}`), { note: 'x'.repeat(200) }, new Date().toISOString());
+    }
+    expect(getArchiveStats().entries).toBeGreaterThan(120);
+    expect(isArchived('small-399')).toBe(true);
   });
 
   it('keeps the byte total consistent with what is retained', () => {
