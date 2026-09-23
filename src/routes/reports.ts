@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getRecentCompletedReports, getReportPayload } from '../services/reportsAggregatorService';
 import { getArchiveStats } from '../services/reportRegistry';
+import { getPersistenceBackend } from '../services/persistentStore';
 
 const router = Router();
 
@@ -32,7 +33,21 @@ router.get('/:jobId/raw', (req: Request, res: Response) => {
 // surprise OOM on a 300MB heap.
 router.get('/archive-stats', (_req: Request, res: Response) => {
   const { entries, bytes } = getArchiveStats();
-  res.json({ entries, bytes, megabytes: Math.round((bytes / 1024 / 1024) * 100) / 100 });
+  const backend = getPersistenceBackend();
+  res.json({
+    entries,
+    bytes,
+    megabytes: Math.round((bytes / 1024 / 1024) * 100) / 100,
+    // Which store is behind the archive, and therefore what actually survives.
+    // This was previously invisible from outside, and the difference matters:
+    // 'memory' loses everything on restart, 'file' survives a process restart
+    // but NOT a redeploy unless DATA_DIR points at a mounted Render Disk (a
+    // redeploy is a new container), and only 'redis' survives both. An archive
+    // that came back after one restart and vanished after the next looks
+    // baffling until you can see this.
+    persistence: backend,
+    survivesRedeploy: backend === 'redis',
+  });
 });
 
 export default router;
