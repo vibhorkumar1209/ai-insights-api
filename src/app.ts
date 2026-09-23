@@ -119,6 +119,12 @@ app.get('/health', (_req, res) => {
     // free-tier idle spin-down — see persistentStore.ts.
     persistenceBackend: getPersistenceBackend(),
     registeredReports: getRegisteredReports().length,
+    // Distinguishes "REDIS_URL was never provisioned on this service" (fix:
+    // apply/link the Render Blueprint's ai-insights-kv Key Value add-on) from
+    // "REDIS_URL is set but the connection itself is failing" (fix: check
+    // Render logs for the '[persistentStore] REDIS_URL set but redis
+    // unavailable' warning). Never logs the value itself.
+    redisUrlConfigured: Boolean(process.env.REDIS_URL),
   });
 });
 
