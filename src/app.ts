@@ -10,7 +10,8 @@ import { ipBlocklist } from './middleware/ipBlocklist';
 import { initPersistentStore, flushPendingSaves } from './services/persistentStore';
 import { restoreUsageLogsFromStore, getUsageFlushTarget } from './services/usageLogger';
 import { restoreDedupeFromStore, getDedupeFlushTarget } from './services/jobDedupe';
-import { restoreReportArchiveFromStore, getArchiveFlushTarget } from './services/reportRegistry';
+import { restoreReportArchiveFromStore, getArchiveFlushTarget, getRegisteredReports } from './services/reportRegistry';
+import { getPersistenceBackend } from './services/persistentStore';
 import competitorsRouter from './routes/competitors';
 import peersRouter from './routes/peers';
 import benchmarkRouter from './routes/benchmark';
@@ -112,6 +113,12 @@ app.get('/health', (_req, res) => {
     version: '1.0.0',
     commit: BUILD_COMMIT.slice(0, 7),
     startedAt: PROCESS_STARTED_AT,
+    // Diagnostic for the Report History persistence bug: if this reads
+    // "memory" on the deployed instance, REDIS_URL never resolved to a live
+    // connection and every registered/archived report is wiped on every
+    // free-tier idle spin-down — see persistentStore.ts.
+    persistenceBackend: getPersistenceBackend(),
+    registeredReports: getRegisteredReports().length,
   });
 });
 
