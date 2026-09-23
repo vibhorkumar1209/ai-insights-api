@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getRecentCompletedReports, getArchivedReportPayload } from '../services/reportsAggregatorService';
+import { getRecentCompletedReports, getReportPayload } from '../services/reportsAggregatorService';
 import { getArchiveStats } from '../services/reportRegistry';
 
 const router = Router();
@@ -19,9 +19,9 @@ router.get('/recent', (req: Request, res: Response) => {
 // TTL). The frontend falls back to this so "View" on an older Report History
 // row still opens the real report rather than 404ing.
 router.get('/:jobId/raw', (req: Request, res: Response) => {
-  const payload = getArchivedReportPayload(req.params.jobId);
+  const payload = getReportPayload(req.params.jobId);
   if (!payload) {
-    res.status(404).json({ error: 'Report not found in archive' });
+    res.status(404).json({ error: 'Report not found' });
     return;
   }
   res.json(payload);

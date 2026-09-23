@@ -117,9 +117,31 @@ const sweepTimer = setInterval(() => {
 }, ARCHIVE_SWEEP_MS);
 sweepTimer.unref();
 
-// Serves the archived payload for a job whose module store has since evicted
-// it, so "View" on an older Report History row still opens the real report
-// instead of a 404.
+// Serves a report payload by job id, whatever state it is in: the archived
+// copy if there is one, otherwise the live job from its own module's store.
+//
+// The live fallback closes a real gap. A report is only archived by the sweep,
+// which runs every 60s, so one that has just finished is not archived yet —
+// without this, opening it in that window 404s even though the job is sitting
+// right there in memory. Callers get one URL that works for the whole life of
+// a report rather than having to know which store currently holds it.
+export function getReportPayload(jobId: string): unknown | undefined {
+  const archived = getArchivedReport(jobId);
+  if (archived) return archived.payload;
+
+  const registered = getRegisteredReports().find((r) => r.jobId === jobId);
+  if (!registered) return undefined;
+  const getter = GETTERS[registered.moduleType];
+  if (!getter) return undefined;
+  try {
+    const job = getter(jobId);
+    return job && job.status === 'complete' ? job : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** @deprecated use getReportPayload — kept so existing callers keep working. */
 export function getArchivedReportPayload(jobId: string): unknown | undefined {
   return getArchivedReport(jobId)?.payload;
 }

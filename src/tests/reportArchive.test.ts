@@ -86,3 +86,30 @@ describe('report archive', () => {
     expect(getRegisteredReports().length).toBeLessThanOrEqual(500);
   });
 });
+
+// ── Serving a report by id ───────────────────────────────────────────────────
+// "View Raw" in the UI opened the module's own endpoint, which 404s once that
+// module's 2h TTL evicts the job — hence {"error":"Job not found"} on every
+// older API-generated report. It now goes through the reports endpoint, which
+// must answer for BOTH an archived report and one that just finished and has
+// not been swept into the archive yet (the sweep runs every 60s).
+describe('getReportPayload', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getReportPayload } = require('../services/reportsAggregatorService');
+
+  it('returns an archived payload', () => {
+    archiveCompletedReport(entry('served-archived', 'peers'), { status: 'complete', competitors: ['a'] }, '2026-01-01T00:00:00.000Z');
+    const payload = getReportPayload('served-archived') as Record<string, unknown>;
+    expect(payload).toBeDefined();
+    expect(payload.competitors).toEqual(['a']);
+  });
+
+  it('returns undefined for an unknown job rather than throwing', () => {
+    expect(getReportPayload('no-such-job')).toBeUndefined();
+  });
+
+  it('returns undefined for a registered job with no archived copy and no live job', () => {
+    registerJobStart('peers', 'registered-but-gone', 'Acme');
+    expect(getReportPayload('registered-but-gone')).toBeUndefined();
+  });
+});
