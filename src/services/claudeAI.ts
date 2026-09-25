@@ -3144,27 +3144,6 @@ CRITICAL: Output ONLY valid JSON (no markdown, no code fences, no preamble). Sta
 
 // ── Technology Heat Map Discovery (Claude-based, fast) ────────────────────────
 
-export async function discoverTopPlayersByIndustryQuick(
-  industry: string
-): Promise<Array<{ name: string; headquarters: string; estimatedRevenue: string; relevanceScore: number }>> {
-  const text = await claudeCreateDirect('', `Identify the top 10 key players (major companies by revenue/market share) in the "${industry}" industry as of ${new Date().getFullYear()}.
-
-Return ONLY a valid JSON array with exactly 10 companies. No other text. Each item must have: name, headquarters, estimatedRevenue, relevanceScore (1-10).
-
-Example format:
-[
-  {"name":"Company A","headquarters":"City, Country","estimatedRevenue":"$100B","relevanceScore":10},
-  {"name":"Company B","headquarters":"City, Country","estimatedRevenue":"$80B","relevanceScore":9}
-]`, 1024, 'claude-sonnet-5');
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    console.error('[discoverTopPlayers] Parse error:', text);
-    return [];
-  }
-}
-
 export async function discoverEmergingTechsQuick(
   industry: string
 ): Promise<Array<{ name: string; category: string; maturityLevel: string }>> {
@@ -3190,23 +3169,6 @@ Return ONLY a valid JSON array:
       try { return JSON.parse(match[0]); } catch { /* fall through */ }
     }
     console.error('[discoverEmergingTechs] Parse error, raw text:', text.slice(0, 200));
-    return [];
-  }
-}
-
-export async function discoverIndustrySegmentsQuick(
-  industry: string
-): Promise<string[]> {
-  const text = await claudeCreateDirect('', `List the top 10 segments or subsectors within the "${industry}" industry as of ${new Date().getFullYear()}, reflecting how the industry is segmented today rather than historically.
-
-Return ONLY a JSON array of 10 segment names as strings. No other text.
-
-Example: ["Segment A","Segment B","Segment C",...]`, 512, 'claude-sonnet-5');
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    console.error('[discoverSegments] Parse error:', text);
     return [];
   }
 }
