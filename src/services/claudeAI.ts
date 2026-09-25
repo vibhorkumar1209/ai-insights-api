@@ -66,7 +66,8 @@ function initializeClient(): Anthropic {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        return await originalCreate(...args);
+        const [params, ...rest] = args;
+        return await originalCreate(adaptForModel(params as any), ...(rest as []));
       } catch (err) {
         lastErr = err;
         if (attempt === maxAttempts || !isRetryable(err)) throw err;
@@ -98,6 +99,17 @@ const client = new Proxy({} as Anthropic, {
 // "Premature close" on Render for some prompts — reproduces identically
 // across retries through the SDK client, streamed or not. Use this for any
 // call site that hits that error; retries once internally.
+// Sonnet 5 rejects temperature/top_p/top_k with a 400, and runs adaptive
+// thinking when `thinking` is omitted. Disabling it keeps output and cost in
+// line with the Sonnet 4.6 behaviour every prompt here was tuned against.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function adaptForModel<T extends Record<string, any>>(body: T): T {
+  if (typeof body.model !== 'string' || !body.model.startsWith('claude-sonnet-5')) return body;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { temperature, top_p, top_k, ...rest } = body;
+  return { thinking: { type: 'disabled' }, ...rest } as unknown as T;
+}
+
 class AnthropicApiError extends Error {
   status: number;
   retryAfterMs?: number;
@@ -131,10 +143,10 @@ export async function claudeCreateDirect(
           'x-api-key': process.env.ANTHROPIC_API_KEY || '',
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({
+        body: JSON.stringify(adaptForModel({
           model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }],
           ...(temperature !== undefined ? { temperature } : {}),
-        }),
+        })),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -180,7 +192,7 @@ export async function claudeCreateDirect(
 const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations come via other means
 
 // Model selection
-const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
+const SYNTHESIS_MODEL = 'claude-sonnet-5';
 const FAST_MODEL = 'claude-haiku-4-5-20251001'; // 5× faster, used for structured JSON synthesis
 
 // ── Truncate research to stay within token budget ───────────────────────────
@@ -3125,7 +3137,7 @@ Example format:
 [
   {"name":"Company A","headquarters":"City, Country","estimatedRevenue":"$100B","relevanceScore":10},
   {"name":"Company B","headquarters":"City, Country","estimatedRevenue":"$80B","relevanceScore":9}
-]`, 1024, 'claude-sonnet-4-6');
+]`, 1024, 'claude-sonnet-5');
 
   try {
     return JSON.parse(text);
@@ -3146,7 +3158,7 @@ Return ONLY a valid JSON array:
 [
   {"name":"AI/ML","category":"Artificial Intelligence","maturityLevel":"growth"},
   {"name":"Blockchain","category":"Distributed Ledger","maturityLevel":"emerging"}
-]`, 1024, 'claude-sonnet-4-6');
+]`, 1024, 'claude-sonnet-5');
 
   try {
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
@@ -3171,7 +3183,7 @@ export async function discoverIndustrySegmentsQuick(
 
 Return ONLY a JSON array of 10 segment names as strings. No other text.
 
-Example: ["Segment A","Segment B","Segment C",...]`, 512, 'claude-sonnet-4-6');
+Example: ["Segment A","Segment B","Segment C",...]`, 512, 'claude-sonnet-5');
 
   try {
     return JSON.parse(text);
@@ -3350,13 +3362,13 @@ Output JSON:
           'x-api-key': process.env.ANTHROPIC_API_KEY || '',
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({
+        body: JSON.stringify(adaptForModel({
           model: SYNTHESIS_MODEL,
           max_tokens: 4000,
           temperature: 0.1,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }],
-        }),
+        })),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -4003,7 +4015,7 @@ Return this exact JSON structure:
   // 6000 was not enough headroom for this schema: live runs truncated mid-array
   // at ~25.5k characters, and a truncated tail is unrecoverable — the `{...}`
   // regex fallback below only rescues surrounding prose, never a cut-off array.
-  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 10000, 'claude-sonnet-4-6', 240000, 0.15);
+  const raw = await claudeCreateDirect(systemPrompt, userPrompt, 10000, 'claude-sonnet-5', 240000, 0.15);
   const cleaned = (raw as string).replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
   let parsed: ObjectionHandlingPayload;

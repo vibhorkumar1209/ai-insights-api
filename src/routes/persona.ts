@@ -4,7 +4,7 @@ import { claudeCreateDirect } from '../services/claudeAI';
 
 const router = Router();
 
-const SYNTHESIS_MODEL = 'claude-sonnet-4-6';
+const SYNTHESIS_MODEL = 'claude-sonnet-5';
 
 router.post('/tailored-pitch', async (req: Request, res: Response) => {
   const {

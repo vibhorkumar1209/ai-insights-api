@@ -4,7 +4,7 @@ import { claudeCreateDirect } from './claudeAI';
 
 // Pure structured-extraction transform — everything needed is already in the
 // user-supplied job posting text, so this is Claude-only, no research calls.
-const MODEL = 'claude-sonnet-4-6'; // matches this codebase's standard model everywhere else
+const MODEL = 'claude-sonnet-5'; // matches this codebase's standard model everywhere else
 
 // ── In-memory job store — same pattern as every other module in this app ────
 

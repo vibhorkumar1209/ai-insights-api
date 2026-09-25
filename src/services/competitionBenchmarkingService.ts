@@ -14,7 +14,7 @@ import { claudeCreateDirect } from './claudeAI';
 // Claude does the writing/structuring, working ONLY from what Gemini already
 // verified. Claude must never originate a fact on its own — see the shared
 // system prompt below.
-const SYNTHESIS_MODEL = 'claude-sonnet-4-6'; // matches this codebase's standard model everywhere else
+const SYNTHESIS_MODEL = 'claude-sonnet-5'; // matches this codebase's standard model everywhere else
 
 // ── In-memory job store — same pattern as every other module in this app ────
 
