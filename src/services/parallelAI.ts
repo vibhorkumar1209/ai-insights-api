@@ -645,8 +645,62 @@ async function runResearchDualEngine(query: string, googleQuery: string): Promis
 // ── Gemini Google Search grounding — vendor ↔ target relationship ────────────
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_SEARCH_MODEL = 'gemini-2.5-flash';
 const GEMINI_TIMEOUT_MS = 45_000;
+
+// ── Model selection ──────────────────────────────────────────────────────────
+// gemini-2.5-flash is deprecated: Google's pricing page lists it as shutting
+// down on 2026-10-02, and access is already restricted to accounts with prior
+// usage. Every grounded lookup in the app goes through here (Sales Play II
+// executives and LinkedIn verification, firmographics, spend, Competition
+// Benchmarking), so on shutdown they would all start returning empty text —
+// and silently, because a failed call below degrades to '' rather than throws.
+//
+// gemini-3.8-flash is the current stable Flash with Google Search grounding.
+// Its tokens cost more ($0.75/$3.75 vs $0.30/$2.50 per MTok) but grounding —
+// the dominant cost of these calls — drops from $35 to $14 per 1,000, with
+// 5,000 free a month.
+//
+// The fallback exists because the new model ID could not be verified before
+// deploying (the Gemini key lives only on the server). If the primary is
+// rejected as unknown, the call retries on the old model instead of failing,
+// and the model that actually served is what gets logged — so the usage log
+// shows directly whether the switch took. Override with GEMINI_SEARCH_MODEL.
+const GEMINI_PRIMARY_MODEL = process.env.GEMINI_SEARCH_MODEL || 'gemini-3.8-flash';
+const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash';
+
+// Once the primary has been rejected as unknown, stop paying a failed round
+// trip on every call for the life of the process.
+let geminiPrimaryRejected = false;
+
+function isUnknownModelError(status: number, body: string): boolean {
+  if (status === 404) return true;
+  return status === 400 && /model|not found|not supported|unsupported/i.test(body);
+}
+
+// POSTs a generateContent request, preferring the primary model. Returns the
+// response along with the model that produced it, so callers log the truth.
+async function geminiGenerate(apiKey: string, body: unknown): Promise<{ res: Awaited<ReturnType<typeof fetchWithTimeout>>; model: string }> {
+  const post = (model: string) =>
+    fetchWithTimeout(
+      `${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+      GEMINI_TIMEOUT_MS
+    );
+
+  if (!geminiPrimaryRejected && GEMINI_PRIMARY_MODEL !== GEMINI_FALLBACK_MODEL) {
+    const res = await post(GEMINI_PRIMARY_MODEL);
+    if (res.ok) return { res, model: GEMINI_PRIMARY_MODEL };
+    const errText = await res.text().catch(() => '');
+    if (!isUnknownModelError(res.status, errText)) {
+      // A real failure (rate limit, bad request) on a valid model — surface
+      // it as-is rather than masking it by silently switching models.
+      return { res: new Response(errText, { status: res.status }) as unknown as Awaited<ReturnType<typeof fetchWithTimeout>>, model: GEMINI_PRIMARY_MODEL };
+    }
+    geminiPrimaryRejected = true;
+    console.warn(`[gemini] model "${GEMINI_PRIMARY_MODEL}" rejected (${res.status}), falling back to ${GEMINI_FALLBACK_MODEL}: ${errText.slice(0, 160)}`);
+  }
+  return { res: await post(GEMINI_FALLBACK_MODEL), model: GEMINI_FALLBACK_MODEL };
+}
 
 interface GeminiGroundingSource {
   title: string;
@@ -660,12 +714,7 @@ async function runGeminiGroundedSearch(prompt: string, source: string): Promise<
     return { text: '', sources: [] };
   }
 
-  const res = await fetchWithTimeout(
-    `${GEMINI_BASE}/models/${GEMINI_SEARCH_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+  const { res, model } = await geminiGenerate(apiKey, {
         contents: [{ parts: [{ text: prompt }] }],
         tools: [{ google_search: {} }],
         // temperature: 0 — these lookups (revenue figures, firmographic facts,
@@ -675,10 +724,7 @@ async function runGeminiGroundedSearch(prompt: string, source: string): Promise<
         // different calls — the root cause of "different users get different
         // results for the same company" in the Firmographic module.
         generationConfig: { temperature: 0 },
-      }),
-    },
-    GEMINI_TIMEOUT_MS
-  );
+  });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -704,7 +750,7 @@ async function runGeminiGroundedSearch(prompt: string, source: string): Promise<
     .filter((w): w is Record<string, unknown> => !!w?.uri)
     .map((w) => ({ title: String(w.title || w.uri), uri: String(w.uri) }));
 
-  logGeminiUsage({ source, model: GEMINI_SEARCH_MODEL, usageMetadata: data?.usageMetadata, groundingUsed: true });
+  logGeminiUsage({ source, model, usageMetadata: data?.usageMetadata, groundingUsed: true });
 
   return { text, sources };
 }
@@ -722,18 +768,10 @@ async function fetchCompanyWebpage(domain: string, source: string): Promise<stri
   const prompt = `Fetch the page at ${url} (and its "About Us" / "Who We Are" page if linked from it) and summarize, in your own words, what the company does: its products/services, business lines, target customers, and scale. Use only what is actually on the page — do not add outside knowledge.`;
 
   try {
-    const res = await fetchWithTimeout(
-      `${GEMINI_BASE}/models/${GEMINI_SEARCH_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          tools: [{ url_context: {} }],
-        }),
-      },
-      GEMINI_TIMEOUT_MS
-    );
+    const { res, model } = await geminiGenerate(apiKey, {
+      contents: [{ parts: [{ text: prompt }] }],
+      tools: [{ url_context: {} }],
+    });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -753,7 +791,7 @@ async function fetchCompanyWebpage(domain: string, source: string): Promise<stri
     const candidate = data?.candidates?.[0];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const text = ((candidate?.content?.parts || []) as any[]).map((p) => p.text || '').join('').trim();
-    logGeminiUsage({ source, model: GEMINI_SEARCH_MODEL, usageMetadata: data?.usageMetadata, groundingUsed: false });
+    logGeminiUsage({ source, model, usageMetadata: data?.usageMetadata, groundingUsed: false });
     return text;
   } catch (err) {
     console.warn('Gemini url_context fetch threw:', err);
