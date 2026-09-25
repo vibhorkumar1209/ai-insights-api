@@ -102,12 +102,30 @@ const client = new Proxy({} as Anthropic, {
 // Sonnet 5 rejects temperature/top_p/top_k with a 400, and runs adaptive
 // thinking when `thinking` is omitted. Disabling it keeps output and cost in
 // line with the Sonnet 4.6 behaviour every prompt here was tuned against.
+//
+// It also uses a newer tokenizer. Measured with the count_tokens endpoint on
+// this app's own output, the same text costs 1.51x the tokens it did on
+// Sonnet 4.6 — more than the ~30% Anthropic cites as typical, because
+// JSON-heavy text tokenizes poorly. Every max_tokens in this file was sized
+// against the old tokenizer, so unscaled, each budget buys about a third less
+// text. That is the truncation failure already fixed several times here
+// (Industry Report sections, Consulting Intelligence, Objection Handling),
+// reintroduced across the board by a model change.
+//
+// Scaling the ceiling costs nothing: billing is for tokens generated, not the
+// limit. It only changes whether a long answer finishes or gets cut off.
+export const SONNET5_TOKENIZER_RATIO = 1.51;
+const SONNET5_MAX_OUTPUT_TOKENS = 64000;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function adaptForModel<T extends Record<string, any>>(body: T): T {
   if (typeof body.model !== 'string' || !body.model.startsWith('claude-sonnet-5')) return body;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { temperature, top_p, top_k, ...rest } = body;
-  return { thinking: { type: 'disabled' }, ...rest } as unknown as T;
+  const scaled = typeof rest.max_tokens === 'number'
+    ? { max_tokens: Math.min(Math.ceil(rest.max_tokens * SONNET5_TOKENIZER_RATIO), SONNET5_MAX_OUTPUT_TOKENS) }
+    : {};
+  return { thinking: { type: 'disabled' }, ...rest, ...scaled } as unknown as T;
 }
 
 class AnthropicApiError extends Error {
