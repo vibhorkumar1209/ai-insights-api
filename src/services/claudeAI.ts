@@ -211,7 +211,7 @@ const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations
 
 // Model selection
 const SYNTHESIS_MODEL = 'claude-sonnet-5';
-const FAST_MODEL = 'claude-haiku-4-5-20251001'; // 5× faster, used for structured JSON synthesis
+export const FAST_MODEL = 'claude-haiku-4-5-20251001'; // 5× faster, used for structured JSON synthesis
 
 // ── Truncate research to stay within token budget ───────────────────────────
 
@@ -3176,7 +3176,7 @@ Return ONLY a valid JSON array:
 [
   {"name":"AI/ML","category":"Artificial Intelligence","maturityLevel":"growth"},
   {"name":"Blockchain","category":"Distributed Ledger","maturityLevel":"emerging"}
-]`, 1024, 'claude-sonnet-5');
+]`, 1024, FAST_MODEL);
 
   try {
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();

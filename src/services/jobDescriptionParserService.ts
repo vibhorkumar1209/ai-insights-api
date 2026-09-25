@@ -1,10 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
 import { JobPostingInput, JobPostingParsed, JobDescriptionParserResult } from '@ai-insights/types';
-import { claudeCreateDirect } from './claudeAI';
+import { claudeCreateDirect, FAST_MODEL } from './claudeAI';
 
 // Pure structured-extraction transform — everything needed is already in the
 // user-supplied job posting text, so this is Claude-only, no research calls.
-const MODEL = 'claude-sonnet-5'; // matches this codebase's standard model everywhere else
+// Haiku, not the synthesis model. This is pure extraction from text already in
+// hand, one call per posting, so a 50-posting batch is 50 calls. Tested on
+// postings with planted traps (a skill belonging to another team, soft-skill
+// filler, a travel requirement) that the prompt says never to extract: Haiku
+// recalled 22/22 real skills and fell for none; Sonnet 5 recalled 21/22 and
+// listed the other team's React. Haiku was also 63% cheaper and faster.
+const MODEL = FAST_MODEL;
 
 // ── In-memory job store — same pattern as every other module in this app ────
 
