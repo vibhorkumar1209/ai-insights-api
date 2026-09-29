@@ -62,8 +62,13 @@ describe('POST /api/spend/it', () => {
     );
     expect(leaves.filter((l: { value: number }) => l.value === 0).length).toBeGreaterThan(0);
     expect(itBreakdown.reduce((sum: number, n: { percentage: number }) => sum + n.percentage, 0)).toBeCloseTo(100, 8);
-    // Every emerging technology is excluded below $25M revenue.
-    expect(emergingTech.every((t: { value: number }) => t.value === 0)).toBe(true);
+    // Every emerging technology is excluded below $25M revenue — except AI, which is
+    // exempt from exclusion and keeps its own formula value.
+    const ai = emergingTech.find((t: { name: string }) => t.name === 'AI (ML/DL/GenAI & Safety)');
+    expect(ai.value).toBeGreaterThan(0);
+    expect(
+      emergingTech.filter((t: { name: string }) => t.name !== ai.name).every((t: { value: number }) => t.value === 0)
+    ).toBe(true);
   });
 
   it('defaults to the US region when HQ is omitted, without dropping the field', async () => {

@@ -39,6 +39,7 @@ import {
 } from '../data/itErdSpendData';
 
 const INDUSTRIES = Object.keys(IT_BASE_PCT_BY_YEAR);
+const AI = 'AI (ML/DL/GenAI & Safety)';
 // One revenue inside each of the 7 exclusion tiers (<$25M … >$10B).
 const TIER_SAMPLE_REVENUES = [5, 50, 300, 700, 3000, 7000, 20000];
 
@@ -200,12 +201,46 @@ describe('exclusion handling', () => {
         expect(`${label}:${rows.every((r) => r.value >= 0 && r.adjTotal >= 0)}`).toBe(`${label}:true`);
       }
     }
-    // Every one of the 8 technologies is excluded in the smallest tier, so a micro
-    // company gets no emerging-tech budget at all (source: EmergingTech_Exclusion_List).
+    // The workbook excludes all 8 technologies in the smallest tier; AI is exempt from
+    // that (EXCLUSION_EXEMPT_TECHS), so a micro company gets AI spend and nothing else.
     const micro = computeEmergingTechV2('Aerospace & Defence', 1000, 'US', '<$10M', undefined, undefined, 5);
-    expect(micro.every((r) => r.value === 0)).toBe(true);
+    expect(micro.filter((r) => r.tech !== AI).every((r) => r.value === 0)).toBe(true);
+    expect(micro.find((r) => r.tech === AI)!.value).toBeGreaterThan(0);
     const enterprise = computeEmergingTechV2('Aerospace & Defence', 1000, 'US', '>$5B', undefined, undefined, 20000);
     expect(enterprise.every((r) => r.value > 0)).toBe(true);
+  });
+
+  it('never zeroes AI spend, at any tier or industry', () => {
+    for (const revenue of TIER_SAMPLE_REVENUES) {
+      for (const industry of INDUSTRIES) {
+        // No override passed: this is the path the 23 non-ER&D industries take live.
+        const rows = computeEmergingTechV2(industry, 1000, 'US', resolveRevenueTier(revenue), undefined, undefined, revenue);
+        const ai = rows.find((r) => r.tech === AI)!;
+        const label = `${industry} @ $${revenue}M`;
+        expect(`${label}:${ai.value > 0 && ai.adjTotal > 0}`).toBe(`${label}:true`);
+      }
+    }
+  });
+
+  it('keeps a rescued AI line at its own formula value instead of absorbing the excluded share', () => {
+    // Below $25M the other seven are all excluded. If AI joined the redistribution
+    // pool it would swallow their whole share; it must stay at its unexcluded value.
+    const tier = resolveRevenueTier(5);
+    const unexcluded = computeEmergingTechV2('Software', 1000, 'US', tier);
+    const excluded = computeEmergingTechV2('Software', 1000, 'US', tier, undefined, undefined, 5);
+    expect(excluded.find((r) => r.tech === AI)!.value).toBeCloseTo(unexcluded.find((r) => r.tech === AI)!.value, 10);
+  });
+
+  it('hands AI its own share back without changing the emerging-tech total', () => {
+    // $50M: the workbook excludes AI (plus others) for every industry. AI used to be
+    // zeroed and its share spread across the survivors; now AI keeps it, so the
+    // total is exactly what the survivors plus AI's own formula value add up to.
+    const tier = resolveRevenueTier(50);
+    const unexcluded = computeEmergingTechV2('Retail', 1000, 'US', tier);
+    const excluded = computeEmergingTechV2('Retail', 1000, 'US', tier, undefined, undefined, 50);
+    const total = (rows: typeof excluded) => rows.reduce((sum, r) => sum + r.value, 0);
+    expect(excluded.find((r) => r.tech === AI)!.value).toBeCloseTo(unexcluded.find((r) => r.tech === AI)!.value, 10);
+    expect(total(excluded)).toBeCloseTo(total(unexcluded), 10);
   });
 
   it('leaves overridden AI and Blockchain lines untouched by redistribution', () => {

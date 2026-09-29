@@ -241,6 +241,28 @@ export function findErdCategoryValue(breakdown: ErdBreakdownRow[], category: str
   return breakdown.find((r) => r.category === category)?.usdMillion;
 }
 
+/**
+ * Emerging-tech categories that are never zeroed by EMERGING_TECH_EXCLUSION, whatever
+ * that workbook says. AI is the one exemption (product decision, 2026-09-29): AI
+ * tooling spend is real at every company size, so a $20M firm showing $0 on AI read
+ * as a bug. The workbook excludes AI below $100M revenue for every industry (and below
+ * $500M for 7), which zeroed it for all 23 non-ER&D industries at those sizes — the
+ * 14 ER&D industries were already covered by the ER&D "AI/ML & Data Engineering"
+ * override. The data table itself stays verbatim so the drift check keeps passing;
+ * the exemption lives here.
+ *
+ * An exempt category keeps its own region/tier-adjusted formula value. It does NOT
+ * join the redistribution pool at the tiers where the workbook excludes it — otherwise
+ * below $25M, where the other seven are all excluded, AI would absorb their entire
+ * share and balloon to ~50% of the IT budget. Every other line's value is unchanged.
+ */
+export const EXCLUSION_EXEMPT_TECHS: ReadonlySet<string> = new Set(['AI (ML/DL/GenAI & Safety)']);
+
+/** Whether the exclusion workbook flags `tech` as not warranted for this industry/tier. */
+function isListedAsExcluded(tech: string, industry: string, tierIdx: ExclusionTier): boolean {
+  return (EMERGING_TECH_EXCLUSION[tech]?.[industry]?.[tierIdx] ?? 0) === 1;
+}
+
 export interface EmergingTechRow {
   tech: string;
   pctOfIt: number;
@@ -267,7 +289,8 @@ export interface EmergingTechRow {
  *
  * Exclusion + redistribution (2026-07-28): if `revenueUsdMillion` is provided, any
  * Emerging Tech category flagged excluded for this industry/revenue-tier (per
- * EMERGING_TECH_EXCLUSION, same 7-tier scheme as the IT Level-3 exclusion feature) is
+ * EMERGING_TECH_EXCLUSION, same 7-tier scheme as the IT Level-3 exclusion feature) —
+ * other than the EXCLUSION_EXEMPT_TECHS (AI), which keep their formula value — is
  * forced to 0%, and its % is redistributed EQUALLY among the other still-active
  * categories (flat split across all 8 — Emerging Tech has no Level-2 grouping to
  * redistribute within, unlike the IT Level-3 breakdown). Overridden lines (AI,
@@ -304,20 +327,21 @@ export function computeEmergingTechBreakdown(
   }
 
   const tierIdx = resolveExclusionTierIndex(revenueUsdMillion);
-  const excluded = new Set(
-    rows.filter((r) => !r.overridden && (EMERGING_TECH_EXCLUSION[r.tech]?.[industry]?.[tierIdx] ?? 0) === 1).map((r) => r.tech)
-  );
+  const listed = (r: (typeof rows)[number]) => !r.overridden && isListedAsExcluded(r.tech, industry, tierIdx);
+  const excluded = new Set(rows.filter((r) => listed(r) && !EXCLUSION_EXEMPT_TECHS.has(r.tech)).map((r) => r.tech));
   if (excluded.size === 0) {
     return rows.map(({ tech, pctOfIt, usdMillion }) => ({ tech, pctOfIt, usdMillion }));
   }
 
-  const activePool = rows.filter((r) => !r.overridden && !excluded.has(r.tech));
+  // Pool membership follows the workbook: an exempt-but-listed category keeps its own
+  // value and takes no share (see EXCLUSION_EXEMPT_TECHS).
+  const activePool = new Set(rows.filter((r) => !r.overridden && !listed(r)).map((r) => r.tech));
   const freedPct = rows.filter((r) => excluded.has(r.tech)).reduce((sum, r) => sum + r.pctOfIt, 0);
-  const share = activePool.length > 0 ? freedPct / activePool.length : 0;
+  const share = activePool.size > 0 ? freedPct / activePool.size : 0;
 
   return rows.map((r) => {
     if (excluded.has(r.tech)) return { tech: r.tech, pctOfIt: 0, usdMillion: 0 };
-    if (!r.overridden) {
+    if (activePool.has(r.tech)) {
       const pctOfIt = r.pctOfIt + share;
       return { tech: r.tech, pctOfIt, usdMillion: itBaseUsdMillion * pctOfIt };
     }
@@ -533,16 +557,17 @@ export function computeEmergingTechV2(
 
   if (revenueUsdMillion != null) {
     const tierIdx = resolveExclusionTierIndex(revenueUsdMillion);
-    const excluded = new Set(
-      rows.filter((r) => !r.overridden && (EMERGING_TECH_EXCLUSION[r.tech]?.[industry]?.[tierIdx] ?? 0) === 1).map((r) => r.tech)
-    );
+    const listed = (r: (typeof rows)[number]) => !r.overridden && isListedAsExcluded(r.tech, industry, tierIdx);
+    const excluded = new Set(rows.filter((r) => listed(r) && !EXCLUSION_EXEMPT_TECHS.has(r.tech)).map((r) => r.tech));
     if (excluded.size > 0) {
-      const activePool = rows.filter((r) => !r.overridden && !excluded.has(r.tech));
+      // Pool membership follows the workbook: an exempt-but-listed category keeps its
+      // own formula value and takes no share (see EXCLUSION_EXEMPT_TECHS).
+      const activePool = new Set(rows.filter((r) => !r.overridden && !listed(r)).map((r) => r.tech));
       const freedPct = rows.filter((r) => excluded.has(r.tech)).reduce((sum, r) => sum + r.formulaPctOfIt, 0);
-      const share = activePool.length > 0 ? freedPct / activePool.length : 0;
+      const share = activePool.size > 0 ? freedPct / activePool.size : 0;
       return rows.map((r) => {
         if (excluded.has(r.tech)) return { tech: r.tech, value: 0, adjTotal: 0 };
-        if (!r.overridden) {
+        if (activePool.has(r.tech)) {
           const adjPct = r.formulaPctOfIt + share;
           return { tech: r.tech, value: itBaseUsdMillion * adjPct, adjTotal: adjPct * 100 };
         }
