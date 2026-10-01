@@ -15,7 +15,7 @@ import {
   IndustryReportInput, IndustryReportScope, MarketSizingData,
   ReportSection, ExecutiveSummary, ExecutiveSummaryTickerBox,
   ScopeWizardResult, MarketSegmentOption, KeyPlayerOption,
-  MacroTEIData, BCGMatrixItem, CompetitorProfile,
+  MacroTEIData, BCGMatrixItem, KeyPlayerProfile,
   BusinessSegment, TimelineBlock, StrategicEvolutionBullet,
   TechHeatMapInput, TechHeatMapRow,
   ContentGenerationInput,
@@ -2391,7 +2391,7 @@ export const SECTION_DEFINITIONS_V2: Record<string, { title: string; tableHint: 
     title: 'Key Players Analysis',
     tableHint: 'Include keyTable with headers: ["Company", "Market Share %", "Revenue $B", "HQ", "Key Strength"]. ONLY list the selected KEY PLAYERS (from KEY PLAYERS FOR PROFILING in scope). Do NOT add unselected or other players to the table.',
     chartHint: 'Include horizontal_bar chartSpec showing market share % for selected key players only. Data format: [{label:"Company A",value:25},{label:"Company B",value:20},...] sorted by value descending.',
-    subsectionHint: 'First bodyParagraph: industry landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), mention ALL known players briefly (selected + others) with market shares, how they differentiate from one another (price-led, innovation-led, etc). Refer to them as "players" or "companies" — NOT as "competitors" (these are companies operating in the industry, not rivals of any single entity). Then include competitorProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for the KEY PLAYERS FOR PROFILING listed in the scope — do NOT profile players not in that list. Do NOT include subsections. Do NOT include bcgMatrixData.',
+    subsectionHint: 'First bodyParagraph: industry landscape overview, market concentration type (oligopoly/duopoly/fragmented/etc), mention ALL known players briefly (selected + others) with market shares, how they differentiate from one another (price-led, innovation-led, etc). Refer to them as "players" or "companies" — NOT as "competitors" (these are companies operating in the industry, not rivals of any single entity). Then include keyPlayerProfiles: [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}] ONLY for the KEY PLAYERS FOR PROFILING listed in the scope — do NOT profile players not in that list. Do NOT include subsections. Do NOT include bcgMatrixData.',
   },
   regulatory_overview: {
     title: 'Regulatory Overview',
@@ -2481,6 +2481,23 @@ export function balancedResearchExcerpt(allResearch: string, maxChars: number): 
 /**
  * V2 Section Drafting — uses SECTION_DEFINITIONS_V2, supports swotData/portersData/teiData.
  */
+// The profiles field was renamed from `competitorProfiles` to
+// `keyPlayerProfiles`: the report treats these companies as players in a
+// market, not as rivals of any one company, and the old name put
+// "competitor" into every API response. The prompt now asks for the new
+// name, but a model can still fall back to the familiar old one, so it is
+// moved here — the API never emits `competitorProfiles` either way.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeKeyPlayerProfiles(section: any): void {
+  if (!section || typeof section !== 'object' || !('competitorProfiles' in section)) return;
+  const legacy = section.competitorProfiles;
+  const current = section.keyPlayerProfiles;
+  if ((!Array.isArray(current) || current.length === 0) && Array.isArray(legacy) && legacy.length > 0) {
+    section.keyPlayerProfiles = legacy;
+  }
+  delete section.competitorProfiles;
+}
+
 export async function draftSectionsBatchV2(
   scope: IndustryReportScope,
   allResearch: string,
@@ -2599,7 +2616,7 @@ Each object structure:
   "charts": [{type, title, xLabel, yLabel, yRightLabel, data, series}, ...] OR null (for multi-chart sections like forecast),
   "subsections": [{"title": "...", "content": "paragraph text with • bullets", "keyTable": {...} OR null, "tables": [...] OR null, "chartSpec": {...} OR null, "charts": [...] OR null}] OR null,
   "citations": ["..."] (ONLY credible sources per the SOURCE RESTRICTION rules below — e.g. "Reuters, ${new Date().getFullYear()}", "Snowflake Inc. 10-K, ${getBaseYear()}", "U.S. Census Bureau, ${new Date().getFullYear()}". NEVER include a syndicated market-research publisher name here, including in a phrase like "X estimate: $Y" or "per X report". If no credible source applies, omit the item entirely rather than naming an uncredible one.),
-  "competitorProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null,
+  "keyPlayerProfiles": [{name, parentCompany, hqLocation, keyProducts, overallRevenue, categoryRevenue, marketShare, manufacturingLocation, recentNews, jvMaPartnerships, otherInsights}, ...] OR null,
   "swotData": {...} OR null,
   "portersData": {...} OR null,
   "macroTeiData": {"items": [...]} OR null
@@ -2612,7 +2629,7 @@ CRITICAL RULES:
 - chartSpec.data and charts[].data values MUST be numbers. For stacked_bar: keys for each sub-segment + cagrTrend.
 - For market_dynamics and regulatory_overview: use "tables" array (NOT keyTable) for multiple tables.
 - For forecast: use "tables" array for assumption/summary tables AND "charts" array for 3 scenario charts.
-- For key_players_analysis: include competitorProfiles alongside keyTable and chartSpec (no BCG matrix). Refer to the companies as "players", not "competitors".
+- For key_players_analysis: include keyPlayerProfiles alongside keyTable and chartSpec (no BCG matrix). Refer to the companies as "players", not "competitors".
 - For ma_jv_partnerships: use "tables" array only. Only include deals from the last 12 months. Do NOT fabricate deals.
 - For market_innovation: use "tables" array only, exactly 5 columns (no Source column). Weight rows toward startups active in the specific target industry and target geography — search for local/regional startup activity, not just global players.
 - For market_opportunities: use "tables" array only, exactly 3 columns (no Source or Analyst Firm columns). Do NOT attribute rows to any named research/analyst firm.
@@ -2715,6 +2732,7 @@ CRITICAL RULES:
     if (!s || typeof s !== 'object') return;
     if (!s.id && sectionIds[idx]) s.id = sectionIds[idx];
     if (!s.title && SECTION_DEFINITIONS_V2[s.id]) s.title = SECTION_DEFINITIONS_V2[s.id].title;
+    normalizeKeyPlayerProfiles(s);
   });
 
   const valid = (parsed as ReportSection[]).filter((s) => {
@@ -2722,14 +2740,14 @@ CRITICAL RULES:
     const hasBody = s.bodyParagraphs?.length > 0;
     const hasTables = (s.tables && s.tables.length > 0) || s.keyTable;
     const hasCharts = (s.charts && s.charts.length > 0) || s.chartSpec;
-    const hasProfiles = s.competitorProfiles && s.competitorProfiles.length > 0;
+    const hasProfiles = s.keyPlayerProfiles && s.keyPlayerProfiles.length > 0;
     const hasSubsections = s.subsections && s.subsections.length > 0;
     const hasSpecialData = !!(s.swotData || s.portersData || s.macroTeiData || s.teiData);
     return hasBody || hasTables || hasCharts || hasProfiles || hasSubsections || hasSpecialData;
   });
   console.log(`[draftV2] Batch [${sectionIds.join(', ')}]: parsed ${parsed.length} objects, ${valid.length} valid sections`);
   if (valid.length < parsed.length) {
-    console.warn(`[draftV2] Filtered out ${parsed.length - valid.length} sections. Filtered:`, (parsed as any[]).filter((s: any) => !valid.includes(s)).map((s: any) => `${s.id} (bodyParagraphs:${s.bodyParagraphs?.length || 0}, tables:${s.tables?.length || 0}, charts:${s.charts?.length || 0}, bcg:${s.bcgMatrixData?.length || 0}, profiles:${s.competitorProfiles?.length || 0}, swot:${!!s.swotData}, porters:${!!s.portersData}, tei:${!!(s.macroTeiData || s.teiData)})`).join(', '));
+    console.warn(`[draftV2] Filtered out ${parsed.length - valid.length} sections. Filtered:`, (parsed as any[]).filter((s: any) => !valid.includes(s)).map((s: any) => `${s.id} (bodyParagraphs:${s.bodyParagraphs?.length || 0}, tables:${s.tables?.length || 0}, charts:${s.charts?.length || 0}, bcg:${s.bcgMatrixData?.length || 0}, profiles:${s.keyPlayerProfiles?.length || 0}, swot:${!!s.swotData}, porters:${!!s.portersData}, tei:${!!(s.macroTeiData || s.teiData)})`).join(', '));
   }
   return valid;
 }

@@ -520,7 +520,11 @@ export interface ReportSection {
   teiData?: TEIData;
   macroTeiData?: MacroTEIData;
   bcgMatrixData?: BCGMatrixItem[];
-  competitorProfiles?: CompetitorProfile[];
+  // Profiles of the selected key players in the Key Players Analysis section.
+  // Previously `competitorProfiles`, which labelled every company in the
+  // industry a "competitor" in the API output even though the report treats
+  // them as players in a market, not rivals of any one company.
+  keyPlayerProfiles?: KeyPlayerProfile[];
 }
 
 export interface ReportTable {
@@ -705,9 +709,9 @@ export interface BCGMatrixItem {
   quadrant: 'star' | 'cash_cow' | 'question_mark' | 'dog';
 }
 
-// ── Enhanced Competitor Profiles ─────────────────────────────────────────────
+// ── Key Player Profiles ──────────────────────────────────────────────────────
 
-export interface CompetitorProfile {
+export interface KeyPlayerProfile {
   name: string;
   parentCompany?: string;
   hqLocation: string;
