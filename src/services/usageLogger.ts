@@ -152,6 +152,11 @@ export interface ClaudeUsageEntry {
   outputTokens: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
+  // Server-side tool calls, billed on top of tokens: web search at $10 per
+  // 1,000, web fetch free. Optional so entries logged before tools existed
+  // (and every call that uses none) still read as zero.
+  webSearchRequests?: number;
+  webFetchRequests?: number;
 }
 
 const claudeEntries: ClaudeUsageEntry[] = [];
@@ -171,6 +176,8 @@ export function logClaudeUsage(params: {
     outputTokens: Number(usage?.output_tokens) || 0,
     cacheCreationInputTokens: Number(usage?.cache_creation_input_tokens) || 0,
     cacheReadInputTokens: Number(usage?.cache_read_input_tokens) || 0,
+    webSearchRequests: Number(usage?.server_tool_use?.web_search_requests) || 0,
+    webFetchRequests: Number(usage?.server_tool_use?.web_fetch_requests) || 0,
   };
   claudeEntries.push(entry);
   if (claudeEntries.length > MAX_ENTRIES) claudeEntries.shift();

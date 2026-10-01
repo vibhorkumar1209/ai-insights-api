@@ -206,6 +206,85 @@ export async function claudeCreateDirect(
   }
 }
 
+// ── Claude with server-side web tools ────────────────────────────────────────
+// The Claude API can now search the web and fetch pages itself, inside a
+// single request — so a module restricted to the Claude API can still see
+// current information. Kept separate from claudeCreateDirect so its thirty-odd
+// callers are untouched; only a call site that asks for tools gets them.
+//
+// Three things this handles that a plain call does not:
+//  - Fetched pages land in the input context, so web_fetch is capped with
+//    max_content_tokens. Uncapped, one small-company lookup ran 174s and 108K
+//    input tokens (~$0.27); capped at 3K per page it ran 20s and ~$0.08.
+//  - A long tool loop can end with stop_reason "pause_turn", meaning the model
+//    is not finished. Sending the partial turn back continues it; treating it
+//    as complete would return half an answer.
+//  - Only the final text blocks are the answer. Tool-use and tool-result
+//    blocks are interleaved in the same content array.
+export interface WebResearchOptions {
+  maxSearches?: number;
+  maxFetches?: number;
+  maxContentTokensPerFetch?: number;
+  timeoutMs?: number;
+  source?: string;
+}
+
+export async function claudeWithWebResearch(
+  system: string, user: string, maxTokens: number, model: string, opts: WebResearchOptions = {}
+): Promise<{ text: string; searches: number; fetches: number }> {
+  const source = opts.source || getCallerLabel();
+  const maxFetches = opts.maxFetches ?? 2;
+  const tools: Record<string, unknown>[] = [
+    { type: 'web_search_20260209', name: 'web_search', max_uses: opts.maxSearches ?? 2 },
+  ];
+  // maxFetches 0 means search only. Used for the retry below: fetching a site
+  // that blocks automated readers can stall rather than refuse cleanly, while
+  // search never touches that site at all.
+  if (maxFetches > 0) {
+    tools.push({ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: maxFetches, max_content_tokens: opts.maxContentTokensPerFetch ?? 3000 });
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const messages: any[] = [{ role: 'user', content: user }];
+  let searches = 0, fetches = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let content: any[] = [];
+
+  for (let turn = 0; turn < 4; turn++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 180_000);
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify(adaptForModel({ model, max_tokens: maxTokens, system, tools, messages })),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new AnthropicApiError(res.status, `Anthropic API ${res.status}: ${errText.slice(0, 300)}`);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await res.json() as { content: any[]; stop_reason: string; usage?: any };
+      logClaudeUsage({ source, model, usage: data.usage });
+      searches += Number(data.usage?.server_tool_use?.web_search_requests) || 0;
+      fetches += Number(data.usage?.server_tool_use?.web_fetch_requests) || 0;
+      content = data.content || [];
+      if (data.stop_reason !== 'pause_turn') break;
+      // Unfinished tool loop: hand the partial turn back so the model resumes.
+      messages.push({ role: 'assistant', content });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const text = content.filter((b) => b.type === 'text').map((b) => b.text || '').join('').trim();
+  return { text, searches, fetches };
+}
+
 // Token budget optimization
 const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations come via other means
 
@@ -471,15 +550,82 @@ If you cannot find sufficient verifiable information, respond only with: "No bus
   return text.trim();
 }
 
-// ── Biz Descrip (Claude-only — no Parallel.AI/Gemini research step) ──────────
+// ── Biz Descrip (Claude API only — no Parallel.AI/Gemini) ────────────────────
 //
-// Deliberately a separate, simpler pipeline from generateBusinessDescription
-// above, not a re-enable of it: single Claude call on training knowledge
-// only, identity-anchored by domain (required) and LinkedIn URL (used as an
-// anchor when supplied, never fabricated or fetched — this app has no tool
-// access to actually browse a URL from a plain Claude API call, so the
-// company's LinkedIn presence is treated as a stated identity signal, the
-// same way domain already is elsewhere in this codebase).
+// Two tiers, both on the Claude API:
+//
+//  1. Training knowledge. Instant and cheap, and enough for any company large
+//     enough to be in the model's training data.
+//  2. Web research, only when tier 1 cannot describe the company. Claude's
+//     server-side web_fetch reads the company's own site (and its LinkedIn
+//     page when supplied), with web_search as the fallback when a site blocks
+//     automated fetchers — common for small businesses.
+//
+// This originally stopped at tier 1, on the stated basis that a plain Claude
+// API call had no way to browse a URL. That stopped being true when the API
+// gained server-side web tools, and it is the whole reason small companies
+// came back as "No business description can be ascertained": the model was
+// asked to describe from memory companies it had never seen, while their
+// websites were sitting there live. Tier 2 also finally honours the original
+// requirement that a supplied LinkedIn URL "must be used" — before, it could
+// only ever be an identity hint.
+//
+// Tier 2 runs only on a tier-1 miss, so larger companies keep today's speed
+// and cost; the research path costs roughly $0.08 and ~20s per company.
+const BIZ_DESCRIP_UNKNOWN = 'No business description can be ascertained.';
+
+function isBizDescripUnknown(text: string): boolean {
+  return !text.trim() || text.toLowerCase().includes('no business description can be ascertained');
+}
+
+async function researchBizDescrip(companyName: string, companyDomain: string, linkedinUrl?: string): Promise<string> {
+  const site = /^https?:\/\//i.test(companyDomain) ? companyDomain : `https://${companyDomain}`;
+
+  const system = `You are a business intelligence analyst who writes short, factual company profiles STRICTLY from web sources you retrieve yourself with your tools. Every fact must come from a page you actually read or a search result you actually saw — never from memory, never invented, never a figure you did not see stated. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&"). ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
+
+  const user = `COMPANY TO DESCRIBE: "${companyName}", website ${site}${linkedinUrl ? `, LinkedIn company page ${linkedinUrl}` : ''}.
+
+RESEARCH STEPS
+1. Fetch ${site} and, if it links to one, its About page.${linkedinUrl ? `
+2. Use the LinkedIn page ${linkedinUrl}: fetch it, and if it cannot be fetched, search for it so its details still inform the profile.` : ''}
+${linkedinUrl ? '3' : '2'}. If the website cannot be fetched (sites often block automated readers), search the web for "${companyName}" together with ${companyDomain} and use what you find: the company's own pages as shown in search, business directories, LinkedIn, trade listings, news.
+
+IDENTITY CHECK — company names are often shared by unrelated businesses. Only use a source that is clearly about the company at ${companyDomain}${linkedinUrl ? ' or the LinkedIn page above' : ''}. Discard anything about a similarly named company elsewhere.
+
+THEN WRITE a 100-200 word profile (hard limit; count before finalizing) covering, in flowing prose: what it sells or does, who it serves and where, and its scale or history if a source states it. No headers, bullets, markdown, or source list. Output ONLY the profile text — no preamble such as "Based on my research". Do not use marketing taglines as descriptive content.
+
+If, after researching, you found nothing verifiable about this specific company, respond with exactly: "${BIZ_DESCRIP_UNKNOWN}"`;
+
+  // Budgets come from measurement, not an estimate. Four parallel runs took
+  // 23s to 58s, all successful; an earlier 75s budget was sized off a single
+  // 20s run and aborted on the normal tail. 150s clears the observed spread
+  // with margin. The search-only retry covers the remaining failure mode —
+  // an attempt that stalls outright — so one bad run cannot fail the job.
+  // (Haiku would be cheaper, but it rejects these web tool versions with a
+  // 400, so research has to run on the synthesis model.)
+  try {
+    const { text } = await claudeWithWebResearch(system, user, 2500, SYNTHESIS_MODEL, {
+      maxSearches: 2,
+      maxFetches: linkedinUrl ? 3 : 2,
+      maxContentTokensPerFetch: 3000,
+      timeoutMs: 150_000,
+      source: 'generateBizDescrip.research',
+    });
+    if (!isBizDescripUnknown(text)) return text;
+    // Fetch-based attempt ran but found nothing usable; search can still help.
+  } catch (err) {
+    console.warn(`[bizDescrip] research with fetch failed for ${companyName}, retrying search-only:`, err instanceof Error ? err.message : err);
+  }
+
+  const { text } = await claudeWithWebResearch(system, user, 2500, SYNTHESIS_MODEL, {
+    maxSearches: 3,
+    maxFetches: 0,
+    timeoutMs: 150_000,
+    source: 'generateBizDescrip.research.searchOnly',
+  });
+  return text;
+}
+
 export async function generateBizDescrip(
   companyName: string,
   companyDomain: string,
@@ -504,8 +650,12 @@ If you are not confident which specific company this refers to, or lack enough t
 
   const systemPrompt = `You are a business intelligence analyst who writes concise, accurate company descriptions from training knowledge alone — this module has no live research or web access, so never imply otherwise (never say "according to their website," "as listed on LinkedIn," etc.) and never invent a specific figure or fact you are not confident of. If you cannot confidently identify or describe the company, respond with exactly: "No business description can be ascertained." — nothing else. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
 
-  const text = await claudeCreateDirect(systemPrompt, userPrompt, 1200, SYNTHESIS_MODEL);
-  return text.trim();
+  const known = (await claudeCreateDirect(systemPrompt, userPrompt, 1200, SYNTHESIS_MODEL)).trim();
+  if (!isBizDescripUnknown(known)) return known;
+
+  // Tier 1 could not place the company — go and look instead of giving up.
+  const researched = (await researchBizDescrip(companyName, companyDomain, linkedinUrl)).trim();
+  return researched || BIZ_DESCRIP_UNKNOWN;
 }
 
 // ── Benchmarking Table Synthesis ─────────────────────────────────────────────
