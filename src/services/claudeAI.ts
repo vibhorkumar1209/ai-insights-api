@@ -281,8 +281,26 @@ export async function claudeWithWebResearch(
     }
   }
 
-  const text = content.filter((b) => b.type === 'text').map((b) => b.text || '').join('').trim();
-  return { text, searches, fetches };
+  return { text: finalAnswerText(content), searches, fetches };
+}
+
+// With tools enabled the model writes short text blocks BETWEEN tool calls —
+// "Let me search for that", "I have good coverage. Let me finalize the
+// profile." Joining every text block leaked that narration into the start of
+// a company description on the first production run. The answer is only the
+// text that follows the last tool step.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function finalAnswerText(content: any[]): string {
+  let lastToolIdx = -1;
+  content.forEach((b, i) => {
+    if (b?.type === 'server_tool_use' || b?.type === 'tool_use' || /_tool_result$/.test(String(b?.type))) lastToolIdx = i;
+  });
+  return content
+    .slice(lastToolIdx + 1)
+    .filter((b) => b?.type === 'text')
+    .map((b) => b.text || '')
+    .join('')
+    .trim();
 }
 
 // Token budget optimization
@@ -574,6 +592,22 @@ If you cannot find sufficient verifiable information, respond only with: "No bus
 // and cost; the research path costs roughly $0.08 and ~20s per company.
 const BIZ_DESCRIP_UNKNOWN = 'No business description can be ascertained.';
 
+// Second guard against model narration, for when it lands inside the final
+// text block rather than in its own block (finalAnswerText handles the
+// latter). Deliberately narrow: only a SHORT leading paragraph that opens
+// with first-person process talk is removed, so a genuine profile — which is
+// written in the third person about the company — is never touched.
+const NARRATION_OPENER = /^(i|i'll|i will|i've|i have|i now|let me|now i|okay|ok|great|based on (my|the) (research|search|findings))\b/i;
+export function stripLeadingNarration(text: string): string {
+  const paragraphs = text.trim().split(/\n\s*\n/);
+  while (paragraphs.length > 1) {
+    const first = paragraphs[0].trim();
+    if (first.split(/\s+/).length > 25 || !NARRATION_OPENER.test(first)) break;
+    paragraphs.shift();
+  }
+  return paragraphs.join('\n\n').trim();
+}
+
 function isBizDescripUnknown(text: string): boolean {
   return !text.trim() || text.toLowerCase().includes('no business description can be ascertained');
 }
@@ -654,7 +688,7 @@ If you are not confident which specific company this refers to, or lack enough t
   if (!isBizDescripUnknown(known)) return known;
 
   // Tier 1 could not place the company — go and look instead of giving up.
-  const researched = (await researchBizDescrip(companyName, companyDomain, linkedinUrl)).trim();
+  const researched = stripLeadingNarration(await researchBizDescrip(companyName, companyDomain, linkedinUrl));
   return researched || BIZ_DESCRIP_UNKNOWN;
 }
 
