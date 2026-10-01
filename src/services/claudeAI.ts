@@ -1144,6 +1144,29 @@ function generateDataDrivenInsights(company: string, yahooData: Partial<Financia
 }
 
 // Generate impactful key highlights from financial data
+// Key Highlights sections come from three producers — the model's structured
+// object, a legacy array shape the model sometimes returns instead, and the
+// data-driven fallback below — and the model itself returns each section
+// either as an array of bullets or as one newline-joined string. That made
+// the same API field two different JSON types from one call to the next.
+// Everything is normalised here to a single contract: an array of bullet
+// strings, each prefixed "• ".
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function toBulletArray(value: any): string[] {
+  const items: string[] = Array.isArray(value)
+    ? value.filter((v) => typeof v === 'string')
+    : typeof value === 'string'
+      ? value.split(/\n+/)
+      : [];
+  return items
+    // A dash, star or number only counts as a bullet marker when a space
+    // follows it. Without that, "-4.5% revenue decline" lost its minus sign
+    // and read as growth — a sign flip on a financial figure.
+    .map((line) => line.replace(/^\s*(?:•\s*|[-*–—]\s+|\d+[.)]\s+)/, '').trim())
+    .filter((line) => line.length > 0)
+    .map((line) => `• ${line}`);
+}
+
 function generateKeyHighlights(company: string, yahooData: Partial<FinancialAnalysisResult>): KeyHighlightsStructured {
   const revenueHistory = yahooData.revenueHistory || [];
   const marginHistory = yahooData.marginHistory || [];
@@ -1181,7 +1204,7 @@ function generateKeyHighlights(company: string, yahooData: Partial<FinancialAnal
       `• Profitability: ${latestMargin ? `${latestMargin.toFixed(1)}% net margin` : 'positive earnings'}${operatingMargin ? ` with ${operatingMargin.toFixed(1)}% operating margin` : ''}`,
       `• Balance sheet: ${bsHealth} supporting strategic investments`,
       `• Cash generation: ${cfQuality} ensuring financial flexibility`,
-    ].join('\n'),
+    ],
     overallPerformanceTagline: `${latestMargin && latestMargin > 20 ? 'High-margin, profitable' : latestMargin && latestMargin > 10 ? 'Solid profitability' : 'Profitable'} ${company} with strong cash position`,
 
     factorsDrivingGrowth: [
@@ -1189,7 +1212,7 @@ function generateKeyHighlights(company: string, yahooData: Partial<FinancialAnal
       `• Operating leverage: ${operatingMargin ? `${operatingMargin.toFixed(1)}% operating margin` : 'Strong operating profitability'} shows improving cost discipline and scale benefits`,
       `• Cash conversion: ${cfMetrics.operatingCF ? 'Strong operating cash flow' : 'Robust cash generation'} supports reinvestment and shareholder returns`,
       `• Market position: ${company} maintains competitive advantage reflected in sustained profitability`,
-    ].join('\n'),
+    ],
     factorsDrivingGrowthTagline: `${revenueGrowth && revenueGrowth > 0 ? 'Growth momentum' : 'Stable revenue'}, operational leverage`,
 
     factorsInhibitingGrowth: [
@@ -1197,7 +1220,7 @@ function generateKeyHighlights(company: string, yahooData: Partial<FinancialAnal
       `• Balance sheet constraints: ${bsMetrics.liabilitiesYoY && bsMetrics.liabilitiesYoY.includes('+') ? 'Rising leverage' : 'Capital allocation priorities'} may limit growth investments`,
       `• Cash flow volatility: Working capital dynamics or capital expenditure cycles affecting free cash flow distribution`,
       `• Market competition: Pricing pressure and competitive intensity limiting margin expansion`,
-    ].join('\n'),
+    ],
     factorsInhibitingGrowthTagline: `Margin pressure, competitive dynamics`,
 
     futureStrategy: [
@@ -1205,7 +1228,7 @@ function generateKeyHighlights(company: string, yahooData: Partial<FinancialAnal
       `• Operational efficiency: Target margin expansion to ${(latestMargin || 0) + 1}%+ through cost optimization and pricing discipline`,
       `• Balance sheet management: Maintain leverage ratio supporting ${latestMargin && latestMargin > 20 ? 'investment-grade' : 'solid'} credit profile`,
       `• Strategic positioning: Invest in capabilities sustaining competitive moat and market share gains`,
-    ].join('\n'),
+    ],
     futureStrategyTagline: `Cash-funded growth, margin expansion, disciplined capital`,
 
     growthOutlook: [
@@ -1213,7 +1236,7 @@ function generateKeyHighlights(company: string, yahooData: Partial<FinancialAnal
       `• Balance sheet: ${bsMetrics.equityYoY ? `Equity growth of ${bsMetrics.equityYoY}` : 'Strong retained earnings'} indicates ${latestMargin ? 'high-return' : 'profitable'} business model`,
       `• Cash flow: ${cfMetrics.operatingCFYoY ? `Operating cash flow ${cfMetrics.operatingCFYoY}` : 'Consistent cash generation'} supports long-term value creation`,
       `• Risk factors: Monitor competitive dynamics, regulatory changes, and macroeconomic headwinds impacting cash conversion`,
-    ].join('\n'),
+    ],
     growthOutlookTagline: `${latestMargin && latestMargin > 20 ? 'High-quality growth' : 'Sustainable growth'} with fortress balance sheet`,
   };
 }
@@ -1349,15 +1372,15 @@ Return a single JSON object with EXACTLY this structure:
   "bsInsight": "3-5 sentences on balance sheet health — liquidity, leverage, capital allocation, and balance sheet flexibility.",
   "cfInsight": "3-5 sentences on cash generation quality — operating cash conversion, capex intensity, free cash flow, and capital returns.",
   "keyHighlights": {
-    "overallPerformance": "3-5 bullet points (each starting with '• '): overall financial health, revenue scale, profitability status, and market position.",
+    "overallPerformance": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': overall financial health, revenue scale, profitability status, and market position."],
     "overallPerformanceTagline": "3-6 word phrase summarising the main point, e.g. 'Strong revenue, margin pressure'",
-    "factorsDrivingGrowth": "3-5 bullet points (each starting with '• '): specific factors, products, segments, or markets driving revenue and profit growth.",
+    "factorsDrivingGrowth": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': specific factors, products, segments, or markets driving revenue and profit growth."],
     "factorsDrivingGrowthTagline": "3-6 word phrase, e.g. 'Cloud & AI segment surge'",
-    "factorsInhibitingGrowth": "3-5 bullet points (each starting with '• '): headwinds, risks, competitive pressures, or structural challenges limiting growth.",
+    "factorsInhibitingGrowth": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': headwinds, risks, competitive pressures, or structural challenges limiting growth."],
     "factorsInhibitingGrowthTagline": "3-6 word phrase, e.g. 'Rising input costs, FX headwinds'",
-    "futureStrategy": "3-5 bullet points (each starting with '• '): management's stated strategic priorities, capital allocation plans, M&A activity, or transformation initiatives.",
+    "futureStrategy": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': management's stated strategic priorities, capital allocation plans, M&A activity, or transformation initiatives."],
     "futureStrategyTagline": "3-6 word phrase, e.g. 'Pivot to platform model'",
-    "growthOutlook": "3-5 bullet points (each starting with '• '): forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon.",
+    "growthOutlook": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': forward-looking growth prospects, analyst consensus, guidance, and catalysts or risks on the horizon."],
     "growthOutlookTagline": "3-6 word phrase, e.g. 'Moderate growth ahead'"
   },
   "chartInsights": [
@@ -1459,26 +1482,26 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
     let keyHighlights: KeyHighlightsStructured;
     if (data.keyHighlights && typeof data.keyHighlights === 'object' && !Array.isArray(data.keyHighlights)) {
       keyHighlights = {
-        overallPerformance: data.keyHighlights.overallPerformance || '',
+        overallPerformance: toBulletArray(data.keyHighlights.overallPerformance),
         overallPerformanceTagline: data.keyHighlights.overallPerformanceTagline || undefined,
-        factorsDrivingGrowth: data.keyHighlights.factorsDrivingGrowth || '',
+        factorsDrivingGrowth: toBulletArray(data.keyHighlights.factorsDrivingGrowth),
         factorsDrivingGrowthTagline: data.keyHighlights.factorsDrivingGrowthTagline || undefined,
-        factorsInhibitingGrowth: data.keyHighlights.factorsInhibitingGrowth || '',
+        factorsInhibitingGrowth: toBulletArray(data.keyHighlights.factorsInhibitingGrowth),
         factorsInhibitingGrowthTagline: data.keyHighlights.factorsInhibitingGrowthTagline || undefined,
-        futureStrategy: data.keyHighlights.futureStrategy || '',
+        futureStrategy: toBulletArray(data.keyHighlights.futureStrategy),
         futureStrategyTagline: data.keyHighlights.futureStrategyTagline || undefined,
-        growthOutlook: data.keyHighlights.growthOutlook || '',
+        growthOutlook: toBulletArray(data.keyHighlights.growthOutlook),
         growthOutlookTagline: data.keyHighlights.growthOutlookTagline || undefined,
       };
     } else {
       // Legacy fallback: convert array to structured
       const arr = Array.isArray(data.keyHighlights) ? data.keyHighlights : [];
       keyHighlights = {
-        overallPerformance: arr[0] || '',
-        factorsDrivingGrowth: arr[1] || '',
-        factorsInhibitingGrowth: arr[2] || '',
-        futureStrategy: arr[3] || '',
-        growthOutlook: arr[4] || '',
+        overallPerformance: toBulletArray(arr[0]),
+        factorsDrivingGrowth: toBulletArray(arr[1]),
+        factorsInhibitingGrowth: toBulletArray(arr[2]),
+        futureStrategy: toBulletArray(arr[3]),
+        growthOutlook: toBulletArray(arr[4]),
       };
     }
 
@@ -1569,15 +1592,15 @@ Return a JSON object with EXACTLY this structure:
     "Notable recent development (acquisition, partnership, product launch, leadership change)"
   ],
   "privateKeyHighlights": {
-    "overallPerformance": "3-5 bullet points (each starting with '• '): overall financial health, revenue scale, profitability status, and competitive positioning of this private company.",
+    "overallPerformance": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': overall financial health, revenue scale, profitability status, and competitive positioning of this private company."],
     "overallPerformanceTagline": "3-6 word phrase summarising the main point, e.g. 'Rapid growth, pre-profit stage'",
-    "factorsDrivingGrowth": "3-5 bullet points (each starting with '• '): specific factors, products, markets, or strategic moves driving this company's growth.",
+    "factorsDrivingGrowth": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': specific factors, products, markets, or strategic moves driving this company's growth."],
     "factorsDrivingGrowthTagline": "3-6 word phrase, e.g. 'Enterprise adoption accelerating'",
-    "factorsInhibitingGrowth": "3-5 bullet points (each starting with '• '): risks, competitive threats, market headwinds, or challenges limiting this company's growth.",
+    "factorsInhibitingGrowth": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': risks, competitive threats, market headwinds, or challenges limiting this company's growth."],
     "factorsInhibitingGrowthTagline": "3-6 word phrase, e.g. 'Intense competitive pressure'",
-    "futureStrategy": "3-5 bullet points (each starting with '• '): the company's known strategic direction, upcoming product launches, expansion plans, or transformation initiatives.",
+    "futureStrategy": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': the company's known strategic direction, upcoming product launches, expansion plans, or transformation initiatives."],
     "futureStrategyTagline": "3-6 word phrase, e.g. 'Global expansion push'",
-    "growthOutlook": "3-5 bullet points (each starting with '• '): forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks.",
+    "growthOutlook": ["JSON ARRAY of 3-5 strings, each one bullet starting with '• ': forward-looking assessment of the company's growth trajectory, market opportunity, and potential catalysts or risks."],
     "growthOutlookTagline": "3-6 word phrase, e.g. 'Strong upside potential'"
   }
 }`;
@@ -1602,15 +1625,15 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
     let privateKeyHighlights: KeyHighlightsStructured | undefined;
     if (data.privateKeyHighlights && typeof data.privateKeyHighlights === 'object') {
       privateKeyHighlights = {
-        overallPerformance: data.privateKeyHighlights.overallPerformance || '',
+        overallPerformance: toBulletArray(data.privateKeyHighlights.overallPerformance),
         overallPerformanceTagline: data.privateKeyHighlights.overallPerformanceTagline || undefined,
-        factorsDrivingGrowth: data.privateKeyHighlights.factorsDrivingGrowth || '',
+        factorsDrivingGrowth: toBulletArray(data.privateKeyHighlights.factorsDrivingGrowth),
         factorsDrivingGrowthTagline: data.privateKeyHighlights.factorsDrivingGrowthTagline || undefined,
-        factorsInhibitingGrowth: data.privateKeyHighlights.factorsInhibitingGrowth || '',
+        factorsInhibitingGrowth: toBulletArray(data.privateKeyHighlights.factorsInhibitingGrowth),
         factorsInhibitingGrowthTagline: data.privateKeyHighlights.factorsInhibitingGrowthTagline || undefined,
-        futureStrategy: data.privateKeyHighlights.futureStrategy || '',
+        futureStrategy: toBulletArray(data.privateKeyHighlights.futureStrategy),
         futureStrategyTagline: data.privateKeyHighlights.futureStrategyTagline || undefined,
-        growthOutlook: data.privateKeyHighlights.growthOutlook || '',
+        growthOutlook: toBulletArray(data.privateKeyHighlights.growthOutlook),
         growthOutlookTagline: data.privateKeyHighlights.growthOutlookTagline || undefined,
       };
     }

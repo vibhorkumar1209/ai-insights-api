@@ -232,16 +232,22 @@ export interface GeoRow {
   yoyGrowth?: string;        // e.g. "+8.2%"
 }
 
+// Each section is an ARRAY of bullet strings, every item prefixed "• ".
+// Previously typed `string` and left to whatever the model returned, so the
+// same API field came back sometimes as an array and sometimes as one
+// newline-joined string — two shapes for one contract, which breaks any
+// client parsing the response. The backend now normalises every producer to
+// this shape (see toBulletArray in claudeAI.ts).
 export interface KeyHighlightsStructured {
-  overallPerformance: string;
+  overallPerformance: string[];
   overallPerformanceTagline?: string;
-  factorsDrivingGrowth: string;
+  factorsDrivingGrowth: string[];
   factorsDrivingGrowthTagline?: string;
-  factorsInhibitingGrowth: string;
+  factorsInhibitingGrowth: string[];
   factorsInhibitingGrowthTagline?: string;
-  futureStrategy: string;
+  futureStrategy: string[];
   futureStrategyTagline?: string;
-  growthOutlook: string;
+  growthOutlook: string[];
   growthOutlookTagline?: string;
 }
 
