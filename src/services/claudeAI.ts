@@ -1307,7 +1307,7 @@ export async function synthesizeFinancialInsights(
     return rows.slice(0, maxRows);
   };
 
-  const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary.
+  const systemPrompt = `You are a senior equity analyst producing institutional-grade financial commentary. JSON SAFETY: inside any JSON string value, never use a double quote character — write single quotes instead (e.g. the 'Other' segment, not the \"Other\" segment). An unescaped double quote inside a value invalidates the entire response.
 Rules:
 - Be specific: cite figures, percentages, year-on-year changes, named programmes from provided data and your knowledge.
 - Insights must be 3-5 sentences each — analytical and forward-looking, not descriptive.
@@ -1452,6 +1452,44 @@ Extraction rules:
   }
 }
 
+// Repairs the most common way a model breaks otherwise-valid JSON: a double
+// quote inside a string value that was never escaped, e.g.
+//   "segmentInsight": "The "Other" category declined 5%"
+// JSON.parse reads `"The "` as the whole string and then fails on `Other`.
+// Ericsson's financial analysis hit exactly this at character 11,792 of a
+// complete 13,176-character answer, and the entire response was discarded in
+// favour of templated fallback text.
+//
+// The repair follows the parser's own error: the quote just before the
+// failure point is the one that ended the string too early, so it is escaped
+// and parsing is retried. Each pass fixes one stray quote, so a quoted word
+// (an opening and a closing quote) takes two. Bounded, and only ever runs on
+// text that has already failed to parse, so valid JSON is never touched.
+export function parseJsonRepairingQuotes(text: string, maxRepairs = 40): unknown {
+  let candidate = text;
+  for (let attempt = 0; attempt <= maxRepairs; attempt++) {
+    try {
+      return JSON.parse(candidate);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const pos = Number((msg.match(/position (\d+)/) || [])[1]);
+      if (!Number.isFinite(pos) || attempt === maxRepairs) throw err;
+      const quote = candidate.lastIndexOf('"', pos - 1);
+      // Only a quote that is not already escaped can be the culprit.
+      if (quote <= 0 || candidate[quote - 1] === '\\') throw err;
+      // And only when it is the stray-quote pattern: the quote is followed
+      // (after nothing but spaces) by ordinary text, as in `"Other`. Without
+      // this check the repair would happily "fix" JSON broken some other way
+      // (a doubled comma, a truncated array) by escaping a legitimate quote,
+      // producing different, valid-looking JSON with the wrong data — worse
+      // than failing, because nothing downstream would notice.
+      if (!/^\s*$/.test(candidate.slice(quote + 1, pos)) || !/[\p{L}\p{N}(]/u.test(candidate[pos] || '')) throw err;
+      candidate = `${candidate.slice(0, quote)}\\"${candidate.slice(quote + 1)}`;
+    }
+  }
+  throw new Error('unreachable');
+}
+
 function parseFinancialInsights(raw: string): FinancialInsightsPayload {
   // Try to extract JSON — be forgiving of markdown fences, trailing text, etc.
   let jsonStr = raw.trim();
@@ -1471,7 +1509,7 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
   }
 
   try {
-    const parsed: unknown = JSON.parse(match[0]);
+    const parsed: unknown = parseJsonRepairingQuotes(match[0]);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('Parsed JSON is not an object');
     }
@@ -1530,8 +1568,16 @@ function parseFinancialInsights(raw: string): FinancialInsightsPayload {
       cashFlowExtracted: Array.isArray(data.cashFlowExtracted) && data.cashFlowExtracted.length > 0
         ? data.cashFlowExtracted : undefined,
     };
-  } catch {
-    throw new Error('Failed to parse Claude financial insights JSON');
+  } catch (err) {
+    // Previously `catch {}` rethrew a generic message, discarding the actual
+    // JSON.parse error. That hid why Ericsson's analysis silently fell back to
+    // templated boilerplate. Keep the real reason, plus the text around the
+    // failure point, so the log says what actually broke.
+    const msg = err instanceof Error ? err.message : String(err);
+    const pos = Number((msg.match(/position (\d+)/) || [])[1]);
+    const around = Number.isFinite(pos) ? ` near: …${match[0].slice(Math.max(0, pos - 120), pos + 120)}…` : '';
+    console.warn(`[parseFinancialInsights] ${msg} (response ${match[0].length} chars)${around}`);
+    throw new Error(`Failed to parse Claude financial insights JSON: ${msg}`);
   }
 }
 
@@ -1556,7 +1602,7 @@ export async function synthesizePrivateCompany(
   const hasResearch = !isEmptyResearch(research);
   const hasVerified = !!verifiedDescription && verifiedDescription.trim().length > 20;
 
-  const systemPrompt = `You are a senior investment analyst producing concise private company financial profiles.
+  const systemPrompt = `You are a senior investment analyst producing concise private company financial profiles. JSON SAFETY: inside any JSON string value, never use a double quote character — write single quotes instead (e.g. the 'Other' segment, not the \"Other\" segment). An unescaped double quote inside a value invalidates the entire response.
 Rules:
 - Use provided research first; supplement with training knowledge where research is sparse — label estimates "(est.)".
 - Be specific with ranges: "$800M–$1.2B" not "high revenue".
@@ -1615,7 +1661,7 @@ function parsePrivateCompany(raw: string): PrivateCompanyPayload {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Claude did not return valid JSON for private company');
   try {
-    const parsed: unknown = JSON.parse(match[0]);
+    const parsed: unknown = parseJsonRepairingQuotes(match[0]);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('Parsed JSON is not an object');
     }

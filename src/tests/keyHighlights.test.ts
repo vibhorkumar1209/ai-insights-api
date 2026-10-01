@@ -49,3 +49,34 @@ describe('toBulletArray', () => {
     for (const v of [undefined, null, '', {}, 42]) expect(toBulletArray(v)).toEqual([]);
   });
 });
+
+import { parseJsonRepairingQuotes } from '../services/claudeAI';
+
+// Ericsson's financial analysis fell back to templated boilerplate because the
+// model wrote unescaped quotes inside a string — `The "Other" category` — and
+// the whole 13,176-character response failed to parse at one character.
+describe('parseJsonRepairingQuotes', () => {
+  it('recovers the exact production failure', () => {
+    const broken = '{"segmentInsight": "Down 15% to SEK 16.0B. The "Other" category, at 16% of sales, also declined 5%.", "geoInsight": "ok"}';
+    expect(() => JSON.parse(broken)).toThrow();
+    expect(parseJsonRepairingQuotes(broken)).toEqual({
+      segmentInsight: 'Down 15% to SEK 16.0B. The "Other" category, at 16% of sales, also declined 5%.',
+      geoInsight: 'ok',
+    });
+  });
+
+  it('repairs several quoted words in one response', () => {
+    const broken = '{"a": "the "Networks" and "Enterprise" segments", "b": ["x "y" z"]}';
+    expect(parseJsonRepairingQuotes(broken)).toEqual({ a: 'the "Networks" and "Enterprise" segments', b: ['x "y" z'] });
+  });
+
+  it('returns valid JSON unchanged', () => {
+    const ok = '{"a": "already \\"escaped\\" fine", "n": -4.5}';
+    expect(parseJsonRepairingQuotes(ok)).toEqual(JSON.parse(ok));
+  });
+
+  it('still throws on JSON that is broken in some other way', () => {
+    expect(() => parseJsonRepairingQuotes('{"a": 1,, "b": 2}')).toThrow();
+    expect(() => parseJsonRepairingQuotes('{"a": [1, 2')).toThrow();
+  });
+});

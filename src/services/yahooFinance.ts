@@ -107,9 +107,13 @@ export function parseFinanceValue(val: string | undefined | null): number | null
   return (isNeg ? -1 : 1) * num * multiplier;
 }
 
+// Currencies without an entry fall back to the ISO code as a prefix
+// ("SEK 236.68B"), which is unambiguous — preferable to a symbol a reader
+// could mistake for dollars.
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', GBP: '£', EUR: '€', JPY: '¥', CAD: 'CA$', AUD: 'A$',
-  INR: '₹', CHF: 'CHF ', CNY: '¥', HKD: 'HK$', SGD: 'S$', KRW: '₩',
+  INR: '₹', CHF: 'CHF ', CNY: 'CN¥', HKD: 'HK$', SGD: 'S$', KRW: '₩',
+  TWD: 'NT$', BRL: 'R$', MXN: 'MX$', NZD: 'NZ$',
 };
 
 function formatWithCurrency(raw: number | null, currency = 'USD'): string {
@@ -128,14 +132,32 @@ function formatWithCurrency(raw: number | null, currency = 'USD'): string {
 // Static approximate FX-to-USD rates. Good enough for the Firmographic
 // module's "USD Million unless >= $1B" display rule — this is a scale
 // indicator, not a precision financial conversion.
+// An unlisted currency used to fall through to a rate of 1, i.e. treated as
+// equal to the dollar — SEK 236B would have read as $236B rather than ~$22B.
+// Currencies common among US-listed ADRs are added; anything still missing
+// is now flagged by convertToUsd rather than silently priced at parity.
 const FX_TO_USD: Record<string, number> = {
   USD: 1, GBP: 1.27, EUR: 1.08, JPY: 0.0067, CAD: 0.73, AUD: 0.65,
   INR: 0.012, CHF: 1.13, CNY: 0.14, HKD: 0.128, SGD: 0.74, KRW: 0.00073,
+  SEK: 0.094, NOK: 0.093, DKK: 0.145, TWD: 0.031, BRL: 0.18, MXN: 0.054,
+  ZAR: 0.055, ILS: 0.27, NZD: 0.60, PLN: 0.25, THB: 0.028, IDR: 0.000062,
+  MYR: 0.22, PHP: 0.017, TRY: 0.029, SAR: 0.27, AED: 0.27,
 };
+
+export function hasFxRate(currency: string): boolean {
+  return currency.toUpperCase() in FX_TO_USD;
+}
 
 /** Converts a raw amount in its native currency to a raw USD number (no formatting). */
 export function convertToUsd(raw: number, currency = 'USD'): number {
-  const rate = FX_TO_USD[currency.toUpperCase()] ?? 1;
+  const cur = currency.toUpperCase();
+  const rate = FX_TO_USD[cur];
+  if (rate === undefined) {
+    // Still returns the native amount so callers do not break, but logged:
+    // this is exactly the silent 1:1 assumption that misreported SEK.
+    console.warn(`[fx] no USD rate for ${cur}; amount left unconverted`);
+    return raw;
+  }
   return raw * rate;
 }
 
@@ -146,7 +168,10 @@ export function convertToUsd(raw: number, currency = 'USD'): number {
 export function formatRevenueUSD(raw: number | null, currency = 'USD'): string {
   if (raw == null || isNaN(raw)) return 'N/A';
   const cur = currency.toUpperCase();
-  const rate = FX_TO_USD[cur] ?? 1;
+  // With no known rate, a "$" figure would be a guess. Show the native amount
+  // with its own currency code instead of pretending it is dollars.
+  if (FX_TO_USD[cur] === undefined) return formatWithCurrency(raw, cur);
+  const rate = FX_TO_USD[cur];
   const usd = raw * rate;
   const sign = usd < 0 ? '-' : '';
   const absUsd = Math.abs(usd);
@@ -285,7 +310,10 @@ async function readJsonBodyLimited<T>(res: import('node-fetch').Response, maxByt
 
 export interface AnnualFinancialsResult {
   companyInfo:      CompanyInfo;
+  /** Currency the financial statements are reported in. */
   currency:         string;
+  /** Currency the share price and market cap are quoted in; differs for ADRs. */
+  priceCurrency?:   string;
   revenueHistory:   RevenueDataPoint[];
   marginHistory:    MarginDataPoint[];
   plStatement:      FinancialStatementRow[];
@@ -386,8 +414,19 @@ export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<
     (yahooFinance as any).fundamentalsTimeSeries(ticker, { period1, module: 'cash-flow', type: 'annual' }, { validateResult: false }).catch(() => []),
   ]);
 
+  // Two different currencies, and they are not interchangeable. The share
+  // price (and so market cap) is quoted in the LISTING's currency; the
+  // financial statements are reported in the COMPANY's currency. For a home
+  // listing they match, which is why this went unnoticed. For a US-listed ADR
+  // they do not: Ericsson trades as ERIC in USD but reports in SEK, so
+  // labelling statements with the price currency rendered SEK 236.68B of
+  // revenue as "$236.68B" — roughly ten times its real USD value. The same
+  // applies to TSM (TWD), NVO (DKK), SONY and TM (JPY), BABA (CNY) and others.
   const priceCurrency: string = (r.price?.currency || 'USD').toUpperCase();
-  const currency = priceCurrency;
+  const financialCurrency: string = (
+    r.financialData?.financialCurrency || r.earnings?.financialCurrency || priceCurrency
+  ).toUpperCase();
+  const currency = financialCurrency;
 
   // ── Company info ──────────────────────────────────────────────────────────
   const sd = r.summaryDetail || {};
@@ -396,7 +435,7 @@ export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<
   const companyInfo: CompanyInfo = {
     name:          px.longName || px.shortName,
     exchange:      px.exchangeName,
-    marketCap:     sd.marketCap  ? formatWithCurrency(sd.marketCap, currency)  : undefined,
+    marketCap:     sd.marketCap  ? formatWithCurrency(sd.marketCap, priceCurrency)  : undefined,
     peRatio:       sd.trailingPE ? String(sd.trailingPE.toFixed(2))            : undefined,
     dividendYield: sd.dividendYield ? `${(sd.dividendYield * 100).toFixed(2)}%` : undefined,
     headquarters:  sp.city && sp.country ? `${sp.city}, ${sp.country}` : undefined,
@@ -532,7 +571,7 @@ export async function fetchYahooQuoteSummaryFinancials(ticker: string): Promise<
     });
 
   return {
-    companyInfo, currency, revenueHistory, marginHistory, plStatement,
+    companyInfo, currency, priceCurrency, revenueHistory, marginHistory, plStatement,
     balanceSheet: balanceSheet.length ? balanceSheet : undefined,
     cashFlow: cashFlow.length ? cashFlow : undefined,
     quarterlyHistory: quarterlyHistory.length ? quarterlyHistory : undefined,
