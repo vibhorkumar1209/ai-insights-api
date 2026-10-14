@@ -1309,13 +1309,23 @@ export interface GeminiSpendResult {
   itSpend: GeminiSpendLineResult;
   rdSpend: GeminiSpendLineResult;
   aiSpend: GeminiSpendLineResult;
+  marketingSpend?: GeminiSpendLineResult;   // optional on parse: a reply missing it is treated as not found
+  advertisingSpend?: GeminiSpendLineResult;
+}
+
+export interface SpendLookupResult {
+  itSpend: SpendLineItemInternal;
+  rdSpend: SpendLineItemInternal;
+  aiSpend: SpendLineItemInternal;
+  marketingSpend: SpendLineItemInternal;
+  advertisingSpend: SpendLineItemInternal;
 }
 
 function buildSpendPrompt(companyName: string, domainHint: string, geoHint: string, industry?: string, revenueUsdMillion?: number): string {
   const identityLine = domainHint || geoHint || industry || revenueUsdMillion != null
     ? `\nCOMPANY IDENTITY: "${companyName}"${domainHint}${geoHint}${industry ? `, operating in the ${industry} industry` : ''}${revenueUsdMillion != null ? ` with annual revenue of approximately $${revenueUsdMillion.toLocaleString()}M` : ''}. Company names are frequently shared by unrelated businesses — verify you are researching the specific company matching this domain/geography/industry/revenue scale before reporting any figure, not a similarly-named company elsewhere. If the company you find has a materially different revenue or industry than stated here, flag that discrepancy in the sourceContext rather than silently reporting mismatched data.\n`
     : '';
-  return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract three specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: IT Spend/Budget, R&D Spend/Budget, and AI Spend/Budget.
+  return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract five specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: IT Spend/Budget, R&D Spend/Budget, AI Spend/Budget, Marketing Spend/Budget, and Advertising Expense.
 ${identityLine}
 
 CRITICAL CONSTRAINT: You must only report a value if it is explicitly published by the company itself or by a top-tier analyst firm. Do NOT estimate, guess, or extrapolate.
@@ -1328,6 +1338,8 @@ DATA CATEGORIES:
 - IT Spend/Budget: Total annual corporate spend on information technology, software, cloud infrastructure, and digital systems.
 - R&D Spend/Budget: Total annual expense allocated to Research, Development, and Product Engineering.
 - AI Spend/Budget: The specific subset of budget allocated to Artificial Intelligence, Machine Learning, or generative AI initiatives.
+- Marketing Spend/Budget: Total annual marketing expense or budget (media, martech, agencies, events, content, marketing staff, brand and promotion). Report it only when the company states a MARKETING total (e.g. "marketing expenses", "marketing and promotion costs", "brand and marketing investment"). Do NOT report a combined "Sales and Marketing" or "Selling, General & Administrative" line as marketing spend — that includes sales compensation; mention it in sourceContext instead.
+- Advertising Expense: Annual advertising / advertising-and-promotion cost as disclosed in the financial statements or notes (US GAAP 10-K filers usually disclose "advertising costs" in the accounting-policies note; IFRS filers often in the notes on operating expenses). Report the advertising figure itself, not a broader marketing or SG&A line.
 
 RAW AMOUNT RULE (critical — applies whenever found=true): "valueRaw" must be the PLAIN UNABBREVIATED number in US Dollars (not millions, not billions, not any other currency). Example: if IT spend is "$19.8 billion", valueRaw is 19800000000. If a company reports in a non-USD currency, convert to USD at a recent exchange rate before setting valueRaw. "value" can be a human-readable figure for reference (in the currency you found it in), but valueRaw must always be the precise USD number.
 
@@ -1335,7 +1347,9 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
   "itSpend": { "found": true|false, "value": "<human-readable figure with currency and fiscal year, e.g. '$19.8 billion for FY2026', or omit if not found>", "valueRaw": <plain unabbreviated USD number per the rule above, or omit if not found>, "fiscalYear": "<e.g. FY2026, or omit if not found>", "sourceType": "<'Company Disclosure' OR the exact analyst firm name, or omit if not found>", "sourceContext": "<if found: a 1-2 sentence description or quote of how/where it was reported, proving validity. If NOT found: a brief explanation of how the company bundles this cost under standard accounting, e.g. 'The company does not break out IT spend as a separate line item; it is bundled inside Selling, General, and Administrative (SG&A) expenses.'>" },
   "rdSpend": { same shape as itSpend, for R&D Spend/Budget },
-  "aiSpend": { same shape as itSpend, for AI Spend/Budget }
+  "aiSpend": { same shape as itSpend, for AI Spend/Budget },
+  "marketingSpend": { same shape as itSpend, for Marketing Spend/Budget },
+  "advertisingSpend": { same shape as itSpend, for Advertising Expense }
 }
 
 If a category is not explicitly reported by a permitted source, set "found": false, omit "value"/"valueRaw"/"fiscalYear"/"sourceType", and use "sourceContext" to explain the accounting treatment. Do NOT fabricate a value under any circumstances.`;
@@ -1347,7 +1361,7 @@ export async function geminiSpendLookup(
   geography?: string,
   industry?: string,
   revenueUsdMillion?: number
-): Promise<GeminiSpendResult | null> {
+): Promise<SpendLookupResult | null> {
   const domainHint = domain ? ` (${domain})` : '';
   const geoHint = geography ? `, headquartered in ${geography}` : '';
   const prompt = buildSpendPrompt(companyName, domainHint, geoHint, industry, revenueUsdMillion);
@@ -1384,10 +1398,13 @@ export async function geminiSpendLookup(
       };
     };
 
+    const notReported: GeminiSpendLineResult = { found: false, sourceContext: 'Not covered by the research response.' };
     return {
       itSpend: normalize(parsed.itSpend),
       rdSpend: normalize(parsed.rdSpend),
       aiSpend: normalize(parsed.aiSpend),
+      marketingSpend: normalize(parsed.marketingSpend ?? notReported),
+      advertisingSpend: normalize(parsed.advertisingSpend ?? notReported),
     };
   } catch (err) {
     console.warn(`[gemini] Spend lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);

@@ -7,6 +7,7 @@ import {
   SpendCalculatorInput,
   ItSpendCalculatorResult,
   ErdSpendCalculatorResult,
+  MarketingSpendCalculatorResult,
 } from '@ai-insights/types';
 import { geminiSpendLookup } from './parallelAI';
 import {
@@ -27,7 +28,9 @@ import {
   computeErdCAGR,
   computeEmergingTechV2,
   getBaseYear,
+  resolveExclusionTierIndex,
 } from './itErdSpendCalculator';
+import { computeMarketingSpend, marketingTierLabel } from './marketingSpendCalculator';
 
 // ── Shared calculation core ───────────────────────────────────────────────────
 // One code path produces the numbers for all three entry points: the async research
@@ -134,6 +137,17 @@ export function calculateItSpend(input: SpendCalculatorInput): ItSpendCalculator
   return { applicable: true, revenueTier: core.tier, baseYear: core.baseYear, itSpend: core.itSpend };
 }
 
+/** Marketing Spend — 2022-2030 trend and the 91-line L1 -> L2 -> L3 breakdown. Kept out
+ *  of computeSpendCore: nothing in IT/ERD depends on it, or it on them. */
+export function calculateMarketingSpend(input: SpendCalculatorInput): MarketingSpendCalculatorResult {
+  const marketingSpend = computeMarketingSpend(input);
+  const revenueTier = marketingTierLabel(resolveExclusionTierIndex(input.revenueUsdMillion));
+  if (!marketingSpend) {
+    return { applicable: false, revenueTier, message: `No marketing spend benchmark data for industry "${input.industry}".` };
+  }
+  return { applicable: true, revenueTier, baseYear: getBaseYear(), marketingSpend };
+}
+
 /** ER&D Spend — available for the 14 engineering-heavy industries only. */
 export function calculateErdSpend(input: SpendCalculatorInput): ErdSpendCalculatorResult {
   const core = computeSpendCore(input);
@@ -216,7 +230,7 @@ export function getSpendJob(jobId: string): SpendResult | undefined {
 // live auto-classification/auto-lookup calls that can miss (as geminiRevenueLookup
 // occasionally did for some companies).
 //
-// Flow: research disclosed IT/R&D/AI spend (Gemini), then:
+// Flow: research disclosed IT/R&D/AI/marketing/advertising spend (one Gemini call), then:
 //   - IT base value  = disclosed IT spend if found, else Revenue × industry IT
 //     benchmark % (region + revenue-tier adjusted).
 //   - ERD base value = disclosed R&D spend if found, else Revenue × industry ERD
@@ -225,13 +239,16 @@ export function getSpendJob(jobId: string): SpendResult | undefined {
 //     (IT_LEVEL3_EXCLUSION) based on revenue tier + industry.
 //   - AI: disclosed research figure > ERD's "AI/ML & Data Engineering" line > formula.
 //   - Blockchain: always sourced from the IT breakdown's Digital Enterprise line.
+//   - Marketing total = disclosed marketing budget if found, else Revenue × industry
+//     marketing benchmark % (tier + HQ-region adjusted); a disclosed advertising
+//     figure pins the Media & Advertising group (see computeMarketingSpend).
 
 export async function runSpendJob(jobId: string, input: SpendInput): Promise<void> {
   try {
     let job = update(jobId, {
       status: 'researching',
       progress: 15,
-      currentStep: `Researching ${input.companyName}'s IT, R&D, and AI spend…`,
+      currentStep: `Researching ${input.companyName}'s IT, R&D, AI, and marketing spend…`,
     });
     emit(jobId, 'progress', job);
 
@@ -272,6 +289,16 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       }
     );
 
+    const usdMillionOf = (line: { found: boolean; valueRaw?: number }) =>
+      line.found && line.valueRaw ? line.valueRaw / 1_000_000 : undefined;
+    const marketingSpend = computeMarketingSpend(
+      { companyName: input.companyName, geography: input.geography, industry, revenueUsdMillion: revenueUsdM },
+      {
+        totalUsdMillion: usdMillionOf(spendResult.marketingSpend),
+        advertisingUsdMillion: usdMillionOf(spendResult.advertisingSpend),
+      }
+    );
+
     job = update(jobId, {
       status: 'complete',
       progress: 100,
@@ -280,10 +307,13 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       itSpendDisclosed: spendResult.itSpend,
       rdSpendDisclosed: spendResult.rdSpend,
       aiSpendDisclosed: spendResult.aiSpend,
+      marketingSpendDisclosed: spendResult.marketingSpend,
+      advertisingSpendDisclosed: spendResult.advertisingSpend,
       resolvedIndustry: industry,
       resolvedRegion: region,
       itSpend: core.itSpend,
       erdSpend: core.erdSpend,
+      marketingSpend: marketingSpend ?? undefined,
     });
     emit(jobId, 'result', job);
 

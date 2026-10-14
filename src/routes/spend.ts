@@ -8,6 +8,7 @@ import {
   unsubscribeFromJob,
   calculateItSpend,
   calculateErdSpend,
+  calculateMarketingSpend,
 } from '../services/spendService';
 import { SPEND_CALCULATOR_INDUSTRIES } from '../services/claudeAI';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
@@ -65,7 +66,7 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
 });
 
 // ── Synchronous calculator routes ────────────────────────────────────────────
-// POST /api/spend/it and POST /api/spend/erd return the industry-benchmark figures
+// POST /api/spend/it, /erd and /marketing return the industry-benchmark figures
 // in one round trip: no Gemini research, no job/SSE polling. They are declared
 // before GET /:jobId purely for readability — the methods differ, so there is no
 // route collision. No aiLimiter: neither route spends an AI call, so the global
@@ -123,6 +124,14 @@ router.post('/erd', (req: Request, res: Response) => {
   const parsed = parseCalculatorInput(req.body ?? {});
   if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
   res.json(calculateErdSpend(parsed.input));
+});
+
+// POST /api/spend/marketing — Marketing spend: 2022-2030 trend, 91-line L1 -> L2 -> L3
+// breakdown (revenue-tier and HQ-region adjusted), CAGR.
+router.post('/marketing', (req: Request, res: Response) => {
+  const parsed = parseCalculatorInput(req.body ?? {});
+  if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
+  res.json(calculateMarketingSpend(parsed.input));
 });
 
 // GET /api/spend/:jobId — snapshot

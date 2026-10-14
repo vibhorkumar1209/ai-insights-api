@@ -1603,6 +1603,33 @@ export interface ErdSpendPayload {
   erdCAGR_Historical: number;
 }
 
+export interface MarketingSpendTrendPoint {
+  year: number;
+  marketingYoY: number;
+  marketingSpend: number;   // USD millions
+  marketingPercent: number; // % of revenue
+}
+
+/** Marketing Spend payload — same shape conventions as ItSpendPayload: a nested
+ *  L1 -> L2 -> L3 breakdown (7 L1 / 27 L2 / 91 L3), a 2022-2030 trend and CAGR. */
+export interface MarketingSpendPayload {
+  region: string;              // one of the 16 marketing HQ regions, e.g. "UK & Ireland"
+  trends: MarketingSpendTrendPoint[];
+  country: string;
+  revenue: number;
+  industry: string;
+  companyName: string;
+  currencyInfo: SpendCurrencyInfo;
+  archetype: string;           // e.g. "B2B Technology" — drives how strongly revenue tier moves the %
+  revenueTier: string;         // one of the 7 marketing tiers, e.g. "T5 $1B–$5B"
+  pctOfRevenue: number;        // headline base-year marketing budget, % of revenue
+  totalSource: 'disclosed' | 'benchmark';       // where the headline total came from
+  advertisingSource: 'disclosed' | 'benchmark'; // where the Media & Advertising line came from
+  marketingBreakdown: SpendBreakdownNode[];
+  marketingCAGR_Forecast: number;
+  marketingCAGR_Historical: number;
+}
+
 // ── Synchronous calculator endpoints (POST /api/spend/it, POST /api/spend/erd) ──
 // Same numbers as the async research job's calculator half, minus the Gemini
 // disclosed-figure lookup — pure table maths, so they answer in one round trip.
@@ -1620,6 +1647,14 @@ export interface ItSpendCalculatorResult {
   revenueTier?: string;
   baseYear?: number;         // the year the breakdown dollars are anchored to
   itSpend?: ItSpendPayload;
+}
+
+export interface MarketingSpendCalculatorResult {
+  applicable: boolean;       // false only when the industry has no marketing benchmark row
+  message?: string;
+  revenueTier?: string;
+  baseYear?: number;
+  marketingSpend?: MarketingSpendPayload;
 }
 
 export interface ErdSpendCalculatorResult {
@@ -1642,11 +1677,14 @@ export interface SpendResult {
   itSpendDisclosed?: SpendLineItem; // disclosed-figure research result (renamed from itSpend to free that name for the V2 payload below)
   rdSpendDisclosed?: SpendLineItem;
   aiSpendDisclosed?: SpendLineItem;
+  marketingSpendDisclosed?: SpendLineItem;   // total marketing budget, when publicly disclosed
+  advertisingSpendDisclosed?: SpendLineItem; // advertising expense (the top-line marketing category most often disclosed)
   // ── Calculator-derived fields ──
   resolvedIndustry?: string;         // classified into one of 37 fixed industries, or undefined if unresolved
   resolvedRegion?: string;           // US | EU | APAC | ROW1 | ROW2
   itSpend?: ItSpendPayload;          // undefined if the industry has no IT benchmark data
   erdSpend?: ErdSpendPayload;        // undefined for the 23 industries with no ERD benchmark data
+  marketingSpend?: MarketingSpendPayload; // undefined only for saved results that predate the Marketing tab
   error?: string;
   createdAt: string;
   completedAt?: string;
