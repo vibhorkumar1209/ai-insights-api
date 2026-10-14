@@ -9,7 +9,7 @@ import {
   ErdSpendCalculatorResult,
   MarketingSpendCalculatorResult,
 } from '@ai-insights/types';
-import { geminiSpendLookup } from './parallelAI';
+import { geminiSpendLookup, geminiMarketingSpendLookup } from './parallelAI';
 import {
   resolveRegion,
   resolveRevenueTier,
@@ -230,7 +230,8 @@ export function getSpendJob(jobId: string): SpendResult | undefined {
 // live auto-classification/auto-lookup calls that can miss (as geminiRevenueLookup
 // occasionally did for some companies).
 //
-// Flow: research disclosed IT/R&D/AI/marketing/advertising spend (one Gemini call), then:
+// Flow: research disclosed IT/R&D/AI spend, then marketing/advertising spend (two
+// sequential Gemini calls), then:
 //   - IT base value  = disclosed IT spend if found, else Revenue × industry IT
 //     benchmark % (region + revenue-tier adjusted).
 //   - ERD base value = disclosed R&D spend if found, else Revenue × industry ERD
@@ -248,7 +249,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     let job = update(jobId, {
       status: 'researching',
       progress: 15,
-      currentStep: `Researching ${input.companyName}'s IT, R&D, AI, and marketing spend…`,
+      currentStep: `Researching ${input.companyName}'s IT, R&D, and AI spend…`,
     });
     emit(jobId, 'progress', job);
 
@@ -266,6 +267,19 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       emit(jobId, 'error', job);
       return;
     }
+
+    // Separate grounded search, run after the IT one rather than alongside it (the
+    // free-tier instance is memory-bound). A failure here only costs the disclosed
+    // marketing figures: the Marketing tab falls back to the benchmark.
+    job = update(jobId, {
+      progress: 40,
+      currentStep: `Researching ${input.companyName}'s marketing and advertising spend…`,
+    });
+    emit(jobId, 'progress', job);
+    const marketingResult = await geminiMarketingSpendLookup(input.companyName, input.companyDomain, input.geography, industry, revenueUsdM);
+    const marketingNotResearched = { found: false, sourceContext: 'Marketing research did not return a result; the figures below are the industry benchmark.' };
+    const marketingDisclosed = marketingResult?.marketingSpend ?? marketingNotResearched;
+    const advertisingDisclosed = marketingResult?.advertisingSpend ?? marketingNotResearched;
 
     job = update(jobId, {
       status: 'synthesizing',
@@ -294,8 +308,8 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     const marketingSpend = computeMarketingSpend(
       { companyName: input.companyName, geography: input.geography, industry, revenueUsdMillion: revenueUsdM },
       {
-        totalUsdMillion: usdMillionOf(spendResult.marketingSpend),
-        advertisingUsdMillion: usdMillionOf(spendResult.advertisingSpend),
+        totalUsdMillion: usdMillionOf(marketingDisclosed),
+        advertisingUsdMillion: usdMillionOf(advertisingDisclosed),
       }
     );
 
@@ -307,8 +321,8 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       itSpendDisclosed: spendResult.itSpend,
       rdSpendDisclosed: spendResult.rdSpend,
       aiSpendDisclosed: spendResult.aiSpend,
-      marketingSpendDisclosed: spendResult.marketingSpend,
-      advertisingSpendDisclosed: spendResult.advertisingSpend,
+      marketingSpendDisclosed: marketingDisclosed,
+      advertisingSpendDisclosed: advertisingDisclosed,
       resolvedIndustry: industry,
       resolvedRegion: region,
       itSpend: core.itSpend,
