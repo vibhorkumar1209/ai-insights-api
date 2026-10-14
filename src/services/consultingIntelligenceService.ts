@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ConsultingIntelligenceJob } from '@ai-insights/types';
-import { researchConsultingTLTopicBatches } from './parallelAI.js';
-import { synthesiseConsultingIntelligence } from './claudeAI.js';
+import { researchConsultingTLTopicBatches } from './parallelAI';
+import { synthesiseConsultingIntelligence } from './claudeAI';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ export async function runConsultingIntelligenceAnalysis(jobId: string): Promise<
     const researchHB = startHeartbeat(jobId, 11, 64, 'Researching thought leadership…');
     let researchBatches: Array<{ label: string; rawText: string }> = [];
     try {
-      const { runResearchQuery, getSearchRecencyInstruction } = await import('./parallelAI.js');
+      const { runResearchQuery, getSearchRecencyInstruction } = await import('./parallelAI');
       const recency = getSearchRecencyInstruction();
       const batchDefs = [
         { label: 'reports', query: `${recency}"${topic}" ${geography} research report analysis ${new Date().getFullYear() - 1} ${new Date().getFullYear()} site:mckinsey.com OR site:bcg.com OR site:bain.com OR site:deloitte.com OR site:pwc.com OR site:ey.com OR site:accenture.com OR site:kpmg.com` },

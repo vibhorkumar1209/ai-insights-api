@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { aiLimiter } from '../middleware/rateLimiter.js';
+import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createConsultingIntelligenceJob,
@@ -7,7 +7,7 @@ import {
   runConsultingIntelligenceAnalysis,
   subscribeToConsultingJob,
   unsubscribeFromConsultingJob,
-} from '../services/consultingIntelligenceService.js';
+} from '../services/consultingIntelligenceService';
 import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
