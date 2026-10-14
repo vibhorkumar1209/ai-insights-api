@@ -1314,6 +1314,7 @@ export interface GeminiSpendResult {
 export interface GeminiMarketingSpendResult {
   marketingSpend: GeminiSpendLineResult;
   advertisingSpend: GeminiSpendLineResult;
+  salesAndMarketingSpend?: GeminiSpendLineResult; // optional on parse: missing means not found, not a failed lookup
 }
 
 function spendIdentityLine(companyName: string, domainHint: string, geoHint: string, industry?: string, revenueUsdMillion?: number): string {
@@ -1359,7 +1360,7 @@ If a category is not explicitly reported by a permitted source, set "found": fal
 // the 45s Gemini timeout in production (Nike, 2026-10-14) and failed the whole job.
 function buildMarketingSpendPrompt(companyName: string, domainHint: string, geoHint: string, industry?: string, revenueUsdMillion?: number): string {
   const identityLine = spendIdentityLine(companyName, domainHint, geoHint, industry, revenueUsdMillion);
-  return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract two specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: Marketing Spend/Budget and Advertising Expense.
+  return `${getSearchRecencyInstruction()}You are an expert financial analyst and corporate intelligence researcher. Using Google Search, extract three specific metrics for "${companyName}"${domainHint}${geoHint} for the most recent fiscal year: Marketing Spend/Budget, Advertising Expense, and Sales & Marketing Expense.
 ${identityLine}
 
 CRITICAL CONSTRAINT: You must only report a value if it is explicitly published by the company itself or by a top-tier analyst firm. Do NOT estimate, guess, or extrapolate.
@@ -1371,13 +1372,15 @@ PERMITTED SOURCES:
 DATA CATEGORIES:
 - Marketing Spend/Budget: Total annual marketing expense or budget (media, martech, agencies, events, content, marketing staff, brand and promotion). Report it only when the company states a MARKETING total (e.g. "marketing expenses", "marketing and promotion costs", "demand creation expense", "brand and marketing investment"). Do NOT report a combined "Sales and Marketing" or "Selling, General & Administrative" line as marketing spend — that includes sales compensation; mention it in sourceContext instead.
 - Advertising Expense: Annual advertising / advertising-and-promotion cost as disclosed in the financial statements or notes (US GAAP 10-K filers usually disclose "advertising costs" in the accounting-policies note; IFRS filers often in the notes on operating expenses). Report the advertising figure itself, not a broader marketing or SG&A line.
+- Sales & Marketing Expense: The combined operating-expense line that covers BOTH selling and marketing, as reported on the income statement (e.g. "Sales and marketing", "Selling and marketing expenses", "Selling, marketing and distribution"). Do NOT report "Selling, General & Administrative" (it also contains general and administrative costs) — if SG&A is the only line, set found=false and say so in sourceContext.
 
 ${SPEND_RAW_AMOUNT_RULE}
 
 Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
   "marketingSpend": ${SPEND_LINE_SHAPE},
-  "advertisingSpend": { same shape as marketingSpend, for Advertising Expense }
+  "advertisingSpend": { same shape as marketingSpend, for Advertising Expense },
+  "salesAndMarketingSpend": { same shape as marketingSpend, for Sales & Marketing Expense }
 }
 
 If a category is not explicitly reported by a permitted source, set "found": false, omit "value"/"valueRaw"/"fiscalYear"/"sourceType", and use "sourceContext" to explain the accounting treatment. Do NOT fabricate a value under any circumstances.`;
@@ -1445,7 +1448,7 @@ export async function geminiMarketingSpendLookup(
   geography?: string,
   industry?: string,
   revenueUsdMillion?: number
-): Promise<{ marketingSpend: SpendLineItemInternal; advertisingSpend: SpendLineItemInternal } | null> {
+): Promise<{ marketingSpend: SpendLineItemInternal; advertisingSpend: SpendLineItemInternal; salesAndMarketingSpend: SpendLineItemInternal } | null> {
   const domainHint = domain ? ` (${domain})` : '';
   const geoHint = geography ? `, headquartered in ${geography}` : '';
   const prompt = buildMarketingSpendPrompt(companyName, domainHint, geoHint, industry, revenueUsdMillion);
@@ -1464,6 +1467,9 @@ export async function geminiMarketingSpendLookup(
     return {
       marketingSpend: normalizeSpendLine(parsed.marketingSpend),
       advertisingSpend: normalizeSpendLine(parsed.advertisingSpend),
+      salesAndMarketingSpend: normalizeSpendLine(
+        parsed.salesAndMarketingSpend ?? { found: false, sourceContext: 'Not covered by the research response.' }
+      ),
     };
   } catch (err) {
     console.warn(`[gemini] Marketing spend lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);

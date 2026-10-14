@@ -9,7 +9,7 @@ import {
   MARKETING_INDUSTRIES,
 } from '../data/marketingSpendData';
 import { resolveExclusionTierIndex, getBaseYear, ExclusionTier } from './itErdSpendCalculator';
-import { MarketingSpendPayload, MarketingSpendTrendPoint, SpendBreakdownNode } from '@ai-insights/types';
+import { MarketingSpendPayload, MarketingSpendTrendPoint, MarketingSalesCeiling, SpendBreakdownNode } from '@ai-insights/types';
 
 // ── Marketing Spend benchmark calculator ─────────────────────────────────────
 // Static-table maths, like the IT/ERD calculator — no research call. The source
@@ -197,9 +197,30 @@ function cagr(startValue: number, endValue: number, years: number): number {
 }
 
 export interface MarketingDisclosedOverrides {
-  totalUsdMillion?: number;       // disclosed total marketing budget — replaces the benchmark total
-  advertisingUsdMillion?: number; // disclosed advertising expense — pins the Media & Advertising L1 line
+  totalUsdMillion?: number;             // disclosed total marketing budget — replaces the benchmark total
+  advertisingUsdMillion?: number;       // disclosed advertising expense — pins the Media & Advertising L1 line
+  salesAndMarketingUsdMillion?: number; // disclosed Sales & Marketing line — caps a benchmark total
 }
+
+/**
+ * Most a benchmark marketing estimate may take of a disclosed Sales & Marketing line,
+ * by archetype. S&M also carries the sales force, whose share differs by business
+ * model: consumer brands spend S&M mostly on marketing, B2B firms mostly on sales
+ * headcount. Product decision 2026-10-14 (the source JSON has no such ratio) — it
+ * came from the benchmark putting Microsoft's marketing at $22.9B, 85% of its
+ * $26.7B Sales & Marketing line.
+ */
+export const MARKETING_SHARE_OF_SALES_AND_MARKETING: Record<string, number> = {
+  A1: 0.7, // B2C Mass Brand
+  A2: 0.7, // B2C Digital-First
+  A3: 0.7, // Retail (Omnichannel)
+  A4: 0.7, // B2C Regulated Financial
+  A5: 0.4, // B2B Technology
+  A6: 0.4, // B2B Services & Institutional
+  A7: 0.4, // B2B Industrial & Asset-Heavy
+  A8: 0.5, // Healthcare & Life Sciences
+  A9: 0.5, // Public, Non-Profit & Education
+};
 
 /**
  * Full Marketing Spend payload for the base year.
@@ -212,6 +233,11 @@ export interface MarketingDisclosedOverrides {
  *   rest of a disclosed total, or keep their benchmark dollars when no total was
  *   disclosed (the headline is then advertising + benchmark non-advertising).
  *   Advertising >= a disclosed total is contradictory, so it is ignored then.
+ * - Sales & Marketing disclosed and no marketing total: the estimate may not exceed
+ *   MARKETING_SHARE_OF_SALES_AND_MARKETING x S&M. Above it, the benchmark lines are
+ *   scaled down to the cap (a disclosed advertising line keeps its value). If the
+ *   disclosed advertising alone is at or above the cap the figures contradict each
+ *   other, so the cap is reported but not applied.
  *
  * Unlike the IT trend, the 2022-2030 trend is scaled by headline / benchmark so the
  * base-year point always equals the headline figure; the curve's shape and CAGR are
@@ -250,7 +276,24 @@ export function computeMarketingSpend(
     }
     return { ...r, usdMillion };
   });
-  const total = allocated.reduce((s, r) => s + r.usdMillion, 0);
+  let total = allocated.reduce((s, r) => s + r.usdMillion, 0);
+
+  let ceiling: MarketingSalesCeiling | undefined;
+  const salesAndMarketing = overrides.salesAndMarketingUsdMillion;
+  if (salesAndMarketing != null && salesAndMarketing > 0) {
+    const capShare = MARKETING_SHARE_OF_SALES_AND_MARKETING[row.archetype] ?? 0.5;
+    const capUsdMillion = salesAndMarketing * capShare;
+    const pinned = disclosedAdv ?? 0;
+    const applied = disclosedTotal == null && total > capUsdMillion && pinned < capUsdMillion;
+    if (applied) {
+      const free = allocated.filter((r) => !(disclosedAdv != null && isAdvertising(r)));
+      const freeSum = free.reduce((s, r) => s + r.usdMillion, 0);
+      const factor = freeSum > 0 ? (capUsdMillion - pinned) / freeSum : 1;
+      for (const r of free) r.usdMillion *= factor;
+      total = allocated.reduce((s, r) => s + r.usdMillion, 0);
+    }
+    ceiling = { salesAndMarketingUsdMillion: salesAndMarketing, capShare, capUsdMillion, applied };
+  }
 
   const scale = benchmarkTotal > 0 ? total / benchmarkTotal : 1;
   let prev: number | null = null;
@@ -273,8 +316,9 @@ export function computeMarketingSpend(
     archetype: MARKETING_ARCHETYPES[row.archetype] ?? row.archetypeName,
     revenueTier: marketingTierLabel(tierIdx),
     pctOfRevenue: revenueUsdMillion > 0 ? (total / revenueUsdMillion) * 100 : 0,
-    totalSource: disclosedTotal != null ? 'disclosed' : 'benchmark',
+    totalSource: disclosedTotal != null ? 'disclosed' : ceiling?.applied ? 'capped' : 'benchmark',
     advertisingSource: disclosedAdv != null ? 'disclosed' : 'benchmark',
+    ...(ceiling ? { salesAndMarketingCeiling: ceiling } : {}),
     marketingBreakdown: buildMarketingBreakdownTree(allocated, total),
     marketingCAGR_Historical: cagr(trends[0].marketingSpend, trends[baseIdx].marketingSpend, baseIdx),
     marketingCAGR_Forecast: cagr(trends[baseIdx].marketingSpend, trends[lastIdx].marketingSpend, lastIdx - baseIdx),

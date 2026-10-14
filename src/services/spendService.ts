@@ -242,7 +242,8 @@ export function getSpendJob(jobId: string): SpendResult | undefined {
 //   - Blockchain: always sourced from the IT breakdown's Digital Enterprise line.
 //   - Marketing total = disclosed marketing budget if found, else Revenue × industry
 //     marketing benchmark % (tier + HQ-region adjusted); a disclosed advertising
-//     figure pins the Media & Advertising group (see computeMarketingSpend).
+//     figure pins the Media & Advertising group, and a disclosed Sales & Marketing
+//     line caps a benchmark total (see computeMarketingSpend).
 
 export async function runSpendJob(jobId: string, input: SpendInput): Promise<void> {
   try {
@@ -280,6 +281,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
     const marketingNotResearched = { found: false, sourceContext: 'Marketing research did not return a result; the figures below are the industry benchmark.' };
     const marketingDisclosed = marketingResult?.marketingSpend ?? marketingNotResearched;
     const advertisingDisclosed = marketingResult?.advertisingSpend ?? marketingNotResearched;
+    const salesAndMarketingDisclosed = marketingResult?.salesAndMarketingSpend ?? marketingNotResearched;
 
     job = update(jobId, {
       status: 'synthesizing',
@@ -310,6 +312,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       {
         totalUsdMillion: usdMillionOf(marketingDisclosed),
         advertisingUsdMillion: usdMillionOf(advertisingDisclosed),
+        salesAndMarketingUsdMillion: usdMillionOf(salesAndMarketingDisclosed),
       }
     );
 
@@ -323,6 +326,7 @@ export async function runSpendJob(jobId: string, input: SpendInput): Promise<voi
       aiSpendDisclosed: spendResult.aiSpend,
       marketingSpendDisclosed: marketingDisclosed,
       advertisingSpendDisclosed: advertisingDisclosed,
+      salesAndMarketingDisclosed,
       resolvedIndustry: industry,
       resolvedRegion: region,
       itSpend: core.itSpend,
