@@ -167,6 +167,56 @@ describe('computeMarketingSpend', () => {
     expect(out.marketingBreakdown.reduce((s, n) => s + n.value, 0)).toBeCloseTo(400, 6);
   });
 
+  describe('Sales & Marketing ceiling', () => {
+    // Microsoft as researched live on 2026-10-14: advertising $2.7B, S&M $26.71B.
+    const MICROSOFT = { companyName: 'Microsoft', industry: 'Software', geography: 'Redmond, Washington, USA', revenueUsdMillion: 281724 };
+    const sumOf = (tree: SpendBreakdownNode[]) => tree.reduce((s, n) => s + n.value, 0);
+
+    it('caps a B2B benchmark at 40% of S&M, keeping disclosed advertising', () => {
+      const uncapped = computeMarketingSpend(MICROSOFT, { advertisingUsdMillion: 2700 })!;
+      expect(sumOf(uncapped.marketingBreakdown)).toBeGreaterThan(20000);
+
+      const out = computeMarketingSpend(MICROSOFT, { advertisingUsdMillion: 2700, salesAndMarketingUsdMillion: 26710 })!;
+      expect(out.totalSource).toBe('capped');
+      expect(out.salesAndMarketingCeiling).toEqual({ salesAndMarketingUsdMillion: 26710, capShare: 0.4, capUsdMillion: 10684, applied: true });
+      expect(sumOf(out.marketingBreakdown)).toBeCloseTo(10684, 6);
+      expect(l1Value(out.marketingBreakdown, MEDIA_AND_ADVERTISING)).toBeCloseTo(2700, 6);
+      expect(out.trends.find((t) => t.year === 2026)!.marketingSpend).toBeCloseTo(10684, 6);
+      expect(out.marketingBreakdown.reduce((s, n) => s + n.percentage, 0)).toBeCloseTo(100, 8);
+    });
+
+    it('uses 70% for B2C archetypes', () => {
+      const out = computeMarketingSpend(
+        { companyName: 'X', industry: 'Consumer Products', geography: 'USA', revenueUsdMillion: 46300 },
+        { salesAndMarketingUsdMillion: 2000 }
+      )!;
+      expect(out.salesAndMarketingCeiling!.capShare).toBe(0.7);
+      expect(sumOf(out.marketingBreakdown)).toBeCloseTo(1400, 6);
+    });
+
+    it('leaves a benchmark under the cap untouched', () => {
+      const bench = computeMarketingSpend(AIRBUS)!;
+      const out = computeMarketingSpend(AIRBUS, { salesAndMarketingUsdMillion: 100000 })!;
+      expect(out.totalSource).toBe('benchmark');
+      expect(out.salesAndMarketingCeiling!.applied).toBe(false);
+      expect(sumOf(out.marketingBreakdown)).toBeCloseTo(sumOf(bench.marketingBreakdown), 6);
+    });
+
+    it('never caps a disclosed marketing total', () => {
+      const out = computeMarketingSpend(MICROSOFT, { totalUsdMillion: 20000, salesAndMarketingUsdMillion: 26710 })!;
+      expect(out.totalSource).toBe('disclosed');
+      expect(out.salesAndMarketingCeiling!.applied).toBe(false);
+      expect(sumOf(out.marketingBreakdown)).toBeCloseTo(20000, 6);
+    });
+
+    it('skips the cap when disclosed advertising alone exceeds it', () => {
+      const out = computeMarketingSpend(MICROSOFT, { advertisingUsdMillion: 12000, salesAndMarketingUsdMillion: 26710 })!;
+      expect(out.salesAndMarketingCeiling!.applied).toBe(false);
+      expect(out.totalSource).toBe('benchmark');
+      expect(l1Value(out.marketingBreakdown, MEDIA_AND_ADVERTISING)).toBeCloseTo(12000, 6);
+    });
+  });
+
   it('returns null for an industry with no benchmark', () => {
     expect(computeMarketingSpend({ companyName: 'X', industry: 'Basket Weaving', revenueUsdMillion: 10 })).toBeNull();
   });

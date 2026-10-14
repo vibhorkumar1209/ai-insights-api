@@ -1623,8 +1623,9 @@ export interface MarketingSpendPayload {
   archetype: string;           // e.g. "B2B Technology" — drives how strongly revenue tier moves the %
   revenueTier: string;         // one of the 7 marketing tiers, e.g. "T5 $1B–$5B"
   pctOfRevenue: number;        // headline base-year marketing budget, % of revenue
-  totalSource: 'disclosed' | 'benchmark';       // where the headline total came from
+  totalSource: 'disclosed' | 'benchmark' | 'capped'; // 'capped' = benchmark held down by the Sales & Marketing ceiling
   advertisingSource: 'disclosed' | 'benchmark'; // where the Media & Advertising line came from
+  salesAndMarketingCeiling?: MarketingSalesCeiling; // present when a Sales & Marketing line was disclosed
   marketingBreakdown: SpendBreakdownNode[];
   marketingCAGR_Forecast: number;
   marketingCAGR_Historical: number;
@@ -1647,6 +1648,15 @@ export interface ItSpendCalculatorResult {
   revenueTier?: string;
   baseYear?: number;         // the year the breakdown dollars are anchored to
   itSpend?: ItSpendPayload;
+}
+
+/** Disclosed Sales & Marketing (which includes sales pay) bounds a benchmark
+ *  marketing estimate: marketing <= capShare x S&M. Never applied to a disclosed total. */
+export interface MarketingSalesCeiling {
+  salesAndMarketingUsdMillion: number;
+  capShare: number;          // 0.4 B2B / 0.5 healthcare & public / 0.7 B2C
+  capUsdMillion: number;
+  applied: boolean;          // true when the benchmark exceeded the cap and was scaled down to it
 }
 
 export interface MarketingSpendCalculatorResult {
@@ -1679,6 +1689,7 @@ export interface SpendResult {
   aiSpendDisclosed?: SpendLineItem;
   marketingSpendDisclosed?: SpendLineItem;   // total marketing budget, when publicly disclosed
   advertisingSpendDisclosed?: SpendLineItem; // advertising expense (the top-line marketing category most often disclosed)
+  salesAndMarketingDisclosed?: SpendLineItem; // combined Sales & Marketing line — a ceiling on the marketing estimate, never marketing itself
   // ── Calculator-derived fields ──
   resolvedIndustry?: string;         // classified into one of 37 fixed industries, or undefined if unresolved
   resolvedRegion?: string;           // US | EU | APAC | ROW1 | ROW2
