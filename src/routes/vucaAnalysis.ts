@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { aiLimiter } from '../middleware/rateLimiter.js';
+import { aiLimiter } from '../middleware/rateLimiter';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import {
   createVucaJob,
@@ -7,7 +7,7 @@ import {
   runVucaAnalysis,
   subscribeToVucaJob,
   unsubscribeFromVucaJob,
-} from '../services/vucaAnalysisService.js';
+} from '../services/vucaAnalysisService';
 import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();

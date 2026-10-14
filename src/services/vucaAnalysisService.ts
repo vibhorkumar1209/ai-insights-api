@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { VucaAnalysisJob } from '@ai-insights/types';
-import { runVucaSynthesis } from './claudeAI.js';
-import { runResearchQuery, getSearchRecencyInstruction } from './parallelAI.js';
+import { runVucaSynthesis } from './claudeAI';
+import { runResearchQuery, getSearchRecencyInstruction } from './parallelAI';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 
