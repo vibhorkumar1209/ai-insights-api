@@ -3,6 +3,7 @@ import { Readable } from 'stream';
 import { Competitor } from '@ai-insights/types';
 import { formatRevenueUSD } from './yahooFinance';
 import { logGeminiUsage, logParallelUsage, getCallerLabel } from './usageLogger';
+import { parseJsonRepairingQuotes } from '../utils/jsonRepair';
 
 // Returns a natural-language recency instruction to prepend to every research
 // query/prompt sent to a search or research engine (Parallel.AI, Gemini grounded
@@ -1095,7 +1096,7 @@ Return ONLY this JSON, no markdown fences:
   return { name: candidate.name, title: candidate.title, linkedinUrl: verification.linkedinUrl };
 }
 
-function parseGeminiJson<T>(text: string): Partial<T> | null {
+export function parseGeminiJson<T>(text: string): Partial<T> | null {
   // Strip markdown code fences if present
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gm, '').trim();
 
@@ -1106,8 +1107,11 @@ function parseGeminiJson<T>(text: string): Partial<T> | null {
 
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return null;
+  // Repairs an unescaped double quote inside a string value — grounded answers
+  // quote filings verbatim (Microsoft's 10-K advertising note, 2026-10-14), and
+  // one stray quote otherwise throws away the whole response.
   try {
-    return JSON.parse(jsonMatch[0]);
+    return parseJsonRepairingQuotes(jsonMatch[0]) as Partial<T>;
   } catch {
     return null;
   }
@@ -1325,6 +1329,8 @@ function spendIdentityLine(companyName: string, domainHint: string, geoHint: str
 
 const SPEND_RAW_AMOUNT_RULE = `RAW AMOUNT RULE (critical — applies whenever found=true): "valueRaw" must be the PLAIN UNABBREVIATED number in US Dollars (not millions, not billions, not any other currency). Example: if IT spend is "$19.8 billion", valueRaw is 19800000000. If a company reports in a non-USD currency, convert to USD at a recent exchange rate before setting valueRaw. "value" can be a human-readable figure for reference (in the currency you found it in), but valueRaw must always be the precise USD number.`;
 
+const SPEND_JSON_SAFETY = `JSON SAFETY: inside any JSON string value, never use a double quote character — when quoting a filing, write single quotes instead (e.g. 'Advertising costs are expensed as incurred'). An unescaped double quote inside a value invalidates the entire response.`;
+
 const SPEND_LINE_SHAPE = `{ "found": true|false, "value": "<human-readable figure with currency and fiscal year, e.g. '$19.8 billion for FY2026', or omit if not found>", "valueRaw": <plain unabbreviated USD number per the rule above, or omit if not found>, "fiscalYear": "<e.g. FY2026, or omit if not found>", "sourceType": "<'Company Disclosure' OR the exact analyst firm name, or omit if not found>", "sourceContext": "<if found: a 1-2 sentence description or quote of how/where it was reported, proving validity. If NOT found: a brief explanation of how the company bundles this cost under standard accounting, e.g. 'The company does not break out IT spend as a separate line item; it is bundled inside Selling, General, and Administrative (SG&A) expenses.'>" }`;
 
 function buildSpendPrompt(companyName: string, domainHint: string, geoHint: string, industry?: string, revenueUsdMillion?: number): string {
@@ -1344,6 +1350,8 @@ DATA CATEGORIES:
 - AI Spend/Budget: The specific subset of budget allocated to Artificial Intelligence, Machine Learning, or generative AI initiatives.
 
 ${SPEND_RAW_AMOUNT_RULE}
+
+${SPEND_JSON_SAFETY}
 
 Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
@@ -1375,6 +1383,8 @@ DATA CATEGORIES:
 - Sales & Marketing Expense: The combined operating-expense line that covers BOTH selling and marketing, as reported on the income statement (e.g. "Sales and marketing", "Selling and marketing expenses", "Selling, marketing and distribution"). Do NOT report "Selling, General & Administrative" (it also contains general and administrative costs) — if SG&A is the only line, set found=false and say so in sourceContext.
 
 ${SPEND_RAW_AMOUNT_RULE}
+
+${SPEND_JSON_SAFETY}
 
 Return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 {
@@ -1460,16 +1470,16 @@ export async function geminiMarketingSpendLookup(
       return null;
     }
     const parsed = parseGeminiJson<GeminiMarketingSpendResult>(text);
-    if (!parsed || !parsed.marketingSpend || !parsed.advertisingSpend) {
-      console.warn(`[gemini] Marketing spend lookup for ${companyName} — unparseable or incomplete response: ${text.slice(0, 200)}`);
+    if (!parsed || (!parsed.marketingSpend && !parsed.advertisingSpend && !parsed.salesAndMarketingSpend)) {
+      console.warn(`[gemini] Marketing spend lookup for ${companyName} — unparseable response (${text.length} chars): ${text.slice(0, 200)}`);
       return null;
     }
+    // A line the reply left out counts as not found; it does not void the others.
+    const missing: GeminiSpendLineResult = { found: false, sourceContext: 'Not covered by the research response.' };
     return {
-      marketingSpend: normalizeSpendLine(parsed.marketingSpend),
-      advertisingSpend: normalizeSpendLine(parsed.advertisingSpend),
-      salesAndMarketingSpend: normalizeSpendLine(
-        parsed.salesAndMarketingSpend ?? { found: false, sourceContext: 'Not covered by the research response.' }
-      ),
+      marketingSpend: normalizeSpendLine(parsed.marketingSpend ?? missing),
+      advertisingSpend: normalizeSpendLine(parsed.advertisingSpend ?? missing),
+      salesAndMarketingSpend: normalizeSpendLine(parsed.salesAndMarketingSpend ?? missing),
     };
   } catch (err) {
     console.warn(`[gemini] Marketing spend lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);
