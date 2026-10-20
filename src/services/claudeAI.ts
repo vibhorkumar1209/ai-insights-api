@@ -225,6 +225,13 @@ export interface WebResearchOptions {
   maxSearches?: number;
   maxFetches?: number;
   maxContentTokensPerFetch?: number;
+  /**
+   * Use the original web_search tool instead of the 20260209 versions. Those
+   * newer tools filter results with code execution, which measured ~40s per
+   * step; a multi-step lookup (the Business Segment dossier) never finished.
+   * The original tool is search only, so no page fetches.
+   */
+  legacySearch?: boolean;
   timeoutMs?: number;
   source?: string;
 }
@@ -236,12 +243,12 @@ export async function claudeWithWebResearch(
   const observedUrls = new Set<string>();
   const maxFetches = opts.maxFetches ?? 2;
   const tools: Record<string, unknown>[] = [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: opts.maxSearches ?? 2 },
+    { type: opts.legacySearch ? 'web_search_20250305' : 'web_search_20260209', name: 'web_search', max_uses: opts.maxSearches ?? 2 },
   ];
   // maxFetches 0 means search only. Used for the retry below: fetching a site
   // that blocks automated readers can stall rather than refuse cleanly, while
   // search never touches that site at all.
-  if (maxFetches > 0) {
+  if (maxFetches > 0 && !opts.legacySearch) {
     tools.push({ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: maxFetches, max_content_tokens: opts.maxContentTokensPerFetch ?? 3000 });
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
