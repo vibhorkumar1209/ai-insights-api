@@ -144,13 +144,27 @@ OUTPUT: plain text notes, one block per segment, figures and fiscal years exactl
 Finish with one last line in exactly this form, largest segment first, at most ${MAX_SEGMENTS} names:
 SEGMENT_LIST_JSON: ["Segment A","Segment B"]`;
 
-  const first = await claudeWithWebResearch(SYSTEM_RESEARCH, stage1, 6000, SYNTHESIS_MODEL, {
-    maxSearches: 6,
-    maxFetches: 4,
-    maxContentTokensPerFetch: 5000,
-    timeoutMs: 200_000,
-    source: 'businessSegment.research.segments',
-  });
+  // Fetching an annual report can stall rather than fail cleanly (the same
+  // pattern Biz Descrip hit), and the first full run of this module aborted at
+  // the time budget. A second, search-only attempt never touches a slow site.
+  let first: Awaited<ReturnType<typeof claudeWithWebResearch>>;
+  try {
+    first = await claudeWithWebResearch(SYSTEM_RESEARCH, stage1, 6000, SYNTHESIS_MODEL, {
+      maxSearches: 5,
+      maxFetches: 3,
+      maxContentTokensPerFetch: 4000,
+      timeoutMs: 180_000,
+      source: 'businessSegment.research.segments',
+    });
+  } catch (err) {
+    console.warn('[businessSegment] segment map with fetch failed, retrying search-only:', err instanceof Error ? err.message : err);
+    first = await claudeWithWebResearch(SYSTEM_RESEARCH, stage1, 6000, SYNTHESIS_MODEL, {
+      maxSearches: 6,
+      maxFetches: 0,
+      timeoutMs: 150_000,
+      source: 'businessSegment.research.segments.searchOnly',
+    });
+  }
 
   const urls = new Set(first.urls);
   const issues: string[] = [];
