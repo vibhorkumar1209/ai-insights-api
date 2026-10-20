@@ -598,14 +598,46 @@ const BIZ_DESCRIP_UNKNOWN = 'No business description can be ascertained.';
 // with first-person process talk is removed, so a genuine profile — which is
 // written in the third person about the company — is never touched.
 const NARRATION_OPENER = /^(i|i'll|i will|i've|i have|i now|let me|now i|okay|ok|great|based on (my|the) (research|search|findings))\b/i;
+//
+// The model also self-reports its own checks ("Word count is 180, within the
+// 100-200 limit. Here is the profile:") ahead of, or after, the profile. That
+// is process talk, never part of a description, so it is removed from both
+// ends. Patterns are anchored to the start/end and require the phrase itself
+// ("word count", "here is ...:"), so profile prose is not touched.
+const META_LEAD = [
+  /^\s*[^\n.]*\bword count\b[^\n.]*(?:\.|\n|$)\s*/i,
+  /^\s*here(?:'s| is| are)\b[^\n:]{0,80}:\s*/i,
+  /^\s*(?:the )?(?:final )?(?:profile|description)\s*:\s*/i,
+  /^\s*(?:---+|\*\*\*+)\s*/,
+];
+const META_TRAIL = [
+  /\s*\(?\s*word count\b[^\n)]*\)?\.?\s*$/i,
+  /\s*\(\s*\d+\s*words?\s*\)\.?\s*$/i,
+];
+export function stripBizDescripMeta(text: string): string {
+  let out = text.trim();
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const re of META_LEAD) {
+      const next = out.replace(re, '');
+      if (next !== out) { out = next.trim(); changed = true; }
+    }
+    for (const re of META_TRAIL) {
+      const next = out.replace(re, '');
+      if (next !== out) { out = next.trim(); changed = true; }
+    }
+  }
+  return out;
+}
+
 export function stripLeadingNarration(text: string): string {
-  const paragraphs = text.trim().split(/\n\s*\n/);
+  const paragraphs = stripBizDescripMeta(text).split(/\n\s*\n/);
   while (paragraphs.length > 1) {
     const first = paragraphs[0].trim();
     if (first.split(/\s+/).length > 25 || !NARRATION_OPENER.test(first)) break;
     paragraphs.shift();
   }
-  return paragraphs.join('\n\n').trim();
+  return stripBizDescripMeta(paragraphs.join('\n\n'));
 }
 
 function isBizDescripUnknown(text: string): boolean {
@@ -671,7 +703,7 @@ export async function generateBizDescrip(
 
 Using only your own training knowledge (no external research is performed for this module), write a 100-200 word description of what this company does.
 
-WORD COUNT IS A HARD LIMIT: 100-200 words. Count before finalizing — trim detail if over, add a genuinely relevant fact (not filler) if under.
+WORD COUNT IS A HARD LIMIT: 100-200 words. Count silently before finalizing — trim detail if over, add a genuinely relevant fact (not filler) if under. Never mention the word count, and output ONLY the description itself: no preamble such as "Here is the profile".
 
 Cover, in flowing prose (not a checklist):
 - Core products and services — its primary lines of business; name the most significant ones rather than an exhaustive list
@@ -684,7 +716,7 @@ If you are not confident which specific company this refers to, or lack enough t
 
   const systemPrompt = `You are a business intelligence analyst who writes concise, accurate company descriptions from training knowledge alone — this module has no live research or web access, so never imply otherwise (never say "according to their website," "as listed on LinkedIn," etc.) and never invent a specific figure or fact you are not confident of. If you cannot confidently identify or describe the company, respond with exactly: "No business description can be ascertained." — nothing else. Write in natural business language without hyphens, dashes, or arrows in sentences (use "and" instead of "/" or "&", write dates as "2024 to 2025" not "2024–2025"). ${getRecencyDirective()} ${WRITING_DIRECTIVE}`;
 
-  const known = (await claudeCreateDirect(systemPrompt, userPrompt, 1200, SYNTHESIS_MODEL)).trim();
+  const known = stripLeadingNarration(await claudeCreateDirect(systemPrompt, userPrompt, 1200, SYNTHESIS_MODEL));
   if (!isBizDescripUnknown(known)) return known;
 
   // Tier 1 could not place the company — go and look instead of giving up.
