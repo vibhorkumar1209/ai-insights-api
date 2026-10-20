@@ -71,3 +71,14 @@ describe('sanitizeBattlecard', () => {
     expect(out.comparison).toHaveLength(1);
   });
 });
+
+describe('parseSegmentList', () => {
+  const { parseSegmentList } = require('../services/businessSegmentAI');
+  it('reads the trailing JSON list', () => {
+    expect(parseSegmentList('notes...\nSEGMENT_LIST_JSON: ["Wealth","Insurance"]')).toEqual(['Wealth', 'Insurance']);
+  });
+  it('returns an empty list when absent or malformed', () => {
+    expect(parseSegmentList('no list here')).toEqual([]);
+    expect(parseSegmentList('SEGMENT_LIST_JSON: [oops]')).toEqual([]);
+  });
+});

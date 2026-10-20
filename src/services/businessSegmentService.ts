@@ -61,7 +61,10 @@ export async function runBusinessSegment(jobId: string, input: BusinessSegmentIn
     updateJob(jobId, { ...base, status: 'researching', progress: 10, currentStep: `Researching ${input.companyName}'s segments and leadership...` });
     emit(jobId, 'progress', { ...jobs.get(jobId) });
 
-    const { notes, urls } = await researchSegmentDossier(input);
+    const { notes, urls } = await researchSegmentDossier(input, (step, progress) => {
+      updateJob(jobId, { currentStep: step, progress });
+      emit(jobId, 'progress', { ...jobs.get(jobId) });
+    });
     if (!notes || notes.trim().length < 80) {
       throw new Error('Research returned nothing usable for this company. Check the name and domain and try again.');
     }

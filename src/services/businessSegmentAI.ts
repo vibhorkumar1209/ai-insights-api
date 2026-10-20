@@ -97,27 +97,98 @@ export function sanitizeDossier(
 
 const SYSTEM_RESEARCH = `You are an institutional equity research analyst and corporate intelligence specialist. You build company dossiers STRICTLY from web sources you retrieve yourself with your tools. Every fact must come from a page you actually read or a search result you actually saw. Never use memory for names, figures or URLs, never invent anything, and never write a URL you did not see in a tool result. ${getRecencyDirective()}`;
 
-export async function researchSegmentDossier(input: BusinessSegmentInput): Promise<{ notes: string; urls: string[] }> {
+// Research is split in two on purpose. One call that had to find every segment
+// AND every segment's leaders ran past its time budget on a large company
+// (Franklin Templeton: aborted at 270s with nothing returned). Stage 1 maps the
+// segments quickly; stage 2 then researches each segment's leaders and
+// financials in its own bounded call, a few at a time, so a slow or failed
+// segment degrades to "NOT FOUND" for that segment instead of losing the lot.
+const MAX_SEGMENTS = 8;
+const SEGMENT_CONCURRENCY = 3;
+
+export function parseSegmentList(notes: string): string[] {
+  const m = notes.match(/SEGMENT_LIST_JSON:\s*(\[[\s\S]*?\])/);
+  if (!m) return [];
+  try {
+    const arr = JSON.parse(m[1]);
+    return Array.isArray(arr) ? arr.map((x) => str(x)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function inBatches<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
+  }
+  return out;
+}
+
+export async function researchSegmentDossier(
+  input: BusinessSegmentInput,
+  onProgress?: (step: string, progress: number) => void
+): Promise<{ notes: string; urls: string[] }> {
   const site = /^https?:\/\//i.test(input.companyDomain) ? input.companyDomain : `https://${input.companyDomain}`;
-  const user = `TARGET COMPANY: "${input.companyName}", website ${site}${input.linkedinUrl ? `, parent LinkedIn page ${input.linkedinUrl}` : ''}.
+  const identity = `TARGET COMPANY: "${input.companyName}", website ${site}${input.linkedinUrl ? `, parent LinkedIn page ${input.linkedinUrl}` : ''}.
+Company names are often shared by unrelated businesses. Only use sources clearly about the company at ${input.companyDomain}.`;
 
-Company names are often shared by unrelated businesses. Only use sources clearly about the company at ${input.companyDomain}.
+  // ── Stage 1: the segment map ──
+  const stage1 = `${identity}
 
-RESEARCH, in this order:
-1. Find the company's reporting or business segments and major subsidiaries. Best sources: the latest annual report or investor relations page, then the website's About, Business or Solutions pages. If the company reports no segments, treat the whole company as one segment.
-2. For each segment capture: what it does and for whom, its share of revenue (%) or assets under management, the latest revenue, net income or AUM with the fiscal year, its main products or services, its own webpage, and its own LinkedIn page if it has a separate one.
-3. For each segment find the top 3 to 4 executive leaders (for example CEO, CIO, head of distribution, head of a business line): full name, exact current title, a one-line background, and their LinkedIn profile if a search result or page showed it.
+Find the company's reporting or business segments and major subsidiaries. Best sources: the latest annual report or investor relations page, then the website's About, Business or Solutions pages. If the company reports no segments, treat the whole company as one segment.
 
-OUTPUT: plain text research notes, one block per segment, with the figures and fiscal years exactly as the source states them. After each fact that has a URL, write that URL. Write "NOT FOUND" for anything you could not verify. Do not pad, do not speculate. Keep names and titles exactly as published.`;
+For each segment capture: what it does and for whom, its share of revenue (%) or assets under management, the latest revenue, net income or AUM with the fiscal year, its main products or services, its own webpage, and its own LinkedIn page if it has a separate one.
 
-  const { text, urls } = await claudeWithWebResearch(SYSTEM_RESEARCH, user, 12000, SYNTHESIS_MODEL, {
-    maxSearches: 15,
-    maxFetches: 6,
+OUTPUT: plain text notes, one block per segment, figures and fiscal years exactly as the source states them, with the URL after each fact that has one. Write "NOT FOUND" for anything you could not verify. Do not speculate.
+Finish with one last line in exactly this form, largest segment first, at most ${MAX_SEGMENTS} names:
+SEGMENT_LIST_JSON: ["Segment A","Segment B"]`;
+
+  const first = await claudeWithWebResearch(SYSTEM_RESEARCH, stage1, 6000, SYNTHESIS_MODEL, {
+    maxSearches: 6,
+    maxFetches: 4,
     maxContentTokensPerFetch: 5000,
-    timeoutMs: 270_000,
-    source: 'businessSegment.research',
+    timeoutMs: 200_000,
+    source: 'businessSegment.research.segments',
   });
-  return { notes: text, urls };
+
+  const urls = new Set(first.urls);
+  let names = parseSegmentList(first.text).slice(0, MAX_SEGMENTS);
+  if (names.length === 0) names = [input.companyName];
+  let notes = first.text.replace(/SEGMENT_LIST_JSON:[\s\S]*$/, '').trim();
+
+  // ── Stage 2: leaders and segment detail, a few segments at a time ──
+  let done = 0;
+  const blocks = await inBatches(names, SEGMENT_CONCURRENCY, async (name) => {
+    try {
+      const r = await claudeWithWebResearch(SYSTEM_RESEARCH, `${identity}
+
+SEGMENT: "${name}"
+
+Find the top 3 to 4 executive leaders of this specific segment (for example its CEO or president, CIO, head of distribution, head of a product line). For each give: full name, exact current title, a one-line background, and their LinkedIn profile URL ONLY if a search result or page you retrieved showed it. If the segment has no separate leadership, give the parent company's senior executives responsible for it and say so.
+Also confirm this segment's latest revenue, net income or AUM with the fiscal year, and its own webpage or LinkedIn page if it has one.
+
+OUTPUT: short plain text notes, with the URL after each fact that has one. Write "NOT FOUND" for anything you could not verify. Keep names and titles exactly as published.`,
+        3000, SYNTHESIS_MODEL, {
+          maxSearches: 4,
+          maxFetches: 2,
+          maxContentTokensPerFetch: 4000,
+          timeoutMs: 150_000,
+          source: 'businessSegment.research.segment',
+        });
+      r.urls.forEach((u) => urls.add(u));
+      return `### LEADERS AND DETAIL: ${name}\n${r.text}`;
+    } catch (err) {
+      console.warn(`[businessSegment] research for segment "${name}" failed:`, err instanceof Error ? err.message : err);
+      return `### LEADERS AND DETAIL: ${name}\nNOT FOUND (research for this segment did not complete)`;
+    } finally {
+      done += 1;
+      onProgress?.(`Researched ${done} of ${names.length} segments...`, 15 + Math.round((done / names.length) * 45));
+    }
+  });
+
+  notes = [notes, ...blocks].join('\n\n');
+  return { notes, urls: [...urls] };
 }
 
 export async function structureSegmentDossier(
