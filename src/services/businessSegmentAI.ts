@@ -150,18 +150,18 @@ SEGMENT_LIST_JSON: ["Segment A","Segment B"]`;
   let first: Awaited<ReturnType<typeof claudeWithWebResearch>>;
   try {
     first = await claudeWithWebResearch(SYSTEM_RESEARCH, stage1, 6000, SYNTHESIS_MODEL, {
-      maxSearches: 5,
+      maxSearches: 4,
       maxFetches: 3,
       maxContentTokensPerFetch: 4000,
-      timeoutMs: 180_000,
+      timeoutMs: 300_000,
       source: 'businessSegment.research.segments',
     });
   } catch (err) {
     console.warn('[businessSegment] segment map with fetch failed, retrying search-only:', err instanceof Error ? err.message : err);
     first = await claudeWithWebResearch(SYSTEM_RESEARCH, stage1, 6000, SYNTHESIS_MODEL, {
-      maxSearches: 6,
+      maxSearches: 5,
       maxFetches: 0,
-      timeoutMs: 150_000,
+      timeoutMs: 200_000,
       source: 'businessSegment.research.segments.searchOnly',
     });
   }
