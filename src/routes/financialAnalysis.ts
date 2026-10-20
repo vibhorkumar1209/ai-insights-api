@@ -1,3 +1,4 @@
+import { getReportPayload } from '../services/reportsAggregatorService';
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import {
@@ -53,9 +54,23 @@ router.post('/', aiLimiter, (req: Request, res: Response): void => {
 });
 
 // ── GET /api/financial-analysis/:jobId ───────────────────────────────────────
+// Jobs live in memory, so a restart (any deploy, any free-tier spin-down)
+// deletes them. The RefractOne .NET API polls this endpoint, throws on a 404,
+// and retries the same job every 60s indefinitely. A lost job is therefore
+// answered as a terminal job state (200, status "error") that any poller
+// already knows how to stop on, and a job that finished and was archived is
+// still served from the archive instead of being reported missing.
 router.get('/:jobId', (req: Request, res: Response): void => {
-  const job = getFinancialJob(req.params.jobId);
-  if (!job) { res.status(404).json({ error: 'Job not found' }); return; }
+  const job = getFinancialJob(req.params.jobId) ?? getReportPayload(req.params.jobId);
+  if (!job) {
+    res.json({
+      jobId: req.params.jobId,
+      status: 'error',
+      progress: 0,
+      error: 'Job not found: it expired or was lost in a server restart before it finished. Start a new analysis.',
+    });
+    return;
+  }
   res.json(job);
 });
 
