@@ -103,7 +103,7 @@ const SYSTEM_RESEARCH = `You are an institutional equity research analyst and co
 // segments quickly; stage 2 then researches each segment's leaders and
 // financials in its own bounded call, a few at a time, so a slow or failed
 // segment degrades to "NOT FOUND" for that segment instead of losing the lot.
-const MAX_SEGMENTS = 8;
+const MAX_SEGMENTS = 10;
 const SEGMENT_CONCURRENCY = 3;
 
 export function parseSegmentList(notes: string): string[] {
@@ -181,7 +181,7 @@ SEGMENT_LIST_JSON: ["Segment A","Segment B"]`;
 
 SEGMENT: "${name}"
 
-Find the top 3 to 4 executive leaders of this specific segment (for example its CEO or president, CIO, head of distribution, head of a product line). For each give: full name, exact current title, a one-line background, and their LinkedIn profile URL ONLY if a search result or page you retrieved showed it. If the segment has no separate leadership, give the parent company's senior executives responsible for it and say so.
+Find the top 3 to 4 CURRENT executive leaders of this specific segment (skip anyone who has left or retired) (for example its CEO or president, CIO, head of distribution, head of a product line). For each give: full name, exact current title, a one-line background, and their LinkedIn profile URL ONLY if a search result or page you retrieved showed it. If the segment has no separate leadership, give the parent company's senior executives responsible for it and say so.
 Also confirm this segment's latest revenue, net income or AUM with the fiscal year, and its own webpage or LinkedIn page if it has one.
 
 OUTPUT: short plain text notes, with the URL after each fact that has one. Write "NOT FOUND" for anything you could not verify. Keep names and titles exactly as published.`,
@@ -237,7 +237,8 @@ Return JSON of exactly this shape:
 
 RULES
 - Include every major segment and subsidiary the notes identify, ordered by revenue contribution, largest first.
-- 3 to 4 leaders per segment, but ONLY people named in the notes. Return fewer, or an empty list, rather than guess a name or title.
+- 3 to 4 leaders per segment, but ONLY people named in the notes who currently hold the role. Leave out former executives.
+- At most 10 segments in total. Return fewer, or an empty list, rather than guess a name or title.
 - A URL field must be copied exactly from the URL list. If the notes did not surface one, return "". Never construct a URL.
 - Never invent a figure. If the notes give none, use "Not disclosed" or "Not publicly disclosed".
 - No marketing language, no filler. Single quotes inside strings, never double quotes.`;
