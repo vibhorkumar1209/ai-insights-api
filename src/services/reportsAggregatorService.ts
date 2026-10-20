@@ -3,6 +3,7 @@ import { getJob as getBenchmarkJob } from './benchmarkService';
 import { getBusinessDescriptionJob } from './businessDescriptionService';
 import { getBizDescripJob } from './bizDescripService';
 import { getBusinessSegmentJob } from './businessSegmentService';
+import { getCorporateSubsidiaryJob } from './corporateSubsidiaryService';
 import { getBusinessSegmentsJob } from './businessSegmentsService';
 import { getBusinessTimelinesJob } from './businessTimelinesService';
 import { getChallengesGrowthJob } from './challengesGrowthService';
@@ -45,6 +46,7 @@ const GETTERS: Record<string, (jobId: string) => any> = {
   'biz-descrip': getBizDescripJob,
   'business-segments': getBusinessSegmentsJob,
   'business-segment': getBusinessSegmentJob,
+  'corporate-subsidiary': getCorporateSubsidiaryJob,
   'business-timelines': getBusinessTimelinesJob,
   'challenges-growth': getChallengesGrowthJob,
   'competition-benchmarking': getCompetitionBenchmarkingJob,

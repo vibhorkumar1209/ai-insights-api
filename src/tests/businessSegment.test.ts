@@ -82,3 +82,24 @@ describe('parseSegmentList', () => {
     expect(parseSegmentList('SEGMENT_LIST_JSON: [oops]')).toEqual([]);
   });
 });
+
+describe('sanitizeEntities', () => {
+  const { sanitizeEntities } = require('../services/businessSegmentAI');
+  it('keeps verified links, falls back to parent, and dedupes legal names', () => {
+    const out = sanitizeEntities({
+      entities: [
+        { legalName: 'Acme Advisers, LLC', webpageUrl: 'https://acme.com/advisers', linkedinUrl: 'https://www.linkedin.com/company/invented', entityType: 'Registered Investment Adviser', specificFunction: 'Manages AUM' },
+        { legalName: 'acme advisers, llc', entityType: 'dup' },
+        { legalName: '', entityType: 'nameless' },
+        { legalName: 'Acme IP Holdings Ltd' },
+      ],
+    }, ['https://acme.com/advisers'], input);
+    expect(out).toHaveLength(2);
+    expect(out[0].webpageUrl).toBe('https://acme.com/advisers');
+    expect(out[0].webpageIsParent).toBe(false);
+    expect(out[0].linkedinUrl).toBe(input.linkedinUrl);
+    expect(out[0].linkedinIsParent).toBe(true);
+    expect(out[1].webpageUrl).toBe('https://acme.com');
+    expect(out[1].entityType).toBe('Not disclosed');
+  });
+});

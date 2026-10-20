@@ -1344,6 +1344,43 @@ export interface BusinessSegmentResult {
   completedAt?: string;
 }
 
+// ── Corporate Subsidiary (corporate family tree) ─────────────────────────────
+// Lists the separate legal entities under a company. The user then picks one
+// entity and runs the Business Segment dossier on it.
+
+export interface CorporateSubsidiaryInput {
+  companyName: string;
+  companyDomain: string;
+  linkedinUrl?: string;
+}
+
+export interface CorporateEntity {
+  /** Full legal name, e.g. "Franklin Advisers, Inc." */
+  legalName: string;
+  /** Entity's own page or registry profile; the parent site when integrated (see webpageIsParent). */
+  webpageUrl: string;
+  webpageIsParent: boolean;
+  /** Only a URL the research actually saw; empty when none was found. */
+  linkedinUrl: string;
+  linkedinIsParent: boolean;
+  entityType: string;
+  specificFunction: string;
+}
+
+export interface CorporateSubsidiaryResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName?: string;
+  companyDomain?: string;
+  linkedinUrl?: string;
+  entities?: CorporateEntity[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface FirmographicResult {
   jobId: string;
   status: 'pending' | 'detecting' | 'fetching' | 'enriching' | 'complete' | 'error';

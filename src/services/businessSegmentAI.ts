@@ -1,5 +1,5 @@
 import {
-  BusinessSegmentInput, SegmentDossierEntry, SegmentLeader,
+  BusinessSegmentInput, SegmentDossierEntry, SegmentLeader, CorporateEntity,
   BattlecardInput, BattlecardComparisonRow,
 } from '@ai-insights/types';
 import {
@@ -329,4 +329,101 @@ Give 5 to 7 comparison rows. Single quotes inside strings, never double quotes. 
     );
     return sanitizeBattlecard(parseJsonRobust(reshaped));
   }
+}
+
+// ── Corporate Subsidiary: the corporate family tree ──────────────────────────
+
+const MAX_ENTITIES = 25;
+
+export function sanitizeEntities(raw: unknown, observedUrls: string[], input: BusinessSegmentInput): CorporateEntity[] {
+  const parentSite = /^https?:\/\//i.test(input.companyDomain) ? input.companyDomain : `https://${input.companyDomain}`;
+  const parentLinkedin = input.linkedinUrl || '';
+  const verify = makeUrlVerifier(observedUrls, [parentSite, parentLinkedin]);
+  const list = Array.isArray((raw as { entities?: unknown })?.entities) ? (raw as { entities: unknown[] }).entities : [];
+  const seen = new Set<string>();
+  const out: CorporateEntity[] = [];
+  for (const item of list) {
+    const e = (item || {}) as Record<string, unknown>;
+    const legalName = str(e.legalName);
+    if (!legalName || seen.has(legalName.toLowerCase())) continue;
+    seen.add(legalName.toLowerCase());
+    const ownSite = verify(e.webpageUrl);
+    const ownLinkedin = verify(e.linkedinUrl);
+    out.push({
+      legalName,
+      webpageUrl: ownSite || parentSite,
+      webpageIsParent: !ownSite || normalizeUrl(ownSite) === normalizeUrl(parentSite),
+      linkedinUrl: ownLinkedin || parentLinkedin,
+      linkedinIsParent: !ownLinkedin || normalizeUrl(ownLinkedin) === normalizeUrl(parentLinkedin),
+      entityType: str(e.entityType) || 'Not disclosed',
+      specificFunction: str(e.specificFunction) || 'Not disclosed',
+    });
+    if (out.length === MAX_ENTITIES) break;
+  }
+  return out;
+}
+
+export async function researchCorporateEntities(input: BusinessSegmentInput): Promise<{ notes: string; urls: string[] }> {
+  const site = /^https?:\/\//i.test(input.companyDomain) ? input.companyDomain : `https://${input.companyDomain}`;
+  const user = `TARGET COMPANY: "${input.companyName}", website ${site}${input.linkedinUrl ? `, primary LinkedIn page ${input.linkedinUrl}` : ''}.
+Company names are often shared by unrelated businesses. Only use sources clearly about the company at ${input.companyDomain}.
+
+Research this company's corporate family tree: all major separate legal entities, operating subsidiaries, holding companies and regional arms. Best sources: the list of subsidiaries filed with its annual report (for US filers, Exhibit 21 of the 10-K), regulatory registries (for example SEC adviser registrations, FCA, company registries), the company's legal or regulatory disclosures pages, and its regional websites. Then look for each major entity's own webpage, sub-domain or registry profile, and its own LinkedIn page or showcase page.
+
+For each entity capture: the full legal name exactly as registered (for example "Company Name LLC"), its webpage or registry profile URL, its LinkedIn URL, its entity type (for example Registered Investment Adviser, IP Holding Company, Regional Operating Subsidiary), and its specific function (for example managing AUM, asset underwriting, localized software distribution, real estate management).
+
+OUTPUT: plain text notes, one line per entity, with the URL after each fact that has one. Write "NOT FOUND" for anything you could not verify. Prefer operating and regulated entities over dormant shells, and list at most ${MAX_ENTITIES}.`;
+
+  try {
+    const r = await claudeWithWebResearch(SYSTEM_RESEARCH, user, 8000, SYNTHESIS_MODEL, {
+      maxSearches: 7,
+      legacySearch: true,
+      timeoutMs: 270_000,
+      source: 'corporateSubsidiary.research',
+    });
+    return { notes: r.text, urls: r.urls };
+  } catch (err) {
+    console.warn('[corporateSubsidiary] research failed, retrying with the newer search tools:', err instanceof Error ? err.message : err);
+    const r = await claudeWithWebResearch(SYSTEM_RESEARCH, user, 8000, SYNTHESIS_MODEL, {
+      maxSearches: 4,
+      maxFetches: 2,
+      maxContentTokensPerFetch: 5000,
+      timeoutMs: 300_000,
+      source: 'corporateSubsidiary.research.retry',
+    });
+    return { notes: r.text, urls: r.urls };
+  }
+}
+
+export async function structureCorporateEntities(
+  input: BusinessSegmentInput,
+  notes: string,
+  observedUrls: string[]
+): Promise<CorporateEntity[]> {
+  const system = `You convert research notes into a corporate family tree. Use ONLY facts present in the notes. Do not add anything from memory. ${WRITING_DIRECTIVE} Output ONLY valid JSON, no markdown fences, no commentary.`;
+  const user = `COMPANY: "${input.companyName}" (${input.companyDomain}).
+
+RESEARCH NOTES:
+${notes.slice(0, 40000)}
+
+URLS THE RESEARCH ACTUALLY RETRIEVED (the only URLs you may output):
+${observedUrls.slice(0, 200).join('\n')}
+
+Return JSON of exactly this shape:
+{"entities":[{
+  "legalName":"full legal name, e.g. 'Company Name LLC' or 'Subsidiary Corp.'",
+  "webpageUrl":"the entity's own landing page, sub-domain or registry profile from the URL list, or \"\" if integrated into the parent site",
+  "linkedinUrl":"the entity's own LinkedIn company or showcase page from the URL list, or \"\"",
+  "entityType":"e.g. Registered Investment Adviser, IP Holding Company, Regional Operating Subsidiary",
+  "specificFunction":"the exact role it plays, one sentence"
+}]}
+
+RULES
+- Include the parent company itself first, then every major entity the notes identify, most significant first. At most ${MAX_ENTITIES}.
+- Use the legal name exactly as the notes give it. Do not invent a suffix such as LLC or Inc.
+- A URL field must be copied exactly from the URL list. Otherwise return "". Never construct a URL.
+- No marketing language. Single quotes inside strings, never double quotes.`;
+
+  const raw = await claudeCreateDirect(system, user, 10000, SYNTHESIS_MODEL, 180_000, undefined, 'corporateSubsidiary.structure');
+  return sanitizeEntities(parseJsonRobust(raw), observedUrls, input);
 }
