@@ -200,7 +200,7 @@ OUTPUT: short plain text notes, with the URL after each fact that has one. Write
       return `### LEADERS AND DETAIL: ${name}\nNOT FOUND (research for this segment did not complete)`;
     } finally {
       done += 1;
-      onProgress?.(`Researched ${done} of ${names.length} segments...`, 15 + Math.round((done / names.length) * 45));
+      onProgress?.(`Researched ${done} of ${names.length} segments... [diag heap ${Math.round(process.memoryUsage().heapUsed / 1048576)}MB rss ${Math.round(process.memoryUsage().rss / 1048576)}MB]`, 15 + Math.round((done / names.length) * 45));
     }
   });
 
