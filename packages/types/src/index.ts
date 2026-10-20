@@ -1337,6 +1337,8 @@ export interface BusinessSegmentResult {
   linkedinUrl?: string;
   segments?: SegmentDossierEntry[];
   battlecards?: Battlecard[];
+  /** Parts of the research that did not complete, shown to the user instead of silently thinner results. */
+  researchIssues?: string[];
   error?: string;
   createdAt: string;
   completedAt?: string;

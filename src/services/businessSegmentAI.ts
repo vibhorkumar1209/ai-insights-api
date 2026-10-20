@@ -128,7 +128,7 @@ async function inBatches<T, R>(items: T[], size: number, fn: (item: T) => Promis
 export async function researchSegmentDossier(
   input: BusinessSegmentInput,
   onProgress?: (step: string, progress: number) => void
-): Promise<{ notes: string; urls: string[] }> {
+): Promise<{ notes: string; urls: string[]; issues: string[] }> {
   const site = /^https?:\/\//i.test(input.companyDomain) ? input.companyDomain : `https://${input.companyDomain}`;
   const identity = `TARGET COMPANY: "${input.companyName}", website ${site}${input.linkedinUrl ? `, parent LinkedIn page ${input.linkedinUrl}` : ''}.
 Company names are often shared by unrelated businesses. Only use sources clearly about the company at ${input.companyDomain}.`;
@@ -153,6 +153,7 @@ SEGMENT_LIST_JSON: ["Segment A","Segment B"]`;
   });
 
   const urls = new Set(first.urls);
+  const issues: string[] = [];
   let names = parseSegmentList(first.text).slice(0, MAX_SEGMENTS);
   if (names.length === 0) names = [input.companyName];
   let notes = first.text.replace(/SEGMENT_LIST_JSON:[\s\S]*$/, '').trim();
@@ -179,7 +180,9 @@ OUTPUT: short plain text notes, with the URL after each fact that has one. Write
       r.urls.forEach((u) => urls.add(u));
       return `### LEADERS AND DETAIL: ${name}\n${r.text}`;
     } catch (err) {
-      console.warn(`[businessSegment] research for segment "${name}" failed:`, err instanceof Error ? err.message : err);
+      const why = err instanceof Error ? err.message : String(err);
+      console.warn(`[businessSegment] research for segment "${name}" failed:`, why);
+      issues.push(`Leadership research for "${name}" did not complete: ${why.slice(0, 160)}`);
       return `### LEADERS AND DETAIL: ${name}\nNOT FOUND (research for this segment did not complete)`;
     } finally {
       done += 1;
@@ -188,7 +191,7 @@ OUTPUT: short plain text notes, with the URL after each fact that has one. Write
   });
 
   notes = [notes, ...blocks].join('\n\n');
-  return { notes, urls: [...urls] };
+  return { notes, urls: [...urls], issues };
 }
 
 export async function structureSegmentDossier(

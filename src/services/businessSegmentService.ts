@@ -61,7 +61,7 @@ export async function runBusinessSegment(jobId: string, input: BusinessSegmentIn
     updateJob(jobId, { ...base, status: 'researching', progress: 10, currentStep: `Researching ${input.companyName}'s segments and leadership...` });
     emit(jobId, 'progress', { ...jobs.get(jobId) });
 
-    const { notes, urls } = await researchSegmentDossier(input, (step, progress) => {
+    const { notes, urls, issues } = await researchSegmentDossier(input, (step, progress) => {
       updateJob(jobId, { currentStep: step, progress });
       emit(jobId, 'progress', { ...jobs.get(jobId) });
     });
@@ -84,6 +84,7 @@ export async function runBusinessSegment(jobId: string, input: BusinessSegmentIn
       progress: 100,
       currentStep: 'Complete',
       segments,
+      researchIssues: issues.length ? issues : undefined,
       completedAt: new Date().toISOString(),
     });
     emit(jobId, 'result', { ...jobs.get(jobId) });
