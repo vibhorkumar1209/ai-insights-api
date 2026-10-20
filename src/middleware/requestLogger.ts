@@ -64,7 +64,52 @@ function attributionSummary(req: Request): string {
   return parts.length ? ` ${parts.join(' ')}` : '';
 }
 
+// Recent-request ring buffer, readable at GET /api/usage/requests. Render's
+// own logs need a CLI login that is often expired, which left "something
+// keeps calling the API" reports impossible to trace from here. Unlike the
+// console log this includes the polling GETs, since repeated polling is
+// exactly what those reports are about. IPs are masked to their first
+// three octets; header values that could carry secrets are never stored.
+export interface RecentRequest {
+  at: string;
+  method: string;
+  path: string;
+  status?: number;
+  ms?: number;
+  ip: string;
+  ua: string;
+  origin?: string;
+  body?: string;
+}
+const RECENT_MAX = 500;
+const recent: RecentRequest[] = [];
+export function getRecentRequests(): RecentRequest[] {
+  return recent.slice();
+}
+function maskIp(ip: string): string {
+  const v4 = ip.replace(/^::ffff:/, '').match(/^(\d+\.\d+\.\d+)\.\d+$/);
+  return v4 ? `${v4[1]}.x` : ip.replace(/(:[0-9a-f]*){2}$/i, ':x:x');
+}
+
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
+  const entry: RecentRequest = {
+    at: new Date().toISOString(),
+    method: req.method,
+    path: req.originalUrl.slice(0, 200),
+    ip: maskIp(String(req.get('x-forwarded-for')?.split(',')[0].trim() || req.ip || 'unknown')),
+    ua: (req.get('user-agent') || 'unknown').slice(0, 120),
+    origin: req.get('origin') || req.get('referer') || undefined,
+  };
+  if ((req.method === 'POST' || req.method === 'PUT') && req.body && typeof req.body === 'object') {
+    try { entry.body = JSON.stringify(req.body).slice(0, 200); } catch { /* ignore */ }
+  }
+  if (!req.originalUrl.startsWith('/api/usage/requests')) {
+    recent.push(entry);
+    if (recent.length > RECENT_MAX) recent.shift();
+    const t0 = Date.now();
+    res.on('finish', () => { entry.status = res.statusCode; entry.ms = Date.now() - t0; });
+  }
+
   if (req.method === 'GET' && SKIP_PATTERN.test(req.path)) {
     next();
     return;

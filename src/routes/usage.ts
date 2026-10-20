@@ -1,3 +1,4 @@
+import { getRecentRequests } from '../middleware/requestLogger';
 import { Router, Request, Response } from 'express';
 import {
   getGeminiUsageSummary, getGeminiUsageEntries,
@@ -34,6 +35,12 @@ router.get('/gemini/raw', (req: Request, res: Response) => {
  * from the call stack rather than hand-labeled at each of the 30+ call
  * sites (see usageLogger.ts's getCallerLabel).
  */
+// Recent requests, newest last — for tracing a caller that keeps hitting the API.
+router.get('/requests', (req: Request, res: Response) => {
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  res.json({ entries: getRecentRequests().slice(-limit) });
+});
+
 router.get('/claude', (_req: Request, res: Response) => {
   res.json({ summary: getClaudeUsageSummary() });
 });
