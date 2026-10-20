@@ -1264,6 +1264,84 @@ export interface BizDescripResult {
   completedAt?: string;
 }
 
+// ── Business Segment (company dossier + competitive battlecard) ──────────────
+// Two phases. Phase 1 researches a company and returns its segments with
+// financials and decision makers. Phase 2 is requested afterwards, for one
+// chosen segment, and produces a battlecard against a named competitor.
+
+export interface BusinessSegmentInput {
+  companyName: string;
+  companyDomain: string;
+  linkedinUrl?: string;
+}
+
+export interface SegmentLeader {
+  name: string;
+  title: string;
+  /** Only ever a URL the research actually saw — empty when none was found. */
+  linkedinUrl?: string;
+  profile: string;
+}
+
+export interface SegmentDossierEntry {
+  name: string;
+  coreFocus: string;
+  /** Share of revenue (%) or AUM, as stated by a source; "Not disclosed" otherwise. */
+  contribution: string;
+  /** Segment's own page, or the parent URL when it has none (see webpageRollsUp). */
+  webpageUrl: string;
+  webpageRollsUp: boolean;
+  linkedinUrl: string;
+  linkedinRollsUp: boolean;
+  overview: string;
+  financialBaseline: string;
+  keyProducts: string[];
+  leaders: SegmentLeader[];
+}
+
+export interface BattlecardInput {
+  segmentName: string;
+  yourCompany: string;
+  yourUrl: string;
+  yourSolution: string;
+  competitorName: string;
+  competitorUrl: string;
+}
+
+export interface BattlecardComparisonRow {
+  dimension: string;
+  yourSolution: string;
+  competitor: string;
+}
+
+export interface Battlecard {
+  battlecardId: string;
+  status: 'pending' | 'researching' | 'complete' | 'error';
+  inputs: BattlecardInput;
+  segmentContext?: string;
+  coreWinTheme?: string;
+  opportunityAreas?: string[];
+  comparison?: BattlecardComparisonRow[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface BusinessSegmentResult {
+  jobId: string;
+  status: 'pending' | 'researching' | 'synthesizing' | 'complete' | 'error';
+  progress: number;
+  currentStep?: string;
+  companyName?: string;
+  companyDomain?: string;
+  linkedinUrl?: string;
+  segments?: SegmentDossierEntry[];
+  battlecards?: Battlecard[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface FirmographicResult {
   jobId: string;
   status: 'pending' | 'detecting' | 'fetching' | 'enriching' | 'complete' | 'error';

@@ -231,8 +231,9 @@ export interface WebResearchOptions {
 
 export async function claudeWithWebResearch(
   system: string, user: string, maxTokens: number, model: string, opts: WebResearchOptions = {}
-): Promise<{ text: string; searches: number; fetches: number }> {
+): Promise<{ text: string; searches: number; fetches: number; urls: string[] }> {
   const source = opts.source || getCallerLabel();
+  const observedUrls = new Set<string>();
   const maxFetches = opts.maxFetches ?? 2;
   const tools: Record<string, unknown>[] = [
     { type: 'web_search_20260209', name: 'web_search', max_uses: opts.maxSearches ?? 2 },
@@ -273,6 +274,7 @@ export async function claudeWithWebResearch(
       searches += Number(data.usage?.server_tool_use?.web_search_requests) || 0;
       fetches += Number(data.usage?.server_tool_use?.web_fetch_requests) || 0;
       content = data.content || [];
+      collectObservedUrls(content, observedUrls);
       if (data.stop_reason !== 'pause_turn') break;
       // Unfinished tool loop: hand the partial turn back so the model resumes.
       messages.push({ role: 'assistant', content });
@@ -281,7 +283,24 @@ export async function claudeWithWebResearch(
     }
   }
 
-  return { text: finalAnswerText(content), searches, fetches };
+  return { text: finalAnswerText(content), searches, fetches, urls: [...observedUrls] };
+}
+
+// URLs the model actually received from its tools: search result links and
+// fetched pages. Anything a caller wants to publish as a link can be checked
+// against this set, which is the only reliable defence against a plausible
+// but invented URL (a model asked for a LinkedIn profile will happily write one).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function collectObservedUrls(content: any[], into: Set<string>): void {
+  for (const b of content) {
+    if (!b || !/_tool_result$/.test(String(b.type))) continue;
+    const c = b.content;
+    if (Array.isArray(c)) {
+      for (const r of c) if (r && typeof r.url === 'string') into.add(r.url);
+    } else if (c && typeof c.url === 'string') {
+      into.add(c.url);
+    }
+  }
 }
 
 // With tools enabled the model writes short text blocks BETWEEN tool calls —
@@ -307,7 +326,7 @@ export function finalAnswerText(content: any[]): string {
 const MAX_OUTPUT_TOKENS = 4096;  // keep original for reliability, optimizations come via other means
 
 // Model selection
-const SYNTHESIS_MODEL = 'claude-sonnet-5';
+export const SYNTHESIS_MODEL = 'claude-sonnet-5';
 export const FAST_MODEL = 'claude-haiku-4-5-20251001'; // 5× faster, used for structured JSON synthesis
 
 // ── Truncate research to stay within token budget ───────────────────────────
@@ -441,7 +460,7 @@ function getTodayLabel(): string {
 // These are now separated: sizing keeps the lagged complete-reporting-year
 // base, while all narrative content is anchored to today's date and the
 // current calendar year.
-function getRecencyDirective(): string {
+export function getRecencyDirective(): string {
   const now = new Date();
   const currentYear = now.getFullYear();
   const today = getTodayLabel();
@@ -454,7 +473,7 @@ function getRecencyDirective(): string {
 }
 
 
-const WRITING_DIRECTIVE = `WRITING RULES (apply to every word of output):
+export const WRITING_DIRECTIVE = `WRITING RULES (apply to every word of output):
 1. NO SYNTHETIC DATA: Every figure, statistic, percentage, and fact must come from actual research, provided data, or verified training knowledge about this specific company or industry. Never invent, estimate, or fabricate numbers. If a figure is unavailable, omit it or state it is not publicly disclosed — do not fill the gap with a plausible-sounding number.
 2. NO DASHES IN SENTENCES: Do not use em dashes (—), en dashes (–), or hyphens (-) as clause separators or parenthetical connectors within sentences. Instead of "Revenue grew — despite headwinds — by 8%" write "Revenue grew by 8% despite headwinds". Instead of "The company - founded in 1968 - operates globally" write "The company, founded in 1968, operates globally". Compound adjectives and established compound words that use hyphens (data-driven, well-known, cost-effective, follow-up, state-of-the-art) are perfectly acceptable.
 3. HUMAN LANGUAGE: Write as an experienced analyst would speak to a senior executive — direct, specific, and free of AI clichés. Banned phrases: "delve into", "leverage" (when meaning "use"), "unlock", "it is worth noting", "in the realm of", "comprehensive", "cutting-edge", "robust" (when describing solutions), "game-changer", "transformative", "holistic", "synergies", "actionable insights", "empower", "seamlessly", "it is important to note", "in today's landscape", "in conclusion". Say what you mean plainly.`;
@@ -3731,7 +3750,7 @@ async function runClaudeStream(
 
 // ── Helper: parse JSON robustly (handles truncation) ─────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseJsonRobust(raw: string): any {
+export function parseJsonRobust(raw: string): any {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const start = cleaned.indexOf('{');
   if (start === -1) throw new Error('no JSON object found');
