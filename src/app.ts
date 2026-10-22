@@ -7,6 +7,7 @@ import { corsMiddleware } from './middleware/cors';
 import { apiLimiter, memoryGuard } from './middleware/rateLimiter';
 import { requestLogger } from './middleware/requestLogger';
 import { ipBlocklist } from './middleware/ipBlocklist';
+import { lostJobSnapshot } from './middleware/lostJobSnapshot';
 import { initPersistentStore, flushPendingSaves } from './services/persistentStore';
 import { restoreUsageLogsFromStore, getUsageFlushTarget } from './services/usageLogger';
 import { restoreDedupeFromStore, getDedupeFlushTarget } from './services/jobDedupe';
@@ -98,6 +99,7 @@ app.use(corsMiddleware);
 app.use(express.json({ limit: '500kb' }));
 app.use(requestLogger);
 app.use(apiLimiter);
+app.use(lostJobSnapshot);
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 // `commit` and `startedAt` exist so a caller can tell WHICH build is serving.
