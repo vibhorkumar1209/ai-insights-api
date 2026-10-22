@@ -23,6 +23,7 @@ import {
   TLFirmInsight, TLMetric, TLInsight, TLTheme, TLChartSpec, ConsultingIntelligenceJob,
   VucaRow, VucaDriverEffectRow, ITSpendRow, GeoStressRow, ClientITImpactRow, VucaAnalysisJob,
 } from '@ai-insights/types';
+import { parseJsonRepairingQuotes } from '../utils/jsonRepair';
 
 // Returns true when a research string contains no real data
 function isEmptyResearch(text: string): boolean {
@@ -1510,43 +1511,8 @@ Extraction rules:
   }
 }
 
-// Repairs the most common way a model breaks otherwise-valid JSON: a double
-// quote inside a string value that was never escaped, e.g.
-//   "segmentInsight": "The "Other" category declined 5%"
-// JSON.parse reads `"The "` as the whole string and then fails on `Other`.
-// Ericsson's financial analysis hit exactly this at character 11,792 of a
-// complete 13,176-character answer, and the entire response was discarded in
-// favour of templated fallback text.
-//
-// The repair follows the parser's own error: the quote just before the
-// failure point is the one that ended the string too early, so it is escaped
-// and parsing is retried. Each pass fixes one stray quote, so a quoted word
-// (an opening and a closing quote) takes two. Bounded, and only ever runs on
-// text that has already failed to parse, so valid JSON is never touched.
-export function parseJsonRepairingQuotes(text: string, maxRepairs = 40): unknown {
-  let candidate = text;
-  for (let attempt = 0; attempt <= maxRepairs; attempt++) {
-    try {
-      return JSON.parse(candidate);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      const pos = Number((msg.match(/position (\d+)/) || [])[1]);
-      if (!Number.isFinite(pos) || attempt === maxRepairs) throw err;
-      const quote = candidate.lastIndexOf('"', pos - 1);
-      // Only a quote that is not already escaped can be the culprit.
-      if (quote <= 0 || candidate[quote - 1] === '\\') throw err;
-      // And only when it is the stray-quote pattern: the quote is followed
-      // (after nothing but spaces) by ordinary text, as in `"Other`. Without
-      // this check the repair would happily "fix" JSON broken some other way
-      // (a doubled comma, a truncated array) by escaping a legitimate quote,
-      // producing different, valid-looking JSON with the wrong data — worse
-      // than failing, because nothing downstream would notice.
-      if (!/^\s*$/.test(candidate.slice(quote + 1, pos)) || !/[\p{L}\p{N}(]/u.test(candidate[pos] || '')) throw err;
-      candidate = `${candidate.slice(0, quote)}\\"${candidate.slice(quote + 1)}`;
-    }
-  }
-  throw new Error('unreachable');
-}
+// parseJsonRepairingQuotes moved to utils/jsonRepair.ts; re-exported for existing importers.
+export { parseJsonRepairingQuotes };
 
 function parseFinancialInsights(raw: string): FinancialInsightsPayload {
   // Try to extract JSON — be forgiving of markdown fences, trailing text, etc.

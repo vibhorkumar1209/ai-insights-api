@@ -18,6 +18,7 @@ import {
   MEDIA_AND_ADVERTISING,
 } from '../services/marketingSpendCalculator';
 import { resolveExclusionTierIndex } from '../services/itErdSpendCalculator';
+import { parseGeminiJson } from '../services/parallelAI';
 import { MARKETING_INDUSTRIES, MARKETING_TAXONOMY, MARKETING_YEARS, MARKETING_HQ_REGIONS } from '../data/marketingSpendData';
 import { SPEND_CALCULATOR_INDUSTRIES } from '../services/claudeAI';
 import { SpendBreakdownNode } from '@ai-insights/types';
@@ -246,5 +247,32 @@ describe('POST /api/spend/marketing', () => {
   it('validates input like the IT/ERD routes', async () => {
     const res = await request(app).post('/api/spend/marketing').send({ ...AIRBUS, industry: 'Nope' });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('parseGeminiJson on grounded marketing replies', () => {
+  // Shape of the Microsoft reply that was thrown away in production (2026-10-14):
+  // the 10-K advertising note quoted verbatim, inner quotes unescaped.
+  const reply = `{
+  "marketingSpend": { "found": false, "sourceContext": "Microsoft does not report a standalone marketing total." },
+  "advertisingSpend": { "found": true, "value": "$2.7 billion for FY2026", "valueRaw": 2700000000, "fiscalYear": "FY2026", "sourceType": "Company Disclosure", "sourceContext": "Note 1 states: "Advertising costs are expensed as incurred. Advertising expense was $2.7 billion" in fiscal year 2026." },
+  "salesAndMarketingSpend": { "found": true, "value": "$26.71 billion", "valueRaw": 26710000000, "fiscalYear": "FY2026", "sourceType": "Company Disclosure", "sourceContext": "Income statement line "Sales and marketing"." }
+}`;
+
+  it('repairs unescaped quotes instead of discarding the reply', () => {
+    expect(() => JSON.parse(reply)).toThrow();
+    const parsed = parseGeminiJson<{
+      advertisingSpend: { valueRaw: number; sourceContext: string };
+      salesAndMarketingSpend: { valueRaw: number };
+    }>(reply)!;
+    expect(parsed.advertisingSpend!.valueRaw).toBe(2700000000);
+    expect(parsed.advertisingSpend!.sourceContext).toContain('"Advertising costs are expensed as incurred.');
+    expect(parsed.salesAndMarketingSpend!.valueRaw).toBe(26710000000);
+  });
+
+  it('still rejects JSON broken some other way', () => {
+    expect(parseGeminiJson('{"marketingSpend": {"found": false},, "x": 1}')).toBeNull();
+    expect(parseGeminiJson('{"a": "x" "b": 1}')).toBeNull(); // missing comma, not a stray quote
+    expect(parseGeminiJson('{"a": ["x", "y"')).toBeNull();   // truncated
   });
 });
