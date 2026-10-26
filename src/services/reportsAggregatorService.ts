@@ -73,7 +73,9 @@ const GETTERS: Record<string, (jobId: string) => any> = {
   'sales-play-2': getSalesPlay2Job,
   'spend': getSpendJob,
   'technology-heat-map': getTechnologyHeatMapJob,
-  'business-themes': getThemeJob, // themes.ts serves business/technology/sustainability off one route; see the moduleType note in reportRegistry registration call sites
+  'business-themes': getThemeJob,
+  'technology-themes': getThemeJob,
+  'sustainability': getThemeJob, // themes.ts serves business/technology/sustainability off one route; see the moduleType note in reportRegistry registration call sites
   'vuca-analysis': getVucaJob,
 };
 

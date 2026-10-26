@@ -13,6 +13,12 @@ import { dedupeJobStart } from '../services/jobDedupe';
 
 const router = Router();
 
+const THEME_MODULE_TYPE: Record<ThemeType, string> = {
+  business: 'business-themes',
+  technology: 'technology-themes',
+  sustainability: 'sustainability',
+};
+
 const VALID_THEME_TYPES: ThemeType[] = ['business', 'technology', 'sustainability'];
 
 /**
@@ -50,7 +56,11 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
     () => createThemeJob()
   );
   if (isNew) {
-    registerJobStart('business-themes', jobId, extractLabel(req.body));
+    // One route serves all three theme types, but each is its own module in
+    // the app. Registering every job as 'business-themes' made a
+    // Sustainability or Technology run show up in Report History as another
+    // Business Themes report, which looked like the same report being rebuilt.
+    registerJobStart(THEME_MODULE_TYPE[input.themeType], jobId, extractLabel(req.body));
     runThemesAnalysis(jobId, input).catch((err) => {
       console.error(`[themes] Job ${jobId} failed:`, err);
     });
