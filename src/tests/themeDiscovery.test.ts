@@ -1,4 +1,6 @@
-import { DISCOVERY_PARAMS, themeContextBlock, shapeDiscovery, discoveryQuestionsBlock } from '../services/themeDiscovery';
+import { DISCOVERY_PARAMS, themeContextBlock, discoveryQuestionsBlock } from '../services/themeDiscovery';
+import { isRedirectWrapper } from '../services/urlValidator';
+import { verifyThemeSources } from '../services/themeResearch';
 
 const base = { companyName: 'Acme', themeType: 'business' as const };
 
@@ -19,19 +21,22 @@ describe('theme discovery', () => {
     for (const s of ['EU banking', 'new CFO', 'Snowflake (snowflake.com)', 'data cloud', 'GenAI']) expect(ctx).toContain(s);
   });
 
-  it('returns exactly the fixed parameters in order, filling gaps', () => {
-    const out = shapeDiscovery({ ...base, userOrganization: 'Snowflake' }, [
-      { parameter: 'geographic footprint', finding: '• EU expansion', sellerAngle: 'fit', source: 'https://x.com' },
-      { parameter: 'Made Up', finding: 'drop me' },
-    ]);
-    expect(out.map((r) => r.parameter)).toEqual(['Strategic Imperatives', 'Industry Vertical', 'Geographic Footprint']);
-    expect(out[0].finding).toBe('Not publicly disclosed.');
-    expect(out[2].finding).toBe('• EU expansion');
-    expect(out[2].sellerAngle).toBe('fit');
+});
+
+describe('theme sources', () => {
+  it('recognises redirect wrappers but not real pages', () => {
+    expect(isRedirectWrapper('https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbC')).toBe(true);
+    expect(isRedirectWrapper('https://www.google.com/url?q=https://acme.com')).toBe(true);
+    expect(isRedirectWrapper('https://news.google.com/rss/articles/CBMi')).toBe(true);
+    expect(isRedirectWrapper('https://t.co/xyz')).toBe(true);
+    expect(isRedirectWrapper('https://investors.acme.com/annual-report')).toBe(false);
+    expect(isRedirectWrapper('https://cloud.google.com/blog/acme')).toBe(false);
   });
 
-  it('omits the seller angle when no seller was given', () => {
-    const out = shapeDiscovery(base, [{ parameter: 'Strategic Imperatives', finding: 'x', sellerAngle: 'invented' }]);
-    expect(out[0].sellerAngle).toBeUndefined();
+  it('drops cited URLs the research never retrieved', async () => {
+    const rows = [{ theme: 't', source: 'https://made-up.example/report' }, { theme: 'u', source: '' }];
+    const out = await verifyThemeSources(rows, { notes: 'n', urls: ['https://real.example/page'] });
+    expect(out[0].source).toBe('No verified source found');
+    expect(out[1].source).toBe('No verified source found');
   });
 });

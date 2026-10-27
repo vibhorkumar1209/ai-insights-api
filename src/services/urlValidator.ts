@@ -132,3 +132,46 @@ export async function filterLiveUrlsOnBenchmarkTable(
     })
   );
 }
+
+// ── Redirect wrappers ────────────────────────────────────────────────────────
+// Search and grounding APIs often hand back a wrapper URL (Google grounding
+// redirects, Google News article links, google.com/url, Bing click-throughs,
+// t.co, lnkd.in) instead of the page itself. Shown as a source, that is a link
+// to a link. These are resolved to the page they land on, or dropped when they
+// do not resolve.
+const REDIRECT_HOSTS = [
+  /(^|\.)vertexaisearch\.cloud\.google\.com$/i,
+  /^news\.google\.com$/i,
+  /(^|\.)bing\.com$/i,
+  /^t\.co$/i,
+  /^lnkd\.in$/i,
+  /^bit\.ly$/i,
+  /(^|\.)feedproxy\.google\.com$/i,
+];
+
+export function isRedirectWrapper(url: string): boolean {
+  try {
+    const u = new URL(url);
+    // google.com/url?q=... only; other Google pages (cloud.google.com, blog
+    // posts) are real sources.
+    if (/^(www\.)?google\.[a-z.]+$/i.test(u.hostname)) return u.pathname === '/url';
+    return REDIRECT_HOSTS.some((re) => re.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
+/** The final page a URL lands on, or undefined when it cannot be reached. */
+export async function resolveFinalUrl(url: string): Promise<string | undefined> {
+  try {
+    const q = new URL(url).searchParams.get('q') || new URL(url).searchParams.get('url');
+    if (q && /^https?:\/\//i.test(q) && !isRedirectWrapper(q)) return q;
+  } catch { return undefined; }
+  for (const method of ['HEAD', 'GET'] as const) {
+    try {
+      const res = await fetchWithTimeout(url, method, CHECK_TIMEOUT_MS);
+      if (res.ok && res.url && !isRedirectWrapper(res.url)) return res.url;
+    } catch { /* try next */ }
+  }
+  return undefined;
+}

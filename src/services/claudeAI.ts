@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { logClaudeUsage, getCallerLabel } from './usageLogger';
-import { themeContextBlock, discoveryQuestionsBlock, hasSeller, shapeDiscovery } from './themeDiscovery';
+import { themeContextBlock, DISCOVERY_PARAMS } from './themeDiscovery';
 import {
   BenchmarkInput, BenchmarkDimension, GapAnalysisRow,
   ThemeInput, ThemeRow,
@@ -19,7 +19,7 @@ import {
   MacroTEIData, BCGMatrixItem, KeyPlayerProfile,
   BusinessSegment, TimelineBlock, StrategicEvolutionBullet,
   TechHeatMapInput, TechHeatMapRow,
-  ContentGenerationInput, ThemeDiscoveryRow,
+  ContentGenerationInput,
   SalesPlay2Input, SalesPlay2WinTheme, SalesPlay2Opportunity, SalesPlay2Competitor,
   TLFirmInsight, TLMetric, TLInsight, TLTheme, TLChartSpec, ConsultingIntelligenceJob,
   VucaRow, VucaDriverEffectRow, ITSpendRow, GeoStressRow, ClientITImpactRow, VucaAnalysisJob,
@@ -899,15 +899,16 @@ const THEME_CONFIG: Record<string, { label: string; hint: string }> = {
 
 export async function synthesizeThemes(
   input: ThemeInput,
-  research: string
+  research: string,
+  sourceUrls: string[] = []
 ): Promise<ThemeRow[]> {
   const config = THEME_CONFIG[input.themeType];
   const hasResearch = !isEmptyResearch(research);
+  const discovery = DISCOVERY_PARAMS[input.themeType];
 
   const systemPrompt = `You are a senior B2B sales intelligence analyst producing executive-grade theme analyses.
-- Draw on the provided research first; supplement with your training knowledge where research is sparse.
+- Use ONLY facts stated in the provided research. Do not add facts, figures, programmes or dates from your own knowledge. If the research does not support something, leave it out.
 - Each theme must be concrete and evidence-based, not generic.
-- Never produce empty fields — always provide a meaningful answer.
 - Write in natural business language without hyphens, dashes, or arrows in descriptions. Use "and" instead of "/" or "&".
 - Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
 - ${getRecencyDirective()}
@@ -917,52 +918,27 @@ export async function synthesizeThemes(
 
 ${config.hint}
 
-${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available — use your training knowledge about ${input.companyName}.]`}
+The analysis MUST answer these discovery questions. Make each one a theme of its own (named for what you found, not for the question), placed first, in this order:
+${discovery.map((d, i) => `${i + 1}. ${d.parameter}: ${d.question}`).join('\n')}
+Then add the other most important ${config.label.toLowerCase()}, for 6-8 themes in total.
+
+${hasResearch ? `RESEARCH:\n${research.slice(0, 24000)}` : `[No research is available. Return an empty array [] rather than writing from memory.]`}
 
 ${themeContextBlock(input) ? `${themeContextBlock(input)}\nWhere these inputs apply, favour themes that reflect them and say so in the theme.` : ''}
-
+${sourceUrls.length ? `\nSOURCE URLS (the only URLs you may cite; copy them exactly):\n${sourceUrls.slice(0, 150).join('\n')}\n` : ''}
 Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes total):
 [
   {
     "theme": "Short punchy theme name (3-5 words)",
-    "description": "3-4 bullet points (each starting with '• ' and separated by newlines): what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data where available.",
+    "description": "3-4 bullet points (each starting with '• ' and separated by newlines): what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data from the research, with dates.",
     "examples": "Concrete example 1 | Concrete example 2 | Concrete example 3",
     "strategicImpact": "2-3 bullet points (each starting with '• ' and separated by newlines): the strategic significance and what it signals about ${input.companyName}'s direction.",
-    "source": "Source of information as clickable link (e.g. 'https://investor.company.com/reports | https://news.source.com/article' or 'SEC filings: https://sec.gov/cgi-bin/...', or 'Company press releases, analyst reports' if URLs unknown)"
+    "source": "The exact URL(s) of the pages in the research that support this theme, separated by ' | '. Direct page URLs only."
   }
 ]`;
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
   return parseThemes(text);
-}
-
-// The fixed discovery questions for the theme type (see themeDiscovery.ts),
-// answered from the same research as the themes.
-export async function synthesizeThemeDiscovery(input: ThemeInput, research: string): Promise<ThemeDiscoveryRow[]> {
-  const hasResearch = !isEmptyResearch(research);
-  const seller = hasSeller(input);
-  const system = `You are a senior B2B sales intelligence analyst answering account discovery questions.
-- Use the provided research first; supplement with training knowledge only where you are confident, and say when something is not publicly disclosed rather than guessing.
-- Be specific to ${input.companyName}: name regulations, regions, systems, vendors, targets and dates.
-- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
-- ${getRecencyDirective()}
-- ${WRITING_DIRECTIVE}`;
-  const user = `Answer these discovery questions about "${input.companyName}"${input.companyDomain ? ` (${input.companyDomain})` : ''}:
-${discoveryQuestionsBlock(input)}
-
-${themeContextBlock(input)}
-
-${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available, use training knowledge about ${input.companyName} and say where it is not disclosed.]`}
-
-Return a JSON array with one object per question, in order:
-[{
-  "parameter": "the parameter name exactly as given above",
-  "finding": "2-4 bullets, each starting with '• ' and separated by newlines, answering the question directly with evidence and dates",${seller ? `
-  "sellerAngle": "1-2 sentences: how ${input.userOrganization || 'the seller'}'s offerings connect to this finding, or 'No clear fit' if none",` : ''}
-  "source": "URL(s) supporting the finding, separated by ' | ', or 'Not publicly disclosed'"
-}]`;
-  const text = await claudeCreateDirect(system, user, 2500, SYNTHESIS_MODEL);
-  return shapeDiscovery(input, safeParseJsonArray(text) || []);
 }
 
 function parseThemes(raw: string): ThemeRow[] {

@@ -107,16 +107,6 @@ export interface ThemeInput {
   focusTechnologies?: string;
 }
 
-/** One answer in the fixed discovery structure for a theme type. */
-export interface ThemeDiscoveryRow {
-  parameter: string;
-  question: string;
-  /** Bullets, each starting with '• ', separated by newlines. */
-  finding: string;
-  /** How the seller's offering connects; only when the seller is known. */
-  sellerAngle?: string;
-  source?: string;
-}
 
 export interface ThemeRow {
   theme: string;
@@ -132,7 +122,6 @@ export interface ThemeResult {
   progress: number;
   currentStep?: string;
   rows?: ThemeRow[];
-  discovery?: ThemeDiscoveryRow[];
   themeType?: ThemeType;
   companyName?: string;
   error?: string;

@@ -1,7 +1,7 @@
-import { ThemeInput, ThemeType, ThemeDiscoveryRow } from '@ai-insights/types';
+import { ThemeInput, ThemeType } from '@ai-insights/types';
 
-// The fixed discovery structure for each theme type: what a seller needs to
-// uncover about the account. Every theme report answers these, in this order.
+// The discovery questions for each theme type: what a seller needs to uncover
+// about the account. Every theme report answers these as its first themes.
 export const DISCOVERY_PARAMS: Record<ThemeType, { parameter: string; question: string }[]> = {
   business: [
     { parameter: 'Strategic Imperatives', question: 'Is the customer focusing on cutting costs or launching new digital products?' },
@@ -52,25 +52,4 @@ export function discoveryQuestionsBlock(input: ThemeInput): string {
   return DISCOVERY_PARAMS[input.themeType]
     .map((p, i) => `${i + 1}. ${p.parameter}: ${p.question.replace(/\bthey\b|\bthe customer\b/gi, input.companyName)}`)
     .join('\n');
-}
-
-/** Keeps exactly the predetermined parameters, in order, whatever the model returned. */
-export function shapeDiscovery(input: ThemeInput, raw: unknown): ThemeDiscoveryRow[] {
-  const list = Array.isArray(raw) ? raw : Array.isArray((raw as { discovery?: unknown })?.discovery) ? (raw as { discovery: unknown[] }).discovery : [];
-  const byParam = new Map<string, Record<string, unknown>>();
-  for (const item of list) {
-    const r = (item || {}) as Record<string, unknown>;
-    if (typeof r.parameter === 'string') byParam.set(r.parameter.trim().toLowerCase(), r);
-  }
-  const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-  return DISCOVERY_PARAMS[input.themeType].map((p) => {
-    const r = byParam.get(p.parameter.toLowerCase()) || {};
-    return {
-      parameter: p.parameter,
-      question: p.question,
-      finding: s(r.finding) || 'Not publicly disclosed.',
-      sellerAngle: hasSeller(input) ? s(r.sellerAngle) || undefined : undefined,
-      source: s(r.source) || undefined,
-    };
-  });
 }

@@ -1546,11 +1546,13 @@ export async function researchAllCompanies(
 
 // ── Themes Research ───────────────────────────────────────────────────────────
 
-export async function researchCompanyThemes(
+// The themes research brief. Also used by themeResearch.ts, which runs the
+// same brief through Claude's web search so every source is a real page URL.
+export function buildThemeResearchQuery(
   companyName: string,
   themeType: 'business' | 'technology' | 'sustainability',
   input?: ThemeInput
-): Promise<string> {
+): string {
   const queries: Record<string, string> = {
     business: `
 ${getSearchRecencyInstruction()}Research the strategic business priorities and growth initiatives of "${companyName}" for ${currentYearRangeLabel()}.
@@ -1606,9 +1608,16 @@ State "Not publicly disclosed" for anything unavailable. Cite every factual clai
   const extra = input
     ? `\n\nALSO ANSWER THESE DISCOVERY QUESTIONS, with evidence and dates:\n${discoveryQuestionsBlock(input)}${themeContextBlock(input) ? `\n\n${themeContextBlock(input)}` : ''}`
     : '';
+  return queries[themeType] + extra;
+}
 
+export async function researchCompanyThemes(
+  companyName: string,
+  themeType: 'business' | 'technology' | 'sustainability',
+  input?: ThemeInput
+): Promise<string> {
   try {
-    return await runResearch(queries[themeType] + extra, 'base');
+    return await runResearch(buildThemeResearchQuery(companyName, themeType, input), 'base');
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Research failed';
     return `Research unavailable for ${companyName}: ${msg}`;
