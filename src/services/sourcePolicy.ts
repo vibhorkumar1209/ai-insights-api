@@ -1,9 +1,9 @@
 // Which sites count as a citable source for theme analysis: primary sources
 // (the company itself, regulators and filing systems, official press-release
-// wires, sustainability registries), earnings call transcripts, and
-// established business, technology and trade news from around the world.
-// Aggregators, SEO stock sites, data brokers and blogs are excluded even when
-// they quote a primary source; cite the primary source instead.
+// wires, sustainability registries), earnings call transcripts, established
+// business, technology and trade news from around the world, and named
+// financial data aggregators and company data providers. Anything else
+// (unknown blogs, content farms, unrelated sites) is excluded.
 
 const PRIMARY_HOSTS = [
   // Regulators, filings, exchanges
@@ -72,6 +72,17 @@ const MAJOR_NEWS_HOSTS = [
   'lesechos.fr', 'scmp.com', 'straitstimes.com', 'afr.com', 'theglobeandmail.com',
 ];
 
+// Financial data aggregators and company data providers. Secondary sources,
+// allowed on the owner's instruction; the prompt still asks for a primary
+// source or news report first where one exists.
+const AGGREGATOR_HOSTS = [
+  'gloom.sh', 'leadiq.com', 'simplywall.st', 'reveliolabs.com',
+  'crunchbase.com', 'zoominfo.com', 'pitchbook.com', 'cbinsights.com', 'tracxn.com', 'owler.com', 'craft.co',
+  'macrotrends.net', 'stockanalysis.com', 'tradingview.com', 'marketbeat.com', 'zacks.com', 'tipranks.com',
+  'wallstreetzen.com', 'statista.com', 'morningstar.com', 'companiesmarketcap.com', 'globaldata.com',
+  'dnb.com', 'apollo.io', 'rocketreach.co', 'growjo.com', 'similarweb.com', 'builtwith.com', 'glassdoor.com',
+];
+
 function hostOf(url: string): string {
   try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
 }
@@ -83,7 +94,7 @@ function companyRoot(companyDomain?: string): string {
   return hostOf(/^https?:\/\//i.test(companyDomain) ? companyDomain : `https://${companyDomain}`);
 }
 
-export type SourceKind = 'company' | 'primary' | 'transcript' | 'news';
+export type SourceKind = 'company' | 'primary' | 'transcript' | 'news' | 'aggregator';
 
 /** Why a URL is allowed, or undefined when it is not. */
 export function sourceKind(url: string, companyDomain?: string): SourceKind | undefined {
@@ -98,6 +109,7 @@ export function sourceKind(url: string, companyDomain?: string): SourceKind | un
   let path = '/';
   try { path = new URL(url).pathname; } catch { /* keep '/' */ }
   if (TRANSCRIPT_SOURCES.some((t) => matches(host, t.host) && (!t.path || t.path.test(path)))) return 'transcript';
+  if (AGGREGATOR_HOSTS.some((d) => matches(host, d))) return 'aggregator';
   return undefined;
 }
 
@@ -106,4 +118,4 @@ export function isAllowedSource(url: string, companyDomain?: string): boolean {
 }
 
 /** For prompts: what may be cited. */
-export const SOURCE_POLICY_TEXT = `Cite ONLY: primary sources (the company's own website and investor relations pages, annual reports, SEC and other regulatory filings, stock exchange announcements, official press releases on PR Newswire, Business Wire or GlobeNewswire, sustainability disclosures to CDP or SBTi, government sites); earnings call transcripts (Motley Fool transcripts, Seeking Alpha, Investing.com, Yahoo Finance); and established news outlets worldwide, including global business press (Reuters, Bloomberg, WSJ, Financial Times, CNBC, BBC), regional business press (Economic Times and its ETAuto, ETCIO and other verticals, YourStory, Moneycontrol, Business Standard, Mint, Nikkei Asia, Handelsblatt, Gulf News and similar), technology press, and sector trade publications (Industry Dive, Fierce, Automotive News and similar). Do not cite aggregators, stock-tip or SEO sites, data brokers or personal blogs; find the primary source or news report they rely on instead.`;
+export const SOURCE_POLICY_TEXT = `Cite ONLY: primary sources (the company's own website and investor relations pages, annual reports, SEC and other regulatory filings, stock exchange announcements, official press releases on PR Newswire, Business Wire or GlobeNewswire, sustainability disclosures to CDP or SBTi, government sites); earnings call transcripts (Motley Fool transcripts, Seeking Alpha, Investing.com, Yahoo Finance); and established news outlets worldwide, including global business press (Reuters, Bloomberg, WSJ, Financial Times, CNBC, BBC), regional business press (Economic Times and its ETAuto, ETCIO and other verticals, YourStory, Moneycontrol, Business Standard, Mint, Nikkei Asia, Handelsblatt, Gulf News and similar), technology press, and sector trade publications (Industry Dive, Fierce, Automotive News and similar); and established financial data aggregators and company data providers (Simply Wall St, Crunchbase, ZoomInfo, LeadIQ, Revelio Labs, MacroTrends, Statista and similar). Prefer a primary source or news report where one exists. Do not cite personal blogs, content farms or unrelated sites.`;

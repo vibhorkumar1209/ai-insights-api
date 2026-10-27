@@ -26,14 +26,22 @@ describe('theme source policy', () => {
       expect(sourceKind(u, CO)).toBe('news');
   });
 
-  it('rejects aggregators and secondary sites seen in real runs', () => {
+  it('allows the named aggregators and data providers', () => {
     for (const u of [
       'https://gloom.sh/stocks/chef/risk-factors/2025',
       'https://leadiq.com/c/the-chefs-warehouse/5a1d',
       'https://simplywall.st/stocks/us/x',
       'https://www.reveliolabs.com/companies/chefs-warehouse/employees/',
+      'https://www.crunchbase.com/organization/x',
+    ]) expect(sourceKind(u, CO)).toBe('aggregator');
+  });
+
+  it('still rejects unknown sites, blogs and lookalike domains', () => {
+    for (const u of [
       'https://www.fool.com/investing/2026/01/01/3-stocks-to-buy-now/',
       'https://notchefswarehouse.com/x',
+      'https://someones-blog.example/chefs-warehouse-review',
+      'https://medium.com/@x/chefs-warehouse',
     ]) expect(isAllowedSource(u, CO)).toBe(false);
   });
 
@@ -61,8 +69,8 @@ describe('theme source policy', () => {
 
   it('drops a retrieved but disallowed URL from a theme', async () => {
     const out = await verifyThemeSources(
-      [{ source: 'https://gloom.sh/stocks/chef/risk-factors/2025' }],
-      { notes: 'n', urls: ['https://gloom.sh/stocks/chef/risk-factors/2025'] },
+      [{ source: 'https://someones-blog.example/chefs-warehouse-review' }],
+      { notes: 'n', urls: ['https://someones-blog.example/chefs-warehouse-review'] },
       CO,
     );
     expect(out[0].source).toBe('No verified source found');
