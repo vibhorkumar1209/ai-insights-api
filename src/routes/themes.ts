@@ -24,11 +24,14 @@ const VALID_THEME_TYPES: ThemeType[] = ['business', 'technology', 'sustainabilit
 /**
  * POST /api/themes
  * Start a new themes analysis job.
- * Body: { companyName, themeType, userOrganization?, solutionPortfolio? }
+ * Body: { companyName, themeType, companyDomain?, userOrganization?, userDomain?,
+ *   solutionPortfolio?, industry? (business), keyTriggers? (business), focusTechnologies? (technology) }
  * Returns: { jobId }
  */
 router.post('/', aiLimiter, async (req: Request, res: Response) => {
-  const { companyName, themeType, userOrganization, solutionPortfolio, companyDomain } = req.body;
+  const { companyName, themeType, userOrganization, solutionPortfolio, companyDomain,
+    userDomain, industry, keyTriggers, focusTechnologies } = req.body;
+  const opt = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
 
   if (!companyName || typeof companyName !== 'string') {
     return res.status(400).json({ error: 'companyName is required' });
@@ -43,9 +46,14 @@ router.post('/', aiLimiter, async (req: Request, res: Response) => {
   const input: ThemeInput = {
     companyName: String(companyName).slice(0, 200),
     themeType: themeType as ThemeType,
-    userOrganization: userOrganization ? String(userOrganization).slice(0, 200) : undefined,
-    solutionPortfolio: solutionPortfolio ? String(solutionPortfolio).slice(0, 1000) : undefined,
-    companyDomain: companyDomain ? String(companyDomain).slice(0, 200) : undefined,
+    userOrganization: opt(userOrganization, 200),
+    solutionPortfolio: opt(solutionPortfolio, 1000),
+    companyDomain: opt(companyDomain, 200),
+    userDomain: opt(userDomain, 200),
+    // Each theme type only takes the inputs that apply to it.
+    industry: themeType === 'business' ? opt(industry, 200) : undefined,
+    keyTriggers: themeType === 'business' ? opt(keyTriggers, 1000) : undefined,
+    focusTechnologies: themeType === 'technology' ? opt(focusTechnologies, 500) : undefined,
   };
 
   const { jobId, isNew } = dedupeJobStart(

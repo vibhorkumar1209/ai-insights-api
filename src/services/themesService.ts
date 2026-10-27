@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ThemeInput, ThemeResult } from '@ai-insights/types';
 import { researchCompanyThemes } from './parallelAI';
-import { synthesizeThemes } from './claudeAI';
+import { synthesizeThemes, synthesizeThemeDiscovery } from './claudeAI';
 import { filterLiveUrlsOnRows } from './urlValidator';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
@@ -79,23 +79,35 @@ export async function runThemesAnalysis(jobId: string, input: ThemeInput): Promi
     step(`Researching ${input.companyName}...`, 10);
 
     const companyLabel = `${input.companyName}${input.companyDomain ? ` (website: ${input.companyDomain})` : ''}`;
-    const research = await researchCompanyThemes(companyLabel, input.themeType);
+    const research = await researchCompanyThemes(companyLabel, input.themeType, input);
 
     step('Synthesizing themes...', 65);
     updateThemeJob(jobId, { status: 'synthesizing' });
     emit(jobId, 'progress', { progress: 65, currentStep: 'Synthesizing themes...' });
 
-    let rows = await synthesizeThemes(input, research);
+    // Discovery is a separate, smaller call from the same research, so a
+    // failure there leaves the themes intact rather than failing the report.
+    const [themeRows, discoveryRows] = await Promise.all([
+      synthesizeThemes(input, research),
+      synthesizeThemeDiscovery(input, research).catch((err) => {
+        console.warn('[themes] discovery failed, continuing without it:', err instanceof Error ? err.message : err);
+        return undefined;
+      }),
+    ]);
 
     updateThemeJob(jobId, { currentStep: 'Verifying source links...', progress: 90, status: 'synthesizing' });
     emit(jobId, 'progress', { currentStep: 'Verifying source links...', progress: 90 });
-    rows = await filterLiveUrlsOnRows(rows);
+    const [rows, discovery] = await Promise.all([
+      filterLiveUrlsOnRows(themeRows),
+      discoveryRows ? filterLiveUrlsOnRows(discoveryRows, 'Not publicly disclosed') : Promise.resolve(undefined),
+    ]);
 
     const completed: Partial<ThemeResult> = {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
       rows,
+      discovery,
       completedAt: new Date().toISOString(),
     };
 

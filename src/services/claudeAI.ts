@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { logClaudeUsage, getCallerLabel } from './usageLogger';
+import { themeContextBlock, discoveryQuestionsBlock, hasSeller, shapeDiscovery } from './themeDiscovery';
 import {
   BenchmarkInput, BenchmarkDimension, GapAnalysisRow,
   ThemeInput, ThemeRow,
@@ -18,7 +19,7 @@ import {
   MacroTEIData, BCGMatrixItem, KeyPlayerProfile,
   BusinessSegment, TimelineBlock, StrategicEvolutionBullet,
   TechHeatMapInput, TechHeatMapRow,
-  ContentGenerationInput,
+  ContentGenerationInput, ThemeDiscoveryRow,
   SalesPlay2Input, SalesPlay2WinTheme, SalesPlay2Opportunity, SalesPlay2Competitor,
   TLFirmInsight, TLMetric, TLInsight, TLTheme, TLChartSpec, ConsultingIntelligenceJob,
   VucaRow, VucaDriverEffectRow, ITSpendRow, GeoStressRow, ClientITImpactRow, VucaAnalysisJob,
@@ -918,7 +919,7 @@ ${config.hint}
 
 ${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available — use your training knowledge about ${input.companyName}.]`}
 
-${input.userOrganization ? `Selling organisation: "${input.userOrganization}"${input.solutionPortfolio ? ` | Portfolio: ${input.solutionPortfolio}` : ''}` : ''}
+${themeContextBlock(input) ? `${themeContextBlock(input)}\nWhere these inputs apply, favour themes that reflect them and say so in the theme.` : ''}
 
 Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes total):
 [
@@ -933,6 +934,35 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
 
   const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
   return parseThemes(text);
+}
+
+// The fixed discovery questions for the theme type (see themeDiscovery.ts),
+// answered from the same research as the themes.
+export async function synthesizeThemeDiscovery(input: ThemeInput, research: string): Promise<ThemeDiscoveryRow[]> {
+  const hasResearch = !isEmptyResearch(research);
+  const seller = hasSeller(input);
+  const system = `You are a senior B2B sales intelligence analyst answering account discovery questions.
+- Use the provided research first; supplement with training knowledge only where you are confident, and say when something is not publicly disclosed rather than guessing.
+- Be specific to ${input.companyName}: name regulations, regions, systems, vendors, targets and dates.
+- Output ONLY valid JSON. No markdown fences, no text outside the JSON array.
+- ${getRecencyDirective()}
+- ${WRITING_DIRECTIVE}`;
+  const user = `Answer these discovery questions about "${input.companyName}"${input.companyDomain ? ` (${input.companyDomain})` : ''}:
+${discoveryQuestionsBlock(input)}
+
+${themeContextBlock(input)}
+
+${hasResearch ? `RESEARCH:\n${research.slice(0, 20000)}` : `[No live research available, use training knowledge about ${input.companyName} and say where it is not disclosed.]`}
+
+Return a JSON array with one object per question, in order:
+[{
+  "parameter": "the parameter name exactly as given above",
+  "finding": "2-4 bullets, each starting with '• ' and separated by newlines, answering the question directly with evidence and dates",${seller ? `
+  "sellerAngle": "1-2 sentences: how ${input.userOrganization || 'the seller'}'s offerings connect to this finding, or 'No clear fit' if none",` : ''}
+  "source": "URL(s) supporting the finding, separated by ' | ', or 'Not publicly disclosed'"
+}]`;
+  const text = await claudeCreateDirect(system, user, 2500, SYNTHESIS_MODEL);
+  return shapeDiscovery(input, safeParseJsonArray(text) || []);
 }
 
 function parseThemes(raw: string): ThemeRow[] {

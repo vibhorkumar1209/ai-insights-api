@@ -35,6 +35,7 @@ const YEAR = /\b(19|20)\d{2}\b/;
  * substring of the offending literal, and must carry a reason.
  */
 const ALLOWED: Array<{ fragment: string; reason: string }> = [
+  { fragment: 'by 2030 or 2040', reason: 'Example net-zero target years in the owner-specified Sustainability discovery question, not a statement about the current date' },
   { fragment: '2023-06-01', reason: 'Anthropic API version header — a pinned API version, not a date' },
   { fragment: 'claude-haiku-4-5-20251001', reason: 'Model identifier' },
   { fragment: '2022-2030', reason: 'IT/ERD spend calculator — fixed span of the underlying source dataset' },

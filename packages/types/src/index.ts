@@ -92,9 +92,30 @@ export type ThemeType = 'business' | 'technology' | 'sustainability';
 export interface ThemeInput {
   companyName: string;
   themeType: ThemeType;
+  /** Your company name (the seller). */
   userOrganization?: string;
+  /** Your company's offerings: products and services. */
   solutionPortfolio?: string;
   companyDomain?: string;
+  /** Your company's domain. */
+  userDomain?: string;
+  /** Business themes only. */
+  industry?: string;
+  /** Business themes only: events that signal a buying need (new CEO, M&A, regulation...). */
+  keyTriggers?: string;
+  /** Technology themes only. */
+  focusTechnologies?: string;
+}
+
+/** One answer in the fixed discovery structure for a theme type. */
+export interface ThemeDiscoveryRow {
+  parameter: string;
+  question: string;
+  /** Bullets, each starting with '• ', separated by newlines. */
+  finding: string;
+  /** How the seller's offering connects; only when the seller is known. */
+  sellerAngle?: string;
+  source?: string;
 }
 
 export interface ThemeRow {
@@ -111,6 +132,7 @@ export interface ThemeResult {
   progress: number;
   currentStep?: string;
   rows?: ThemeRow[];
+  discovery?: ThemeDiscoveryRow[];
   themeType?: ThemeType;
   companyName?: string;
   error?: string;

@@ -1,3 +1,5 @@
+import { ThemeInput } from '@ai-insights/types';
+import { themeContextBlock, discoveryQuestionsBlock } from './themeDiscovery';
 import fetch from 'node-fetch';
 import { Readable } from 'stream';
 import { Competitor } from '@ai-insights/types';
@@ -1546,7 +1548,8 @@ export async function researchAllCompanies(
 
 export async function researchCompanyThemes(
   companyName: string,
-  themeType: 'business' | 'technology' | 'sustainability'
+  themeType: 'business' | 'technology' | 'sustainability',
+  input?: ThemeInput
 ): Promise<string> {
   const queries: Record<string, string> = {
     business: `
@@ -1598,8 +1601,14 @@ State "Not publicly disclosed" for anything unavailable. Cite every factual clai
 `.trim(),
   };
 
+  // The discovery questions and any optional inputs are part of the query
+  // itself, so they shape what is searched for, not just how it is written up.
+  const extra = input
+    ? `\n\nALSO ANSWER THESE DISCOVERY QUESTIONS, with evidence and dates:\n${discoveryQuestionsBlock(input)}${themeContextBlock(input) ? `\n\n${themeContextBlock(input)}` : ''}`
+    : '';
+
   try {
-    return await runResearch(queries[themeType], 'base');
+    return await runResearch(queries[themeType] + extra, 'base');
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Research failed';
     return `Research unavailable for ${companyName}: ${msg}`;
