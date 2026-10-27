@@ -23,7 +23,7 @@ export async function researchThemes(input: ThemeInput): Promise<ThemeResearch> 
 OUTPUT: plain text research notes grouped by the numbered areas and discovery questions above. Put the source page URL after every fact. Prefer primary sources (annual reports, SEC filings, investor presentations, earnings call transcripts, company press releases, sustainability reports) and reputable news. Write "NOT FOUND" where you could not verify something.`;
 
   try {
-    const r = await claudeWithWebResearch(SYSTEM, brief, 8000, SYNTHESIS_MODEL, {
+    const r = await claudeWithWebResearch(SYSTEM, brief, 12000, SYNTHESIS_MODEL, {
       maxSearches: 8,
       legacySearch: true,
       timeoutMs: 270_000,

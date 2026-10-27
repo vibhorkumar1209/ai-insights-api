@@ -922,7 +922,7 @@ The analysis MUST answer these discovery questions. Make each one a theme of its
 ${discovery.map((d, i) => `${i + 1}. ${d.parameter}: ${d.question}`).join('\n')}
 Then add the other most important ${config.label.toLowerCase()}, for 6-8 themes in total.
 
-${hasResearch ? `RESEARCH:\n${research.slice(0, 24000)}` : `[No research is available. Return an empty array [] rather than writing from memory.]`}
+${hasResearch ? `RESEARCH:\n${research.slice(0, 60000)}` : `[No research is available. Return an empty array [] rather than writing from memory.]`}
 
 ${themeContextBlock(input) ? `${themeContextBlock(input)}\nWhere these inputs apply, favour themes that reflect them and say so in the theme.` : ''}
 ${sourceUrls.length ? `\nSOURCE URLS (the only URLs you may cite; copy them exactly):\n${sourceUrls.slice(0, 150).join('\n')}\n` : ''}
@@ -937,8 +937,13 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
   }
 ]`;
 
-  const text = await claudeCreateDirect(systemPrompt, userPrompt, MAX_OUTPUT_TOKENS, SYNTHESIS_MODEL);
-  return parseThemes(text);
+  // 6-8 sourced themes with bullets run to ~8K output tokens. The shared
+  // 4096 budget (6185 after Sonnet 5 scaling) cut the JSON off after the
+  // first theme, and the parser quietly returned that one row.
+  const text = await claudeCreateDirect(systemPrompt, userPrompt, 9000, SYNTHESIS_MODEL, 180_000);
+  const rows = parseThemes(text);
+  if (rows.length < 4) throw new Error(`Theme synthesis returned only ${rows.length} theme(s); the response was likely cut off.`);
+  return rows;
 }
 
 function parseThemes(raw: string): ThemeRow[] {
