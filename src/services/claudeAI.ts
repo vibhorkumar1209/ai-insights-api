@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { logClaudeUsage, getCallerLabel } from './usageLogger';
 import { themeContextBlock, DISCOVERY_PARAMS } from './themeDiscovery';
+import { SOURCE_POLICY_TEXT } from './sourcePolicy';
 import {
   BenchmarkInput, BenchmarkDimension, GapAnalysisRow,
   ThemeInput, ThemeRow,
@@ -925,6 +926,7 @@ Then add the other most important ${config.label.toLowerCase()}, for 6-8 themes 
 ${hasResearch ? `RESEARCH:\n${research.slice(0, 60000)}` : `[No research is available. Return an empty array [] rather than writing from memory.]`}
 
 ${themeContextBlock(input) ? `${themeContextBlock(input)}\nWhere these inputs apply, favour themes that reflect them and say so in the theme.` : ''}
+SOURCE RULE: ${SOURCE_POLICY_TEXT}
 ${sourceUrls.length ? `\nSOURCE URLS (the only URLs you may cite; copy them exactly):\n${sourceUrls.slice(0, 150).join('\n')}\n` : ''}
 Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes total):
 [
@@ -933,7 +935,7 @@ Return a JSON array with EXACTLY this shape (one object per theme, 6-8 themes to
     "description": "3-4 bullet points (each starting with '• ' and separated by newlines): what this theme means for ${input.companyName} — be specific, cite programmes, executives, or data from the research, with dates.",
     "examples": "Concrete example 1 | Concrete example 2 | Concrete example 3",
     "strategicImpact": "2-3 bullet points (each starting with '• ' and separated by newlines): the strategic significance and what it signals about ${input.companyName}'s direction.",
-    "source": "The exact URL(s) of the pages in the research that support this theme, separated by ' | '. Direct page URLs only."
+    "source": "The exact URL(s) from SOURCE URLS that support this theme, separated by ' | '. Direct page URLs only."
   }
 ]`;
 

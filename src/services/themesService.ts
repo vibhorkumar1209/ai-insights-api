@@ -87,7 +87,7 @@ export async function runThemesAnalysis(jobId: string, input: ThemeInput): Promi
 
     updateThemeJob(jobId, { currentStep: 'Verifying source links...', progress: 90, status: 'synthesizing' });
     emit(jobId, 'progress', { currentStep: 'Verifying source links...', progress: 90 });
-    const rows = await verifyThemeSources(themeRows, research);
+    const rows = await verifyThemeSources(themeRows, research, input.companyDomain);
 
     const completed: Partial<ThemeResult> = {
       status: 'complete',

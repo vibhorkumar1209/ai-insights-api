@@ -2,6 +2,7 @@ import { ThemeInput } from '@ai-insights/types';
 import { claudeWithWebResearch, SYNTHESIS_MODEL } from './claudeAI';
 import { buildThemeResearchQuery, researchCompanyThemes } from './parallelAI';
 import { filterLiveUrls, isRedirectWrapper, resolveFinalUrl } from './urlValidator';
+import { isAllowedSource, SOURCE_POLICY_TEXT } from './sourcePolicy';
 
 // Themes research. Parallel.AI returns prose with no reliable link to where
 // each fact came from, and in production it had been failing outright, which
@@ -20,7 +21,9 @@ export async function researchThemes(input: ThemeInput): Promise<ThemeResearch> 
   const label = `${input.companyName}${input.companyDomain ? ` (website: ${input.companyDomain})` : ''}`;
   const brief = `${buildThemeResearchQuery(label, input.themeType, input)}
 
-OUTPUT: plain text research notes grouped by the numbered areas and discovery questions above. Put the source page URL after every fact. Prefer primary sources (annual reports, SEC filings, investor presentations, earnings call transcripts, company press releases, sustainability reports) and reputable news. Write "NOT FOUND" where you could not verify something.`;
+SOURCES: ${SOURCE_POLICY_TEXT} When a search result is from another kind of site, search again for the primary source or major news report behind it.
+
+OUTPUT: plain text research notes grouped by the numbered areas and discovery questions above. Put the source page URL after every fact. Write "NOT FOUND" where you could not verify something from an allowed source.`;
 
   try {
     const r = await claudeWithWebResearch(SYSTEM, brief, 12000, SYNTHESIS_MODEL, {
@@ -29,7 +32,10 @@ OUTPUT: plain text research notes grouped by the numbered areas and discovery qu
       timeoutMs: 270_000,
       source: 'themes.research',
     });
-    if (r.text.trim().length >= 200 && r.urls.length > 0) return { notes: r.text, urls: r.urls };
+    // Only allowed sources are handed on, so the theme writer cannot cite
+    // anything else; verifyThemeSources checks again afterwards.
+    const urls = r.urls.filter((u) => isAllowedSource(u, input.companyDomain));
+    if (r.text.trim().length >= 200 && urls.length > 0) return { notes: r.text, urls };
     console.warn('[themes] web research came back thin, falling back to Parallel.AI');
   } catch (err) {
     console.warn('[themes] web research failed, falling back to Parallel.AI:', err instanceof Error ? err.message : err);
@@ -53,7 +59,7 @@ function norm(u: string): string {
  * load. A theme with nothing left says so plainly instead of showing a
  * plausible but unverified link.
  */
-export async function verifyThemeSources<T extends { source?: string }>(rows: T[], research: ThemeResearch): Promise<T[]> {
+export async function verifyThemeSources<T extends { source?: string }>(rows: T[], research: ThemeResearch, companyDomain?: string): Promise<T[]> {
   const allowed = new Set((research.urls.length ? research.urls : research.notes.match(URL_IN_TEXT) || []).map(norm));
   return Promise.all(rows.map(async (row) => {
     const cited = Array.from(new Set((row.source || '').match(URL_IN_TEXT) || []));
@@ -61,7 +67,7 @@ export async function verifyThemeSources<T extends { source?: string }>(rows: T[
     for (const url of cited) {
       if (!allowed.has(norm(url))) continue;
       const direct = isRedirectWrapper(url) ? await resolveFinalUrl(url) : url;
-      if (direct && !kept.includes(direct)) kept.push(direct);
+      if (direct && isAllowedSource(direct, companyDomain) && !kept.includes(direct)) kept.push(direct);
     }
     const live = (await filterLiveUrls(kept.join(' | '), '')) || '';
     return { ...row, source: live || NO_SOURCE };
