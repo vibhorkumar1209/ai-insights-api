@@ -32,10 +32,31 @@ describe('theme source policy', () => {
       'https://leadiq.com/c/the-chefs-warehouse/5a1d',
       'https://simplywall.st/stocks/us/x',
       'https://www.reveliolabs.com/companies/chefs-warehouse/employees/',
-      'https://distributionstrategy.com/2025/11/x',
-      'https://www.fool.com/earnings/call-transcripts/x',
+      'https://www.fool.com/investing/2026/01/01/3-stocks-to-buy-now/',
       'https://notchefswarehouse.com/x',
     ]) expect(isAllowedSource(u, CO)).toBe(false);
+  });
+
+  it('allows earnings call transcripts, but not the same hosts\' stock tips', () => {
+    expect(sourceKind('https://www.fool.com/earnings/call-transcripts/2026/08/07/chef-q2-2026/', CO)).toBe('transcript');
+    expect(sourceKind('https://seekingalpha.com/article/4800000-chefs-warehouse-q2-2026-earnings-call-transcript', CO)).toBe('transcript');
+    expect(sourceKind('https://www.investing.com/news/transcripts/earnings-call-transcript-chefs-warehouse-q2', CO)).toBe('transcript');
+    expect(isAllowedSource('https://seekingalpha.com/article/4800001-chefs-warehouse-a-buy', CO)).toBe(false);
+  });
+
+  it('allows Economic Times verticals, Indian startup press, global and trade news', () => {
+    for (const u of [
+      'https://economictimes.indiatimes.com/tech/x',
+      'https://auto.economictimes.indiatimes.com/news/x',
+      'https://cio.economictimes.indiatimes.com/news/x',
+      'https://yourstory.com/2026/05/x',
+      'https://www.moneycontrol.com/news/x',
+      'https://www.business-standard.com/companies/x',
+      'https://gulfnews.com/business/x',
+      'https://www.handelsblatt.com/x',
+      'https://www.supplychaindive.com/news/x',
+      'https://distributionstrategy.com/2025/11/x',
+    ]) expect(sourceKind(u, CO)).toBe('news');
   });
 
   it('drops a retrieved but disallowed URL from a theme', async () => {
