@@ -55,8 +55,11 @@ const TASK_POLL_INTERVAL_MS = 4000;
 // while only 2 queries returned data, silently halving research depth.
 // Queries are dispatched concurrently (Promise.allSettled), so raising this
 // bounds worst-case wall clock by the slowest single query, not the sum.
-const TASK_TIMEOUT_MS = 180000;
-const MAX_RETRIES = 1;          // 1 retry — Render Pro can afford it
+// One task, waited on for up to 6 minutes. A timeout used to abandon the
+// task and start a second, billed one for the same research, which then hit
+// the same limit: every call cost two tasks and returned nothing.
+const TASK_TIMEOUT_MS = 360000;
+const MAX_RETRIES = 0;          // no re-create on timeout (see TASK_TIMEOUT_MS)
 
 // ── node-fetch v2 compatible timeout helper ────────────────────────────────────
 // AbortSignal.timeout() is Node 17.3+ / native fetch only — not supported by
@@ -153,6 +156,7 @@ async function createTask(input: string, processor: 'base' | 'ultra' = 'base'): 
 // Output lives at: result.output.content.output (string)
 async function pollTask(runId: string): Promise<string> {
   const deadline = Date.now() + TASK_TIMEOUT_MS;
+  let lastStatus = 'unknown';
 
   while (Date.now() < deadline) {
     await sleep(TASK_POLL_INTERVAL_MS);
@@ -169,6 +173,7 @@ async function pollTask(runId: string): Promise<string> {
     }
 
     const statusData = (await statusRes.json()) as { status: string; is_active: boolean };
+    lastStatus = statusData.status;
 
     if (statusData.status === 'failed') {
       throw new Error('Parallel.AI task failed');
@@ -209,7 +214,7 @@ async function pollTask(runId: string): Promise<string> {
     }
   }
 
-  throw new Error(`Parallel.AI task timed out after ${Math.round(TASK_TIMEOUT_MS / 1000)}s`);
+  throw new Error(`Parallel.AI task timed out after ${Math.round(TASK_TIMEOUT_MS / 1000)}s (last status: ${lastStatus}, run ${runId})`);
 }
 
 /** Public single-query wrapper used by consultingIntelligenceService */
