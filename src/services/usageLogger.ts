@@ -233,6 +233,7 @@ export interface ParallelUsageEntry {
   processor: string;
   success: boolean;
   durationMs: number;
+  error?: string;
 }
 
 const parallelEntries: ParallelUsageEntry[] = [];
@@ -242,6 +243,8 @@ export function logParallelUsage(params: {
   processor: string;
   success: boolean;
   durationMs: number;
+  /** Why a failed call failed, truncated. Without it a provider outage was invisible here. */
+  error?: string;
 }): void {
   const entry: ParallelUsageEntry = { timestamp: new Date().toISOString(), ...params };
   parallelEntries.push(entry);

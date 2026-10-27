@@ -230,8 +230,8 @@ async function runResearch(query: string, processor: 'base' | 'ultra' = 'base'):
       logParallelUsage({ source, processor, success: true, durationMs: Date.now() - startedAt });
       return result;
     } catch (err) {
-      logParallelUsage({ source, processor, success: false, durationMs: Date.now() - startedAt });
       lastError = err instanceof Error ? err : new Error(String(err));
+      logParallelUsage({ source, processor, success: false, durationMs: Date.now() - startedAt, error: lastError.message.slice(0, 300) });
       // This is the only place the real failure reason was visible before —
       // logParallelUsage only records a success:false stat, never the
       // message, and every caller up the chain (researchCompanySegments,
