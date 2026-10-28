@@ -747,7 +747,16 @@ export interface FinancialAnalysisResult {
   ticker?: string;
   exchange?: string;
   isPublic?: boolean;
-  dataSource?: 'Yahoo Finance' | 'Google Finance' | 'Parallel.AI';
+  dataSource?: 'Yahoo Finance' | 'Google Finance' | 'Parallel.AI' | 'Government budget documents';
+
+  // ── Government entity (budget basis) ────────────────────────────
+  // A budget-funded government department or agency reports its budget in
+  // the same fields: revenueHistory = budget authority by fiscal year,
+  // segmentRevenue = budget by sub-agency or program, geoRevenue = mandatory
+  // vs discretionary, plStatement = budget summary vs the previous year.
+  entityType?: 'company' | 'government';
+  fiscalYear?: string;
+  budgetSources?: string[];
 
   // ── Public company ──────────────────────────────────────────────
   companyInfo?:      CompanyInfo;

@@ -3,6 +3,7 @@ import { FinancialAnalysisResult, FinancialAnalysisInput } from '@ai-insights/ty
 import { detectTicker, buildSearchString, fetchAnnualFinancials, fetchQuarterlyFinancials, fetchYahooQuoteSummaryFinancials, companyIdentityConfirmed } from './yahooFinance';
 import { researchPrivateCompany, researchCompanySegments, isImplausibleNativeAmount, LAKH_CRORE_CURRENCIES } from './parallelAI';
 import { synthesizeFinancialInsights, synthesizePrivateCompany, claudeLookupTicker, generateBusinessDescription } from './claudeAI';
+import { isBudgetFundedGovernment, researchGovernmentBudget, structureGovernmentBudget } from './governmentBudget';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -82,6 +83,14 @@ export async function runFinancialAnalysis(
       currentStep: `Searching for ${input.companyName} on Yahoo Finance…`,
     });
     emit(jobId, 'progress', job);
+
+    // Government departments and agencies funded by appropriations have no
+    // revenue to report; they get their budget in the same report sections.
+    // Skipped when the caller explicitly says the entity is public.
+    if (input.isPublic !== true && await isBudgetFundedGovernment(input)) {
+      await runGovernmentPath(jobId, input);
+      return;
+    }
 
     let isPublic: boolean;
     let ticker: string | undefined;
@@ -439,6 +448,41 @@ async function runPrivatePath(
     lastValuation:        privateData.lastValuation,
     privateInsights:      privateData.privateInsights,
     privateKeyHighlights: privateData.privateKeyHighlights,
+  });
+  emit(jobId, 'result', job);
+}
+
+// ── Government path ───────────────────────────────────────────────────────────
+
+async function runGovernmentPath(jobId: string, input: FinancialAnalysisInput): Promise<void> {
+  let job = update(jobId, {
+    isPublic: false,
+    entityType: 'government',
+    status: 'researching',
+    progress: 20,
+    currentStep: `Researching ${input.companyName}'s enacted budget…`,
+  });
+  emit(jobId, 'progress', job);
+
+  const { notes, urls } = await researchGovernmentBudget(input);
+  if (!notes || notes.trim().length < 200) {
+    throw new Error(`No budget documents could be found for ${input.companyName}.`);
+  }
+
+  job = update(jobId, { status: 'synthesizing', progress: 70, currentStep: 'Building the budget breakdown…' });
+  emit(jobId, 'progress', job);
+
+  const report = await structureGovernmentBudget(input, notes, urls);
+  if (!report.revenueHistory?.length && !report.segmentRevenue?.length) {
+    throw new Error(`The budget for ${input.companyName} could not be determined from published sources.`);
+  }
+
+  job = update(jobId, {
+    ...report,
+    status: 'complete',
+    progress: 100,
+    currentStep: 'Complete',
+    completedAt: new Date().toISOString(),
   });
   emit(jobId, 'result', job);
 }
