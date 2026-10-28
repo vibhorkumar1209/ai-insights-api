@@ -1,4 +1,4 @@
-import { looksGovernmental, budgetToReport, pctChange } from '../services/governmentBudget';
+import { looksGovernmental, budgetToReport, pctChange, budgetToFirmographic } from '../services/governmentBudget';
 
 describe('government detection pre-check', () => {
   it('flags government domains and names', () => {
@@ -73,5 +73,27 @@ describe('budgetToReport', () => {
     expect(pctChange(110, 100)).toBe(10);
     expect(pctChange(1, 0)).toBeUndefined();
     expect(pctChange(undefined, 5)).toBeUndefined();
+  });
+});
+
+describe('budgetToFirmographic', () => {
+  const report = budgetToReport({
+    fiscalYear: 'FY2026', currency: 'USD',
+    totalHistory: [{ year: 'FY2025', amount: 50e9 }, { year: 'FY2026', amount: 52e9 }],
+    breakdown: [{ name: 'NNSA', amount: 24e9, priorAmount: 22e9 }, { name: 'Science', amount: 8e9 }],
+    spendingType: [{ type: 'Discretionary', amount: 48e9 }, { type: 'Mandatory', amount: 4e9 }],
+  }, []);
+  const f = budgetToFirmographic(report);
+
+  it('fills the revenue fields with the enacted budget', () => {
+    expect(f).toMatchObject({
+      entityType: 'government', latestRevenue: '$52.00B', revenueYear: 'FY2026',
+      previousRevenue: '$50.00B', previousYear: 'FY2025', yoyGrowth: 4, revenueSourceType: 'Enacted government budget',
+    });
+  });
+
+  it('summarises the largest budget lines and the spending split', () => {
+    expect(f.revenueDrivers).toBe('Largest budget lines (FY2026): NNSA: $24.00B (+9.1% YoY); Science: $8.00B.');
+    expect(f.regionalBreakdown).toBe('Mandatory vs discretionary: Discretionary: $48.00B (92.3%); Mandatory: $4.00B (7.7%).');
   });
 });

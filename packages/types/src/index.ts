@@ -1423,6 +1423,12 @@ export interface FirmographicResult {
   revenueDrivers?: string;      // primary growth drivers — product lines, regions, acquisitions (Gemini path only)
   regionalBreakdown?: string;   // revenue by geography/segment/subsidiary, if disclosed (Gemini path only)
   revenueSourceType?: string;   // 'Official regulatory filing' | 'Third-party intelligence platform' (Gemini path only)
+  // Government department or agency funded by a budget: the revenue fields
+  // above carry its enacted budget authority instead (same logic as
+  // Financial Analysis). revenueDrivers lists the largest sub-agencies and
+  // programs; regionalBreakdown holds the mandatory vs discretionary split.
+  entityType?: 'company' | 'government';
+  budgetSources?: string[];
   companyInfo?: CompanyInfo;
   // Firmographic profile — researched after revenue via Gemini grounded search
   foundedYear?: string;

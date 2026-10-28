@@ -3,6 +3,7 @@ import { FirmographicInput, FirmographicResult } from '@ai-insights/types';
 import { detectTicker, fetchAnnualFinancials, fetchYahooQuoteSummaryFinancials, buildSearchString, formatRevenueUSD, companyIdentityConfirmed } from './yahooFinance';
 import { claudeLookupTicker } from './claudeAI';
 import { geminiRevenueLookup, geminiFirmographicLookup } from './parallelAI';
+import { isBudgetFundedGovernment, governmentBudgetForFirmographic } from './governmentBudget';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
@@ -120,6 +121,20 @@ export async function runFirmographicJob(jobId: string, input: FirmographicInput
       currentStep: `Looking up ${input.companyName}…`,
     });
     emit(jobId, 'progress', job);
+
+    // Government departments and agencies funded by a budget have no revenue;
+    // report their enacted budget instead, as Financial Analysis does.
+    if (await isBudgetFundedGovernment(input)) {
+      job = update(jobId, { entityType: 'government', isPublic: false, status: 'fetching', progress: 40, currentStep: `Researching ${input.companyName}'s enacted budget…` });
+      emit(jobId, 'progress', job);
+      const budget = await governmentBudgetForFirmographic(input).catch((err) => {
+        console.warn('[firmographic] government budget lookup failed:', err instanceof Error ? err.message : err);
+        return null;
+      });
+      // Like the revenue path, a missed budget still completes with the profile.
+      await enrichAndComplete(jobId, input, budget ?? { entityType: 'government' });
+      return;
+    }
 
     let tickerResult = await detectTicker(input.companyName, input.companyDomain).catch(() => null);
 

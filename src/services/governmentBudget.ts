@@ -277,3 +277,58 @@ Rules:
   const raw = await claudeCreateDirect(system, user, 9000, SYNTHESIS_MODEL, 180_000, undefined, 'financialAnalysis.govStructure');
   return budgetToReport(parseJsonRobust(raw) as BudgetDraft, urls);
 }
+
+// ── Firmographic summary ─────────────────────────────────────────────────────
+// The Firmographic module has one revenue figure, a prior year and two text
+// fields. For a government entity they carry the same budget the Financial
+// Analysis report shows, so the two modules agree.
+
+export interface FirmographicBudgetFields {
+  entityType: 'government';
+  dataSource: string;
+  latestRevenue?: string;
+  latestRevenueRaw?: number;
+  revenueYear?: string;
+  previousRevenue?: string;
+  previousYear?: string;
+  yoyGrowth?: number;
+  currency?: string;
+  revenueDrivers?: string;
+  regionalBreakdown?: string;
+  revenueSourceType: string;
+  budgetSources?: string[];
+}
+
+export function budgetToFirmographic(report: Partial<FinancialAnalysisResult>): FirmographicBudgetFields {
+  const hist = report.revenueHistory || [];
+  const latest = hist.at(-1);
+  const prev = hist.at(-2);
+  const top = (report.segmentRevenue || []).slice(0, 6)
+    .map((s) => `${s.segment}: ${s.revenue}${s.yoyGrowth ? ` (${s.yoyGrowth} YoY)` : ''}`);
+  const split = (report.geoRevenue || [])
+    .map((g) => `${g.region}: ${g.revenue} (${g.percentage}%${g.yoyGrowth ? `, ${g.yoyGrowth} YoY` : ''})`);
+  return {
+    entityType: 'government',
+    dataSource: 'Government budget documents',
+    latestRevenue: latest?.revenueFormatted,
+    latestRevenueRaw: latest?.revenue,
+    revenueYear: latest?.year,
+    previousRevenue: prev?.revenueFormatted,
+    previousYear: prev?.year,
+    yoyGrowth: latest?.yoyGrowth,
+    currency: report.currency,
+    revenueDrivers: top.length ? `Largest budget lines (${latest?.year || 'latest fiscal year'}): ${top.join('; ')}.` : undefined,
+    regionalBreakdown: split.length ? `Mandatory vs discretionary: ${split.join('; ')}.` : undefined,
+    revenueSourceType: 'Enacted government budget',
+    budgetSources: report.budgetSources,
+  };
+}
+
+/** Researches and structures the budget for the Firmographic module. */
+export async function governmentBudgetForFirmographic(input: FinancialAnalysisInput): Promise<FirmographicBudgetFields | null> {
+  const { notes, urls } = await researchGovernmentBudget(input);
+  if (!notes || notes.trim().length < 200) return null;
+  const report = await structureGovernmentBudget(input, notes, urls);
+  if (!report.revenueHistory?.length) return null;
+  return budgetToFirmographic(report);
+}
