@@ -135,7 +135,8 @@ export function budgetToReport(d: BudgetDraft, observedUrls: string[]): Partial<
     yoyGrowth: i > 0 ? pctChange(h.amount, history[i - 1].amount) : undefined,
   }));
 
-  const breakdown = (d.breakdown || []).filter((b) => str(b.name) && num(b.amount) != null);
+  // A sub-item listed beside its parent would be counted twice in the shares.
+  const breakdown = (d.breakdown || []).filter((b) => str(b.name) && num(b.amount) != null && !/\((within|part of|included in|under)\b/i.test(str(b.name)));
   const breakdownTotal = breakdown.reduce((s, b) => s + (b.amount as number), 0);
   const segmentRevenue: FinancialSegmentRow[] = breakdown
     .sort((a, b) => (b.amount as number) - (a.amount as number))
@@ -162,9 +163,14 @@ export function budgetToReport(d: BudgetDraft, observedUrls: string[]): Partial<
   const findType = (re: RegExp) => types.find((t) => re.test(str(t.type)));
   const disc = findType(/discretionary/i);
   const mand = findType(/mandatory/i);
+  // When the split does not add up to the total, the total row says which
+  // kind of authority it is rather than implying the parts reconcile.
+  const splitSum = (num(disc?.amount) ?? 0) + (num(mand?.amount) ?? 0);
+  const totalReconciles = !latest || !disc || !mand || Math.abs(splitSum - latest.amount) <= latest.amount * 0.02;
+  const totalLabel = totalReconciles ? 'Total Enacted Budget Authority' : 'Total Enacted Budget Authority (as published)';
   const plStatement = [
     { label: `Budget Summary${fy ? ` (${fy}${pfy ? ` vs ${pfy}` : ''})` : ''}`, value: '', isSection: true } as FinancialStatementRow,
-    row('Total Enacted Budget Authority', latest?.amount, prior?.amount, true),
+    row(totalLabel, latest?.amount, prior?.amount, true),
     row('Discretionary Budget Authority', num(disc?.amount), num(disc?.priorAmount)),
     row('Mandatory Budget Authority', num(mand?.amount), num(mand?.priorAmount)),
     row('Total Outlays', num(d.outlays), num(d.priorOutlays)),
@@ -261,7 +267,12 @@ Return JSON of exactly this shape. All amounts are plain numbers in full units (
   "chartInsights": ["• 2-4 bullets on the budget history"],
   "sources": ["URLs from the list above that support the figures"]
 }
-Rules: give the breakdown's 6-12 largest items for the latest fiscal year, with priorAmount where the notes give it. Omit spendingType if the jurisdiction does not use mandatory and discretionary. Each keyHighlights section has 2-4 bullets starting with "• ". Single quotes inside strings, never double quotes.`;
+Rules:
+- totalHistory is TOTAL budget authority for each year. Where both are published it is discretionary plus mandatory; if only discretionary appropriations are published, use that and include only "Discretionary" in spendingType.
+- spendingType amounts for the latest year must add up to that year's totalHistory amount.
+- breakdown: the 6-12 largest items for the latest fiscal year, all at the same level (mutually exclusive). Never list a sub-item next to the item that contains it (for example a program inside an agency that is also listed). Include priorAmount where the notes give it.
+- Omit spendingType if the jurisdiction does not use mandatory and discretionary.
+- employees: only the most recent published figure with its year; omit it if the notes give nothing from the last three years. Each keyHighlights section has 2-4 bullets starting with "• ". Single quotes inside strings, never double quotes.`;
 
   const raw = await claudeCreateDirect(system, user, 9000, SYNTHESIS_MODEL, 180_000, undefined, 'financialAnalysis.govStructure');
   return budgetToReport(parseJsonRobust(raw) as BudgetDraft, urls);

@@ -31,6 +31,7 @@ describe('budgetToReport', () => {
       { name: 'Office of Science', amount: 8e9, priorAmount: 8.2e9 },
       { name: 'NNSA', amount: 24e9, priorAmount: 22e9 },
       { name: 'Bad row' },
+      { name: 'Defense Nuclear Nonproliferation (within NNSA)', amount: 2e9 },
     ],
     spendingType: [{ type: 'Discretionary', amount: 48e9, priorAmount: 46e9 }, { type: 'Mandatory', amount: 4e9, priorAmount: 4e9 }],
     keyHighlights: { overallPerformance: ['• up 4%'], factorsDrivingGrowth: '• NNSA\n• Science' },
