@@ -25,20 +25,21 @@ export interface RevenueCheck {
 }
 
 interface Reported { usdMillion: number; year: string; ticker: string }
+let lastMiss = '';
 const cache = new Map<string, { at: number; value: Reported | null }>();
 
 export function _resetRevenueGuardCache(): void { cache.clear(); }
 
 async function lookup(companyName: string, companyDomain?: string): Promise<Reported | null> {
   const t = await detectTicker(companyName, companyDomain);
-  if (!t) return null;
+  if (!t) { lastMiss = 'no ticker found'; return null; }
   const data = await fetchYahooQuoteSummaryFinancials(t.ticker);
   const latest = data.revenueHistory[data.revenueHistory.length - 1];
-  if (!latest || !(latest.revenue > 0)) return null;
+  if (!latest || !(latest.revenue > 0)) { lastMiss = `no revenue for ${t.ticker}`; return null; }
   if (data.companyInfo?.name && !companyIdentityConfirmed({
     requestedName: companyName, requestedDomain: companyDomain,
     fetchedName: data.companyInfo.name, fetchedWebsite: data.companyInfo.website,
-  })) return null;
+  })) { lastMiss = `${t.ticker} is "${data.companyInfo.name}", not ${companyName}`; return null; }
   return { usdMillion: convertToUsd(latest.revenue, data.currency) / 1e6, year: latest.year, ticker: t.ticker };
 }
 
@@ -50,7 +51,8 @@ export async function reportedRevenue(companyName: string, companyDomain?: strin
   // and caching it would skip the check for that company for a whole day.
   const value = await Promise.race([
     lookup(companyName, companyDomain).catch((err) => {
-      console.warn(`[revenueGuard] lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);
+      lastMiss = `lookup error: ${err instanceof Error ? err.message : err}`;
+      console.warn(`[revenueGuard] ${companyName}: ${lastMiss}`);
       return undefined;
     }),
     new Promise<undefined>((r) => setTimeout(() => r(undefined), LOOKUP_TIMEOUT_MS)),
@@ -79,5 +81,8 @@ export function compareRevenue(inputUsdMillion: number, reported: Reported | nul
 }
 
 export async function guardRevenue(companyName: string, inputUsdMillion: number, companyDomain?: string): Promise<RevenueCheck> {
-  return compareRevenue(inputUsdMillion, await reportedRevenue(companyName, companyDomain));
+  lastMiss = '';
+  const check = compareRevenue(inputUsdMillion, await reportedRevenue(companyName, companyDomain));
+  if (check.status === 'unverified' && lastMiss) check.message += ` (${lastMiss})`;
+  return check;
 }
