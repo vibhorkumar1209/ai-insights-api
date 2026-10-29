@@ -46,10 +46,16 @@ export async function reportedRevenue(companyName: string, companyDomain?: strin
   const key = `${companyName.toLowerCase().trim()}|${companyDomain ?? ''}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  // Only a definite answer is cached. A Yahoo error or timeout is transient,
+  // and caching it would skip the check for that company for a whole day.
   const value = await Promise.race([
-    lookup(companyName, companyDomain).catch(() => null),
-    new Promise<null>((r) => setTimeout(() => r(null), LOOKUP_TIMEOUT_MS)),
+    lookup(companyName, companyDomain).catch((err) => {
+      console.warn(`[revenueGuard] lookup failed for ${companyName}:`, err instanceof Error ? err.message : err);
+      return undefined;
+    }),
+    new Promise<undefined>((r) => setTimeout(() => r(undefined), LOOKUP_TIMEOUT_MS)),
   ]);
+  if (value === undefined) return null;
   cache.set(key, { at: Date.now(), value });
   return value;
 }
