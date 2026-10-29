@@ -13,6 +13,7 @@ import {
 import { SPEND_CALCULATOR_INDUSTRIES } from '../services/claudeAI';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import { dedupeJobStart } from '../services/jobDedupe';
+import { guardRevenue } from '../services/revenueGuard';
 
 const router = Router();
 
@@ -78,13 +79,15 @@ interface CalculatorInput {
   industry: string;
   revenueUsdMillion: number;
   geography?: string;
+  companyDomain?: string;
+  trustRevenue?: boolean;
 }
 
 /** Shared validation: same rules as POST /api/spend, minus companyDomain (nothing is
  *  researched here, so there is no company identity to disambiguate) and with
  *  geography optional (a blank/unknown HQ falls back to the US region). */
 function parseCalculatorInput(body: Record<string, unknown>): { input: CalculatorInput } | { error: string } {
-  const { companyName, industry, revenueUsdMillion, geography } = body;
+  const { companyName, industry, revenueUsdMillion, geography, companyDomain, trustRevenue } = body;
 
   if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
     return { error: 'companyName is required (min 2 characters)' };
@@ -105,33 +108,48 @@ function parseCalculatorInput(body: Record<string, unknown>): { input: Calculato
       industry: industry.trim(),
       revenueUsdMillion,
       geography: typeof geography === 'string' && geography.trim() ? geography.trim() : undefined,
+      companyDomain: typeof companyDomain === 'string' && companyDomain.trim() ? companyDomain.trim() : undefined,
+      trustRevenue: trustRevenue === true,
     },
   };
 }
 
+// Revenue drives every figure, so it is checked against reported revenue
+// before any calculation (see services/revenueGuard.ts). trustRevenue: true
+// skips the check for a caller that knows its figure is right.
+async function checkedInput(input: CalculatorInput) {
+  const { companyDomain, trustRevenue, ...calc } = input;
+  if (trustRevenue) return { input: calc, revenueCheck: undefined };
+  const revenueCheck = await guardRevenue(calc.companyName, calc.revenueUsdMillion, companyDomain);
+  return { input: { ...calc, revenueUsdMillion: revenueCheck.usedUsdMillion }, revenueCheck };
+}
+
 // POST /api/spend/it — IT spend: 2022-2030 trend, 117-item Level-3 breakdown
 // (revenue-tier/industry exclusions applied), 8 Emerging Tech lines, CAGR.
-router.post('/it', (req: Request, res: Response) => {
+router.post('/it', async (req: Request, res: Response) => {
   const parsed = parseCalculatorInput(req.body ?? {});
   if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
-  res.json(calculateItSpend(parsed.input));
+  const { input, revenueCheck } = await checkedInput(parsed.input);
+  res.json({ ...calculateItSpend(input), revenueCheck });
 });
 
 // POST /api/spend/erd — ER&D spend: 2022-2030 trend, 14-category breakdown, CAGR.
 // Returns 200 with { applicable: false, message } for the 23 industries with no ER&D
 // benchmark — not applicable is an answer, not a client error.
-router.post('/erd', (req: Request, res: Response) => {
+router.post('/erd', async (req: Request, res: Response) => {
   const parsed = parseCalculatorInput(req.body ?? {});
   if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
-  res.json(calculateErdSpend(parsed.input));
+  const { input, revenueCheck } = await checkedInput(parsed.input);
+  res.json({ ...calculateErdSpend(input), revenueCheck });
 });
 
 // POST /api/spend/marketing — Marketing spend: 2022-2030 trend, 91-line L1 -> L2 -> L3
 // breakdown (revenue-tier and HQ-region adjusted), CAGR.
-router.post('/marketing', (req: Request, res: Response) => {
+router.post('/marketing', async (req: Request, res: Response) => {
   const parsed = parseCalculatorInput(req.body ?? {});
   if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
-  res.json(calculateMarketingSpend(parsed.input));
+  const { input, revenueCheck } = await checkedInput(parsed.input);
+  res.json({ ...calculateMarketingSpend(input), revenueCheck });
 });
 
 // GET /api/spend/:jobId — snapshot
