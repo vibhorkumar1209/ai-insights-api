@@ -1,11 +1,12 @@
 import { detectTicker, fetchYahooQuoteSummaryFinancials, companyIdentityConfirmed, convertToUsd } from './yahooFinance';
+import { fmpSearchTicker, fmpSearchByDomain, fmpFetchProfile, fmpFetchIncomeStatement } from './fmpFinance';
 
 // Revenue guard for the synchronous spend calculators. They take revenue on
 // trust, so one bad input scales every figure: RefractOne sent Smurfit
 // Westrock at $3,000M while it reports $31.18B, and IT spend came out 10x low.
 //
 // For a public company the guard looks up reported revenue (Yahoo Finance,
-// identity checked against the requested name/domain). If the input is off by
+// with FMP as fallback, identity checked against the requested name/domain). If the input is off by
 // more than MAX_RATIO either way, the reported figure is used instead and the
 // response says so. A private company, a failed lookup or a timeout leaves
 // the input untouched: the guard can only correct, never block.
@@ -20,27 +21,50 @@ export interface RevenueCheck {
   reportedUsdMillion?: number;
   reportedYear?: string;
   ticker?: string;
-  source?: 'Yahoo Finance';
+  source?: 'Yahoo Finance' | 'FMP';
   message?: string;
 }
 
-interface Reported { usdMillion: number; year: string; ticker: string }
+interface Reported { usdMillion: number; year: string; ticker: string; source?: 'Yahoo Finance' | 'FMP' }
 let lastMiss = '';
 const cache = new Map<string, { at: number; value: Reported | null }>();
 
 export function _resetRevenueGuardCache(): void { cache.clear(); }
 
-async function lookup(companyName: string, companyDomain?: string): Promise<Reported | null> {
+async function lookupYahoo(companyName: string, companyDomain?: string): Promise<Reported | null> {
   const t = await detectTicker(companyName, companyDomain);
-  if (!t) { lastMiss = 'no ticker found'; return null; }
+  if (!t) { lastMiss = 'Yahoo: no ticker found'; return null; }
   const data = await fetchYahooQuoteSummaryFinancials(t.ticker);
   const latest = data.revenueHistory[data.revenueHistory.length - 1];
-  if (!latest || !(latest.revenue > 0)) { lastMiss = `no revenue for ${t.ticker}`; return null; }
+  if (!latest || !(latest.revenue > 0)) { lastMiss = `Yahoo: no revenue for ${t.ticker}`; return null; }
   if (data.companyInfo?.name && !companyIdentityConfirmed({
     requestedName: companyName, requestedDomain: companyDomain,
     fetchedName: data.companyInfo.name, fetchedWebsite: data.companyInfo.website,
-  })) { lastMiss = `${t.ticker} is "${data.companyInfo.name}", not ${companyName}`; return null; }
-  return { usdMillion: convertToUsd(latest.revenue, data.currency) / 1e6, year: latest.year, ticker: t.ticker };
+  })) { lastMiss = `Yahoo: ${t.ticker} is "${data.companyInfo.name}", not ${companyName}`; return null; }
+  return { usdMillion: convertToUsd(latest.revenue, data.currency) / 1e6, year: latest.year, ticker: t.ticker, source: 'Yahoo Finance' };
+}
+
+// Yahoo rate-limits the Render server (429 on its crumb endpoint), so FMP is
+// tried whenever Yahoo errors or finds nothing.
+async function lookupFmp(companyName: string, companyDomain?: string): Promise<Reported | null> {
+  const ticker = (companyDomain && await fmpSearchByDomain(companyDomain)) || await fmpSearchTicker(companyName);
+  if (!ticker) { lastMiss += '; FMP: no ticker found'; return null; }
+  const [profile, income] = await Promise.all([fmpFetchProfile(ticker), fmpFetchIncomeStatement(ticker, 2)]);
+  const latest = income?.revenueHistory[income.revenueHistory.length - 1];
+  if (!income || !latest || !(latest.revenue > 0)) { lastMiss += `; FMP: no revenue for ${ticker}`; return null; }
+  if (profile?.companyInfo?.name && !companyIdentityConfirmed({
+    requestedName: companyName, requestedDomain: companyDomain,
+    fetchedName: profile.companyInfo.name, fetchedWebsite: profile.companyInfo.website,
+  })) { lastMiss += `; FMP: ${ticker} is "${profile.companyInfo.name}"`; return null; }
+  return { usdMillion: convertToUsd(latest.revenue, income.currency) / 1e6, year: latest.year, ticker, source: 'FMP' };
+}
+
+async function lookup(companyName: string, companyDomain?: string): Promise<Reported | null> {
+  const yahoo = await lookupYahoo(companyName, companyDomain).catch((err) => {
+    lastMiss = `Yahoo: ${err instanceof Error ? err.message : err}`;
+    return null;
+  });
+  return yahoo ?? lookupFmp(companyName, companyDomain);
 }
 
 export async function reportedRevenue(companyName: string, companyDomain?: string): Promise<Reported | null> {
@@ -68,7 +92,7 @@ export function compareRevenue(inputUsdMillion: number, reported: Reported | nul
   }
   const base = {
     inputUsdMillion, reportedUsdMillion: Math.round(reported.usdMillion), reportedYear: reported.year,
-    ticker: reported.ticker, source: 'Yahoo Finance' as const,
+    ticker: reported.ticker, source: reported.source ?? 'Yahoo Finance',
   };
   const ratio = inputUsdMillion / reported.usdMillion;
   if (ratio > MAX_RATIO || ratio < 1 / MAX_RATIO) {
