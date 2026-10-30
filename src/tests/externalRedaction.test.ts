@@ -47,4 +47,17 @@ describe('redactSseChunk', () => {
     expect(out).toBe('event: result\ndata: {"jobId":"j1","summary":"Up."}\n\n');
     expect(redactSseChunk(': keepalive\n\n')).toBe(': keepalive\n\n');
   });
+
+  it('hides pattern-matched fields, source columns and spend model buckets', () => {
+    const out = redactForExternal({
+      scope: { industry: 'Retail', searchQueries: ['q'] }, rankingSourceUrl: 'https://x', revenueSourceType: 'Filing',
+      table: { title: 'Deals', headers: ['Deal', 'Value', 'Source'], rows: [['A', '$1B', 'Reuters, 2025']] },
+      itSpend: { region: 'EU', total: 5 }, geo: [{ region: 'Europe', share: 30 }],
+    });
+    expect(out).toEqual({
+      scope: { industry: 'Retail' },
+      table: { title: 'Deals', headers: ['Deal', 'Value'], rows: [['A', '$1B']] },
+      itSpend: { total: 5 }, geo: [{ region: 'Europe', share: 30 }],
+    });
+  });
 });

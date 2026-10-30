@@ -35,13 +35,14 @@ export function isInternalRequest(req: Request): boolean {
 // Diagnostic endpoints: request bodies, model usage, raw archives. Not for outside callers.
 const INTERNAL_ONLY = [/^\/api\/usage(\/|$)/, /^\/api\/reports\/[^/]+\/raw$/, /^\/api\/reports\/archive-stats$/, /^\/api\/debug-/];
 
-// Fields that describe how an insight was built rather than the insight itself.
-const REDACT_KEYS = new Set([
-  'source', 'sources', 'sourceUrl', 'sourceUrls', 'citations', 'references', 'budgetSources', 'dataSource',
-  'firmographicSource', 'methodology', 'dataPoints', 'notes', 'evidence', 'reasoning', 'assumptions',
-  'confidenceNote', 'researchNotes', 'research', 'rawResearch', 'model', 'provider',
-  'marketSizeValidation', 'revenueCheck', 'revenueTier', 'adjTotal', 'currencyInfo', 'incumbencyNote',
-]);
+// Fields that describe how an insight was built rather than the insight
+// itself. Matched by pattern, case-insensitively, so a new "fooSource" or
+// "researchNotes" field is hidden by default instead of leaking.
+const REDACT_KEY = /source|citation|reference|methodolog|research|evidence|debug|searchquer|disclos|footnote|assumption|reasoning|validation|^notes?$|^model$|^provider$|^dataPoints$|^revenueCheck$|^revenueTier$|^adj(Total|Pct)$|^currencyInfo$|^incumbencyNote$/i;
+// Model buckets that only mean something inside the spend calculator.
+const REDACT_UNDER: Record<string, Set<string>> = { itSpend: new Set(['region']), erdSpend: new Set(['region']), marketingSpend: new Set(['region']) };
+// Table cells are positional, so a "Source" column is dropped by header.
+const SOURCE_COLUMN = /source|citation|reference/i;
 
 // Inline citations inside prose: "(SEC 10-K FY2025)", "(Steel Market Update, Jan 2025)", "(GuruFocus)".
 const INLINE_CITATIONS: RegExp[] = [
@@ -65,18 +66,31 @@ function genericStep(status: unknown, step: unknown): string | undefined {
   if (typeof step !== 'string') return undefined;
   if (status === 'complete') return 'Complete';
   if (step === 'Language check') return step;
+  if (/source|citation/i.test(step)) return 'Finalising…';
   const cleaned = step.replace(PROVIDER_WORDS, '').replace(/\s+([.,…])/g, '$1').trim();
   return cleaned || 'Processing';
 }
 
-export function redactForExternal(node: unknown): unknown {
+function dropSourceColumns(obj: Record<string, unknown>): Record<string, unknown> {
+  const { headers, rows } = obj;
+  if (!Array.isArray(headers) || !Array.isArray(rows) || !headers.every((h) => typeof h === 'string')) return obj;
+  const keep = headers.map((h, i) => (SOURCE_COLUMN.test(h as string) ? -1 : i)).filter((i) => i >= 0);
+  if (keep.length === headers.length) return obj;
+  return {
+    ...obj,
+    headers: keep.map((i) => headers[i]),
+    rows: rows.map((r) => (Array.isArray(r) ? keep.map((i) => r[i]) : r)),
+  };
+}
+
+export function redactForExternal(node: unknown, parentKey?: string): unknown {
   if (typeof node === 'string') return stripInlineCitations(node);
-  if (Array.isArray(node)) return node.map(redactForExternal);
+  if (Array.isArray(node)) return node.map((n) => redactForExternal(n, parentKey));
   if (!node || typeof node !== 'object') return node;
-  const obj = node as Record<string, unknown>;
+  const obj = dropSourceColumns(node as Record<string, unknown>);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (REDACT_KEYS.has(k)) continue;
+    if (REDACT_KEY.test(k) || (parentKey && REDACT_UNDER[parentKey]?.has(k))) continue;
     if (k === 'currentStep') { out[k] = genericStep(obj.status, v); continue; }
     // A failed job's error can name a provider; input validation errors stay as written.
     if (k === 'error' && typeof v === 'string' && obj.status === 'error') {
@@ -84,7 +98,7 @@ export function redactForExternal(node: unknown): unknown {
       continue;
     }
     if (k === 'jobId' || k === 'id' || /url$/i.test(k) || k === 'website' || k === 'domain') { out[k] = v; continue; }
-    out[k] = redactForExternal(v);
+    out[k] = redactForExternal(v, k);
   }
   return out;
 }

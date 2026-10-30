@@ -75,8 +75,7 @@ describe('POST /api/spend/it', () => {
   });
 
   it('defaults to the US region when HQ is omitted, without dropping the field', async () => {
-    const res = await request(app)
-      .post('/api/spend/it')
+    const res = await appPost('/api/spend/it')
       .send({ companyName: 'Acme', industry: 'Retail', revenueUsdMillion: 1200 });
     expect(res.status).toBe(200);
     expect(res.body.itSpend.region).toBe('US');
