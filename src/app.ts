@@ -10,7 +10,7 @@ import { ipBlocklist } from './middleware/ipBlocklist';
 import { lostJobSnapshot } from './middleware/lostJobSnapshot';
 import { stripInvisible } from './middleware/stripInvisible';
 import { languageCheckGate } from './middleware/languageCheck';
-import { externalRedaction } from './middleware/externalRedaction';
+import { externalRedaction, isInternalRequest } from './middleware/externalRedaction';
 import { initPersistentStore, flushPendingSaves } from './services/persistentStore';
 import { restoreUsageLogsFromStore, getUsageFlushTarget } from './services/usageLogger';
 import { restoreDedupeFromStore, getDedupeFlushTarget } from './services/jobDedupe';
@@ -120,7 +120,12 @@ app.use(lostJobSnapshot);
 const BUILD_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'unknown';
 const PROCESS_STARTED_AT = new Date().toISOString();
 
-app.get('/health', (_req, res) => {
+app.get('/health', (req, res) => {
+  // Outside callers only learn that the service is up and which build it is.
+  if (!isInternalRequest(req)) {
+    res.json({ status: 'ok', commit: BUILD_COMMIT.slice(0, 7) });
+    return;
+  }
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
