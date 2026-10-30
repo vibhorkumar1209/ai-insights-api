@@ -109,8 +109,20 @@ export function redactSseChunk(chunk: string): string {
   });
 }
 
+// Outside callers (MCP, scripts) need a key from MCP_API_KEYS, as x-api-key or
+// a Bearer token. /health stays open for Render's checks. Unset keeps the API open.
+export function hasMcpKey(req: Request): boolean {
+  const keys = (process.env.MCP_API_KEYS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const sent = req.get('x-api-key') || (req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  return keys.length > 0 && keys.includes(sent);
+}
+
 export function externalRedaction(req: Request, res: Response, next: NextFunction): void {
   if (isInternalRequest(req)) { next(); return; }
+  if (req.method !== 'OPTIONS' && req.path !== '/health' && process.env.MCP_API_KEYS && !hasMcpKey(req)) {
+    res.status(401).json({ error: 'Missing or invalid API key' });
+    return;
+  }
   if (INTERNAL_ONLY.some((re) => re.test(req.path))) {
     res.status(404).json({ error: 'Route not found' });
     return;

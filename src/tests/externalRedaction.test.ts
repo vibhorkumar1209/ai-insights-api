@@ -61,3 +61,16 @@ describe('redactSseChunk', () => {
     });
   });
 });
+
+describe('hasMcpKey', () => {
+  const { hasMcpKey } = require('../middleware/externalRedaction');
+  const req = (h: Record<string, string>) => ({ get: (n: string) => h[n.toLowerCase()] }) as any;
+  it('accepts listed keys via x-api-key or Bearer, rejects others', () => {
+    process.env.MCP_API_KEYS = 'k1, k2';
+    expect(hasMcpKey(req({ 'x-api-key': 'k2' }))).toBe(true);
+    expect(hasMcpKey(req({ authorization: 'Bearer k1' }))).toBe(true);
+    expect(hasMcpKey(req({ 'x-api-key': 'bad' }))).toBe(false);
+    expect(hasMcpKey(req({}))).toBe(false);
+    delete process.env.MCP_API_KEYS;
+  });
+});
