@@ -10,6 +10,7 @@ import { ipBlocklist } from './middleware/ipBlocklist';
 import { lostJobSnapshot } from './middleware/lostJobSnapshot';
 import { stripInvisible } from './middleware/stripInvisible';
 import { languageCheckGate } from './middleware/languageCheck';
+import { externalRedaction } from './middleware/externalRedaction';
 import { initPersistentStore, flushPendingSaves } from './services/persistentStore';
 import { restoreUsageLogsFromStore, getUsageFlushTarget } from './services/usageLogger';
 import { restoreDedupeFromStore, getDedupeFlushTarget } from './services/jobDedupe';
@@ -102,6 +103,9 @@ app.use(express.json({ limit: '500kb' }));
 app.use(stripInvisible);
 app.use(requestLogger);
 app.use(apiLimiter);
+// Registered before the other response wrappers so it sees their final
+// output: outside callers get the language-checked report minus sources.
+app.use(externalRedaction);
 // Registered before lostJobSnapshot so an archived report it serves is still
 // language-checked.
 app.use(languageCheckGate);

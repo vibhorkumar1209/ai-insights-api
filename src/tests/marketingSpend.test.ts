@@ -228,7 +228,7 @@ describe('computeMarketingSpend', () => {
 
 describe('POST /api/spend/marketing', () => {
   it('returns the marketing payload', async () => {
-    const res = await request(app).post('/api/spend/marketing').send(AIRBUS);
+    const res = await request(app).post('/api/spend/marketing').set('Origin', 'https://ai-insights-app-six.vercel.app').send(AIRBUS);
     expect(res.status).toBe(200);
     expect(res.body.applicable).toBe(true);
     expect(res.body.revenueTier).toBe('T7 >$10B');

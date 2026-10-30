@@ -4,6 +4,9 @@
 import request from 'supertest';
 import app from '../app';
 
+// The app sees the full payload; outside callers get the redacted one.
+const appPost = (path: string) => request(app).post(path).set('Origin', 'https://ai-insights-app-six.vercel.app');
+
 const AIRBUS = {
   companyName: 'Airbus',
   industry: 'Aerospace & Defence',
@@ -13,7 +16,7 @@ const AIRBUS = {
 
 describe('POST /api/spend/it', () => {
   it('returns the full IT payload for a valid company', async () => {
-    const res = await request(app).post('/api/spend/it').send(AIRBUS);
+    const res = await appPost('/api/spend/it').send(AIRBUS);
     expect(res.status).toBe(200);
     expect(res.body.applicable).toBe(true);
     expect(res.body.revenueTier).toBe('>$5B');
@@ -39,7 +42,7 @@ describe('POST /api/spend/it', () => {
   });
 
   it('breaks the budget into 117 leaves that sum back to the headline figure', async () => {
-    const res = await request(app).post('/api/spend/it').send(AIRBUS);
+    const res = await appPost('/api/spend/it').send(AIRBUS);
     const { itBreakdown } = res.body.itSpend;
     const leaves = itBreakdown.flatMap((l1: { children: { children: unknown[] }[] }) =>
       l1.children.flatMap((l2) => l2.children)
@@ -83,7 +86,7 @@ describe('POST /api/spend/it', () => {
 
 describe('POST /api/spend/erd', () => {
   it('returns the ER&D payload for an engineering-heavy industry', async () => {
-    const res = await request(app).post('/api/spend/erd').send(AIRBUS);
+    const res = await appPost('/api/spend/erd').send(AIRBUS);
     expect(res.status).toBe(200);
     expect(res.body.applicable).toBe(true);
 
@@ -129,10 +132,20 @@ describe('calculator input validation', () => {
   for (const route of ['/api/spend/it', '/api/spend/erd']) {
     for (const [label, body, expected] of cases) {
       it(`rejects ${label} on POST ${route}`, async () => {
-        const res = await request(app).post(route).send(body);
+        const res = await appPost(route).send(body);
         expect(res.status).toBe(400);
         expect(res.body.error).toMatch(expected);
       });
     }
   }
+});
+
+describe('spend for outside callers', () => {
+  it('hides the modelling inputs', async () => {
+    const res = await request(app).post('/api/spend/it').send(AIRBUS);
+    expect(res.status).toBe(200);
+    expect(res.body.revenueTier).toBeUndefined();
+    expect(res.body.itSpend.currencyInfo).toBeUndefined();
+    expect(res.body.itSpend.itBreakdown.length).toBeGreaterThan(0);
+  });
 });
