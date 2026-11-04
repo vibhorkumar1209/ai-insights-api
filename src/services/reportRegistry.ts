@@ -180,6 +180,9 @@ export function extractLabel(body: Record<string, unknown>): string {
   const candidates = [
     'companyName', 'targetCompany', 'userFirm', 'industryOrSegment', 'industry',
     'userOrganization', 'topic', 'query', 'jobTitle',
+    // Modules whose main field has its own name; without these their
+    // reports were all listed as "Untitled" (Industry Outsourcing Report).
+    'vendorName', 'targetAccount', 'industrySegment', 'yourCompany',
   ];
   for (const key of candidates) {
     const v = body[key];

@@ -50,7 +50,9 @@ export function languageCheckGate(req: Request, res: Response, next: NextFunctio
     if (!match || res.statusCode !== 200 || !job || typeof job !== 'object' || Array.isArray(job) || job.status !== 'complete') {
       return originalJson(res.statusCode < 400 ? cleanPayloadDeterministic(body) : body);
     }
-    const key = match[1] + (match[2] ?? '');
+    // /raw is the same report as the module's own path: share one check.
+    const sub = match[2] === '/raw' ? '' : (match[2] ?? '');
+    const key = match[1] + sub;
     let entry = cache.get(key);
     if (!entry) entry = startCheck(key, body);
     if (entry.done) return originalJson(entry.done);
