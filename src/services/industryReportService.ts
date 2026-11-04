@@ -255,6 +255,29 @@ export async function scopeWithWizard(
 
 // ── V2 Runner: enhanced pipeline with selected segments/players ─────────────
 
+// Outside callers never see the scope's searchQueries (they are methodology,
+// so externalRedaction strips them from the /scope response). When such a
+// caller posts that scope back to /generate the queries are missing, and the
+// research step used to throw on undefined before any work ran: every
+// RefractOne report failed instantly. Rebuild them from the scope instead.
+export function researchQueriesFor(scope: IndustryReportScope): string[] {
+  const given = Array.isArray(scope.searchQueries)
+    ? scope.searchQueries.filter((q) => typeof q === 'string' && q.trim())
+    : [];
+  if (given.length) return given;
+  const market = [scope.subIndustry, scope.industry].filter(Boolean).join(' ').trim() || scope.industry;
+  const where = scope.geography && !/^global$/i.test(scope.geography) ? ` in ${scope.geography}` : ' globally';
+  const horizon = scope.timeHorizon ? ` ${scope.timeHorizon}` : '';
+  return [
+    `${market} market size, revenue and growth rate${where}${horizon}, with segment breakdown`,
+    `${market} market trends, demand drivers and challenges${where}`,
+    `${market} competitive landscape: leading companies, market shares and recent strategy${where}`,
+    `${market} regulation, standards and policy${where}`,
+    `${market} applications, end-user industries and adoption${where}`,
+    `${market} innovation, new products, startups, M&A and partnerships${where}`,
+  ];
+}
+
 export async function runIndustryReportV2(
   jobId: string,
   scope: IndustryReportScope
@@ -274,7 +297,7 @@ export async function runIndustryReportV2(
 
     // ── Step 2: Research (5-50%) — sequential, 2 queries, progress per query ──
     step('Researching market data (1/2)...', 10, 'researching');
-    const researchResults = await researchIndustryReport(scope.searchQueries, (done, total) => {
+    const researchResults = await researchIndustryReport(researchQueriesFor(scope), (done, total) => {
       if (done < total) step(`Researching market data (${done + 1}/${total})...`, 10 + Math.round(done * 35), 'researching');
     });
     const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');

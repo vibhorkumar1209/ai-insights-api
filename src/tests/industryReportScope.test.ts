@@ -88,3 +88,19 @@ describe('POST /api/industry-report/generate scope validation', () => {
     expect(res.body.error).toMatch(/scope with industry/);
   });
 });
+import { researchQueriesFor } from '../services/industryReportService';
+
+describe('industry report research queries', () => {
+  const scope = { industry: 'Smart Lock Market', geography: 'Global', productScope: 'locks', timeHorizon: '2025-2032' } as never;
+
+  it('rebuilds queries when an outside caller posts a scope without them', () => {
+    const q = researchQueriesFor(scope);
+    expect(q).toHaveLength(6);
+    expect(q[0]).toContain('Smart Lock Market market size');
+    expect(q[0]).toContain('globally');
+  });
+
+  it('keeps the wizard queries when present', () => {
+    expect(researchQueriesFor({ ...(scope as object), searchQueries: ['a', ' '] } as never)).toEqual(['a']);
+  });
+});
