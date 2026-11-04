@@ -21,6 +21,21 @@ interface DedupeEntry {
 
 const recentByKey = new Map<string, DedupeEntry>();
 
+// Failure breaker. Polling a failed job costs nothing (status reads never call
+// an AI provider), but re-submitting the identical failed request does: each
+// retry starts a full paid run. RefractOne re-posted a failing Industry Report
+// within a minute of the first failure, and a caller that retries on every
+// error would loop forever. After MAX_IDENTICAL_FAILURES failed runs of the
+// same request inside FAILURE_WINDOW_MS, further identical requests get the
+// last failed job back (so the caller sees the error at once) instead of new
+// AI work. A changed request is a different key and runs normally.
+const MAX_IDENTICAL_FAILURES = 2;
+const FAILURE_WINDOW_MS = 30 * 60 * 1000;
+interface FailureEntry { count: number; lastJobId: string; expiresAt: number }
+const failuresByKey = new Map<string, FailureEntry>();
+
+export function _resetDedupeForTests(): void { recentByKey.clear(); failuresByKey.clear(); }
+
 // Persisted so the window survives a restart. Without this, the first
 // request after every deploy started fresh AI work regardless of how
 // recently an identical one had been deduped — and with autoDeploy on every
@@ -76,6 +91,9 @@ setInterval(() => {
   for (const [key, entry] of recentByKey.entries()) {
     if (entry.expiresAt <= now) recentByKey.delete(key);
   }
+  for (const [key, entry] of failuresByKey.entries()) {
+    if (entry.expiresAt <= now) failuresByKey.delete(key);
+  }
 }, 5 * 60 * 1000).unref();
 
 /**
@@ -120,7 +138,20 @@ export function dedupeJobStart<TStatus>(
     if (status !== undefined && !isError(status)) {
       return { jobId: existing.jobId, isNew: false };
     }
+    if (status !== undefined && isError(status)) {
+      const prior = failuresByKey.get(key);
+      const count = prior && prior.expiresAt > now ? prior.count + 1 : 1;
+      failuresByKey.set(key, { count, lastJobId: existing.jobId, expiresAt: now + FAILURE_WINDOW_MS });
+    }
     recentByKey.delete(key);
+  }
+
+  const failures = failuresByKey.get(key);
+  if (failures && failures.expiresAt > now && failures.count >= MAX_IDENTICAL_FAILURES) {
+    console.warn(`[jobDedupe] ${moduleType}: identical request failed ${failures.count}x, returning failed job ${failures.lastJobId} instead of a new run`);
+    // Keep pointing the key at the failed job so the next repeat is caught too.
+    recentByKey.set(key, { jobId: failures.lastJobId, expiresAt: failures.expiresAt });
+    return { jobId: failures.lastJobId, isNew: false };
   }
 
   const jobId = startNew();
