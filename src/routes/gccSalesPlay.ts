@@ -9,6 +9,7 @@ import {
   subscribeToJob,
   unsubscribeFromJob,
 } from '../services/gccSalesPlayService';
+import { continueGccSalesPlay } from '../services/gccSalesPlayService';
 
 const router = Router();
 
@@ -43,6 +44,15 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
 });
 
 // GET /api/gcc-sales-play/:jobId — snapshot
+
+// POST /:jobId/continue — finish a report that stopped part-way (e.g. AI
+// credits ran out). Keeps everything already written; writes only the rest.
+router.post('/:jobId/continue', aiLimiter, (req: Request, res: Response) => {
+  const outcome = continueGccSalesPlay(req.params.jobId);
+  if ('error' in outcome) { res.status(outcome.status).json({ error: outcome.error }); return; }
+  res.status(outcome.started ? 202 : 200).json({ jobId: req.params.jobId, continued: outcome.started });
+});
+
 router.get('/:jobId', (req: Request, res: Response) => {
   const job = getGccSalesPlayJob(req.params.jobId);
   if (!job) { res.status(404).json({ error: 'Job not found' }); return; }

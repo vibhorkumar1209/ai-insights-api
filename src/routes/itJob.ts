@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { createItJobJob, getItJobJob, runItJobSearch, subscribeToJob, unsubscribeFromJob } from '../services/itJobService';
+import { continueItJobSearch } from '../services/itJobService';
 import { normalizeDomain } from '../services/yahooFinance';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import { dedupeJobStart } from '../services/jobDedupe';
@@ -60,6 +61,15 @@ router.post('/', aiLimiter, (req: Request, res: Response) => {
 });
 
 // GET /api/it-jobs/:jobId — snapshot
+
+// POST /:jobId/continue — finish a report that stopped part-way (e.g. AI
+// credits ran out). Keeps everything already written; writes only the rest.
+router.post('/:jobId/continue', aiLimiter, (req: Request, res: Response) => {
+  const outcome = continueItJobSearch(req.params.jobId);
+  if ('error' in outcome) { res.status(outcome.status).json({ error: outcome.error }); return; }
+  res.status(outcome.started ? 202 : 200).json({ jobId: req.params.jobId, continued: outcome.started });
+});
+
 router.get('/:jobId', (req: Request, res: Response) => {
   const job = getItJobJob(req.params.jobId);
   if (!job) { res.status(404).json({ error: 'Job not found' }); return; }

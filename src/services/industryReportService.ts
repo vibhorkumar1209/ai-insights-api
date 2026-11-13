@@ -11,11 +11,16 @@ import {
   synthesizeExecutiveSummary,
   SECTION_DEFINITIONS_V2,
 } from './claudeAI';
+import { isCreditExhausted, incompleteMessage, checkContinuable, ContinueOutcome, queueAutoContinue, isWaitingForCredits, dropAutoContinue } from './continuation';
 
 // ── In-memory job store ──────────────────────────────────────────────────────
 
 const jobs = new Map<string, IndustryReportResult>();
 const abortedJobs = new Set<string>();
+// Research behind each report, kept so Continue can draft missing sections
+// without paying for the research again. Lost on restart; Continue then
+// re-runs it.
+const researchByJob = new Map<string, string>();
 
 export function abortJob(jobId: string): boolean {
   const job = jobs.get(jobId);
@@ -56,8 +61,11 @@ const cleanupTimer = setInterval(() => {
     // write results, and the client's next poll got a 404. From the outside
     // that is exactly "started and never completed", with no error recorded.
     if (job.status !== 'complete' && job.status !== 'error') continue;
+    // A report waiting for credits must still be here when they come back.
+    if (isWaitingForCredits(id)) continue;
     jobs.delete(id);
     abortedJobs.delete(id);
+    researchByJob.delete(id);
     deadlineExceeded.delete(id);
     const timer = deadlineTimers.get(id);
     if (timer) { clearTimeout(timer); deadlineTimers.delete(id); }
@@ -278,6 +286,16 @@ export function researchQueriesFor(scope: IndustryReportScope): string[] {
   ];
 }
 
+function queueIfCreditsOut(jobId: string, err: unknown): void {
+  if (isCreditExhausted(err)) queueAutoContinue('industry-report', jobId, () => { continueIndustryReport(jobId); });
+}
+
+const ALL_SECTIONS = ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'ma_jv_partnerships', 'market_innovation', 'market_opportunities', 'swot', 'porters_five_forces', 'tei_analysis'];
+
+export function selectedSectionsFor(scope: IndustryReportScope): string[] {
+  return scope.selectedSections?.length ? scope.selectedSections : ALL_SECTIONS;
+}
+
 export async function runIndustryReportV2(
   jobId: string,
   scope: IndustryReportScope
@@ -301,6 +319,7 @@ export async function runIndustryReportV2(
       if (done < total) step(`Researching market data (${done + 1}/${total})...`, 10 + Math.round(done * 35), 'researching');
     });
     const allResearch = researchResults.join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
+    researchByJob.set(jobId, allResearch);
     step('Research complete', 50, 'researching');
     checkAbort(jobId);
 
@@ -318,9 +337,7 @@ export async function runIndustryReportV2(
     // so those three never appeared for API callers at all, and only appeared
     // from the UI if the user manually ticked them. Now defaults to the full
     // set, matching batchDefs below.
-    const selected = scope.selectedSections?.length
-      ? scope.selectedSections
-      : ['market_overview', 'market_size_by_segment', 'market_dynamics', 'key_players_analysis', 'regulatory_overview', 'forecast', 'ma_jv_partnerships', 'market_innovation', 'market_opportunities', 'swot', 'porters_five_forces', 'tei_analysis'];
+    const selected = selectedSectionsFor(scope);
 
     // Group into batches — each batch with 1-2 sections max to reduce JSON complexity
     const batchDefs = [
@@ -346,13 +363,27 @@ export async function runIndustryReportV2(
     let allSections: ReportSection[] = [];
     const failedSections: { id: string; title: string; reason?: string }[] = [];
 
+    // Once the provider says the credits are gone, every further call fails
+    // the same way; retrying and sweeping would only add minutes. Record the
+    // rest as not yet written so Continue can pick them up.
+    let creditsOut: unknown = null;
     for (let i = 0; i < batches.length; i++) {
+      if (creditsOut) {
+        for (const id of batches[i]) failedSections.push({ id, title: SECTION_DEFINITIONS_V2[id]?.title || id, reason: incompleteMessage(creditsOut) });
+        continue;
+      }
       step(`Drafting report sections (${i + 1}/${batches.length})...`, Math.round(draftStart + i * draftStep), 'drafting');
       try {
         const batchResult = await draftSectionsBatchV2(scope, allResearch, marketSizing, batches[i]);
         if (batchResult.length === 0) throw new Error('Batch returned zero sections');
         allSections = [...allSections, ...batchResult];
       } catch (batchErr) {
+        if (isCreditExhausted(batchErr)) {
+          creditsOut = batchErr;
+          for (const id of batches[i]) failedSections.push({ id, title: SECTION_DEFINITIONS_V2[id]?.title || id, reason: incompleteMessage(batchErr) });
+          updateJob(jobId, { sections: allSections, failedSections });
+          continue;
+        }
         console.warn(`[industryReport] Batch [${batches[i].join(', ')}] failed, retrying individually:`, batchErr instanceof Error ? batchErr.message : batchErr);
         // Retry each section individually — up to 2 extra attempts with
         // increasing backoff (5s, then 12s). Batches later in the sequence
@@ -399,7 +430,7 @@ export async function runIndustryReportV2(
     // succession, and the dominant cause of a section failing both its batch
     // attempt and its immediate retries is accumulated rate-limiting, which a
     // longer cooldown clears far better than the short in-loop backoffs.
-    if (failedSections.length > 0) {
+    if (failedSections.length > 0 && !creditsOut) {
       step(`Recovering ${failedSections.length} section(s)...`, 86, 'drafting');
       const stillFailed: typeof failedSections = [];
       for (const f of failedSections) {
@@ -473,21 +504,29 @@ export async function runIndustryReportV2(
     // without executiveSummary (already optional on IndustryReportResult)
     // rather than losing a fully-drafted report.
     let executiveSummary: Awaited<ReturnType<typeof synthesizeExecutiveSummary>> | undefined;
-    try {
-      executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
-    } catch (summaryErr) {
-      console.error(`[industryReport] Executive summary failed for ${jobId}, completing without it:`, summaryErr);
+    let summaryErr: unknown = creditsOut;
+    if (!creditsOut) {
+      try {
+        executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, allSections);
+      } catch (err) {
+        summaryErr = err;
+        console.error(`[industryReport] Executive summary failed for ${jobId}, completing without it:`, err);
+      }
     }
     checkAbort(jobId);
 
     // ── Complete ──
+    const incomplete = failedSections.length > 0 || !executiveSummary;
     updateJob(jobId, {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
       executiveSummary,
+      canContinue: incomplete,
+      incompleteReason: incomplete ? incompleteMessage(creditsOut || summaryErr || failedSections[0]?.reason) : undefined,
       completedAt: new Date().toISOString(),
     });
+    if (incomplete) queueIfCreditsOut(jobId, creditsOut || summaryErr);
     emit(jobId, 'result', jobs.get(jobId));
 
   } catch (err) {
@@ -502,13 +541,127 @@ export async function runIndustryReportV2(
       console.error(`[industryReport] V2 Job ${jobId} stopped at the hard deadline.`);
       return;
     }
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`[industryReport] V2 Job ${jobId} failed:`, errorMsg);
-    updateJob(jobId, { status: 'error', error: errorMsg });
+    const raw = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[industryReport] V2 Job ${jobId} failed:`, raw);
+    // The scope is on the job, and anything already written is kept, so the
+    // run can always be continued rather than started again.
+    const errorMsg = isCreditExhausted(err) ? incompleteMessage(err) : raw;
+    updateJob(jobId, { status: 'error', error: errorMsg, canContinue: true, incompleteReason: incompleteMessage(err) });
+    queueIfCreditsOut(jobId, err);
     emit(jobId, 'error', { error: errorMsg });
   } finally {
     // Runs on success, failure, abort and deadline alike — a leaked timer
     // would fire later and error a job that had already finished.
+    clearDeadline(jobId);
+  }
+}
+
+// ── Continue ────────────────────────────────────────────────────────────────
+// Finishes a report that stopped part-way. Sections already written are kept
+// exactly as they are; only the missing ones are drafted, then slotted into
+// their usual order. The executive summary is written only if there is none.
+
+export function continueIndustryReport(jobId: string): ContinueOutcome {
+  const job = jobs.get(jobId);
+  const blocked = checkContinuable(job);
+  if (blocked) return blocked;
+  if (!job!.scope) return { ok: false, status: 409, error: 'This report stopped before its scope was set. Start a new report.' };
+  updateJob(jobId, { status: 'drafting', progress: 60, currentStep: 'Continuing report...', error: undefined });
+  dropAutoContinue(jobId);
+  runContinuation(jobId).catch((err) => {
+    queueIfCreditsOut(jobId, err);
+    updateJob(jobId, { status: 'error', error: incompleteMessage(err), canContinue: true, incompleteReason: incompleteMessage(err) });
+    emit(jobId, 'error', { error: incompleteMessage(err) });
+  });
+  return { ok: true, started: true };
+}
+
+async function runContinuation(jobId: string): Promise<void> {
+  const job = jobs.get(jobId)!;
+  const scope = job.scope!;
+  const step = (msg: string, progress: number, status: IndustryReportResult['status']) => {
+    updateJob(jobId, { currentStep: msg, progress, status });
+    emit(jobId, 'progress', { currentStep: msg, progress, status });
+  };
+  startDeadline(jobId);
+  try {
+    let research = researchByJob.get(jobId);
+    if (!research) {
+      step('Researching market data...', 20, 'researching');
+      research = (await researchIndustryReport(researchQueriesFor(scope))).join('\n\n--- NEXT RESEARCH SOURCE ---\n\n');
+      researchByJob.set(jobId, research);
+    }
+    let marketSizing = job.marketSizing;
+    if (!marketSizing) {
+      step('Analysing market size...', 55, 'sizing');
+      marketSizing = await synthesizeMarketSizing(scope, research);
+      updateJob(jobId, { marketSizing });
+    }
+
+    const selected = selectedSectionsFor(scope);
+    let sections = [...(job.sections || [])];
+    const have = new Set(sections.map((s) => s.id));
+    const missing = selected.filter((id) => !have.has(id));
+    const failed: { id: string; title: string; reason?: string }[] = [];
+    let creditsOut: unknown = null;
+
+    for (let i = 0; i < missing.length; i++) {
+      const id = missing[i];
+      const title = SECTION_DEFINITIONS_V2[id]?.title || id;
+      if (creditsOut) { failed.push({ id, title, reason: incompleteMessage(creditsOut) }); continue; }
+      step(`Drafting missing sections (${i + 1}/${missing.length})...`, 60 + Math.round((i / Math.max(missing.length, 1)) * 28), 'drafting');
+      checkAbort(jobId);
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const drafted = await draftSectionsBatchV2(scope, research, marketSizing, [id]);
+          if (drafted.length === 0) throw new Error('Section returned empty');
+          sections = [...sections, ...drafted];
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (isCreditExhausted(err)) break;
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 8000));
+        }
+      }
+      if (lastErr) {
+        if (isCreditExhausted(lastErr)) creditsOut = lastErr;
+        failed.push({ id, title, reason: lastErr instanceof Error ? lastErr.message : String(lastErr) });
+      }
+      const order = new Map(selected.map((sid, idx) => [sid, idx]));
+      sections.sort((a, b) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+      updateJob(jobId, { sections, failedSections: failed.length ? failed : undefined });
+    }
+
+    if (sections.length === 0) throw creditsOut || new Error('No sections could be written.');
+
+    let executiveSummary = job.executiveSummary;
+    let summaryErr: unknown = creditsOut;
+    if (!executiveSummary && !creditsOut) {
+      step('Generating executive summary...', 92, 'summarizing');
+      try {
+        executiveSummary = await synthesizeExecutiveSummary(scope, marketSizing, sections);
+      } catch (err) {
+        summaryErr = err;
+      }
+    }
+
+    const incomplete = failed.length > 0 || !executiveSummary;
+    updateJob(jobId, {
+      status: 'complete',
+      progress: 100,
+      currentStep: 'Complete',
+      executiveSummary,
+      failedSections: failed.length ? failed : undefined,
+      canContinue: incomplete,
+      incompleteReason: incomplete ? incompleteMessage(creditsOut || summaryErr || failed[0]?.reason) : undefined,
+      error: undefined,
+      completedAt: new Date().toISOString(),
+    });
+    if (incomplete) queueIfCreditsOut(jobId, creditsOut || summaryErr);
+    emit(jobId, 'result', jobs.get(jobId));
+  } finally {
     clearDeadline(jobId);
   }
 }

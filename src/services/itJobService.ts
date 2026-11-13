@@ -2,15 +2,22 @@ import { v4 as uuidv4 } from 'uuid';
 import { ItJobInput, ItJobResult } from '@ai-insights/types';
 import { synthesizeItJobsChunk, IT_JOBS_CHUNK_COUNT, IT_JOBS_TABLE_HEADER } from './claudeAI';
 import { researchItJobs } from './parallelAI';
+import { isCreditExhausted, incompleteMessage, checkContinuable, ContinueOutcome, queueAutoContinue, isWaitingForCredits, dropAutoContinue } from './continuation';
 
 // ── In-memory job store ────────────────────────────────────────────────────────
 
 const jobs = new Map<string, ItJobResult>();
+// Kept so Continue can redo only the regions that failed. Lost on restart;
+// Continue then re-researches and redrafts every region.
+const inputs = new Map<string, ItJobInput>();
+const researchByJob = new Map<string, string>();
+const blocksByJob = new Map<string, (string | null)[]>();
 
 setInterval(() => {
   const cutoff = Date.now() - 2 * 60 * 60 * 1000;
   for (const [id, job] of jobs.entries()) {
-    if (new Date(job.createdAt).getTime() < cutoff) jobs.delete(id);
+    if (new Date(job.createdAt).getTime() >= cutoff || isWaitingForCredits(id)) continue;
+    jobs.delete(id); inputs.delete(id); researchByJob.delete(id); blocksByJob.delete(id);
   }
 }, 30 * 60 * 1000);
 
@@ -114,78 +121,110 @@ export function getItJobJob(jobId: string): ItJobResult | undefined {
 // each chunk returns only its rows, appended under one shared table header.
 
 export async function runItJobSearch(jobId: string, input: ItJobInput): Promise<void> {
-  try {
-    let job = update(jobId, {
-      status: 'researching',
-      progress: 5,
-      currentStep: `Crawling ${input.companyName}'s careers portal and LinkedIn jobs…`,
-    });
-    emit(jobId, 'progress', job);
+  inputs.set(jobId, input);
+  blocksByJob.set(jobId, new Array(IT_JOBS_CHUNK_COUNT).fill(null));
+  await draftRegions(jobId, input);
+}
 
-    let research = '';
-    let debugInfo: Record<string, unknown> | undefined;
-    try {
-      const result = await researchItJobs(input);
-      research = result.text;
-      debugInfo = result.diagnostics;
-    } catch (err) {
-      console.warn('[itJob] Research step failed, proceeding without it:', err instanceof Error ? err.message : err);
+async function draftRegions(jobId: string, input: ItJobInput): Promise<void> {
+  try {
+    let research = researchByJob.get(jobId);
+    if (research === undefined) {
+      let job = update(jobId, {
+        status: 'researching',
+        progress: 5,
+        currentStep: `Crawling ${input.companyName}'s careers portal and LinkedIn jobs…`,
+      });
+      emit(jobId, 'progress', job);
+      research = '';
+      let debugInfo: Record<string, unknown> | undefined;
+      try {
+        const result = await researchItJobs(input);
+        research = result.text;
+        debugInfo = result.diagnostics;
+      } catch (err) {
+        console.warn('[itJob] Research step failed, proceeding without it:', err instanceof Error ? err.message : err);
+      }
+      researchByJob.set(jobId, research);
+      job = update(jobId, { debugInfo });
     }
 
-    job = update(jobId, {
+    let job = update(jobId, {
       status: 'drafting',
       progress: 25,
       currentStep: 'Mapping roles across AMER, APAC, and EMEA…',
-      debugInfo,
     });
     emit(jobId, 'progress', job);
 
-    const rowBlocks: string[] = [];
+    // One slot per region; a region left null failed and can be continued.
+    const blocks = blocksByJob.get(jobId) ?? new Array(IT_JOBS_CHUNK_COUNT).fill(null);
+    blocksByJob.set(jobId, blocks);
+    let creditsOut: unknown = null;
     for (let i = 0; i < IT_JOBS_CHUNK_COUNT; i++) {
+      if (blocks[i] !== null || creditsOut) continue;
       const progress = Math.round(30 + (i / IT_JOBS_CHUNK_COUNT) * 60);
-      job = update(jobId, {
-        currentStep: `Drafting region ${i + 1} of ${IT_JOBS_CHUNK_COUNT}…`,
-        progress,
-      });
+      job = update(jobId, { currentStep: `Drafting region ${i + 1} of ${IT_JOBS_CHUNK_COUNT}…`, progress });
       emit(jobId, 'progress', job);
 
       let chunk;
       try {
         chunk = await synthesizeItJobsChunk(input, i, research);
       } catch (err) {
+        if (isCreditExhausted(err)) { creditsOut = err; continue; }
         console.warn(`[itJob] Chunk ${i} failed, retrying once:`, err instanceof Error ? err.message : err);
         await new Promise((r) => setTimeout(r, 3000));
         try {
           chunk = await synthesizeItJobsChunk(input, i, research);
         } catch (err2) {
+          if (isCreditExhausted(err2)) creditsOut = err2;
           console.error(`[itJob] Chunk ${i} failed after retry — skipping this region:`, err2 instanceof Error ? err2.message : err2);
           continue;
         }
       }
-      if (chunk.markdown) rowBlocks.push(chunk.markdown);
+      blocks[i] = chunk.markdown || '';
 
-      const contentSoFar = `${IT_JOBS_TABLE_HEADER}\n${sortAndFormatRows(rowBlocks)}`;
-      job = update(jobId, { content: contentSoFar, progress });
+      const done = blocks.filter((b): b is string => !!b);
+      job = update(jobId, { content: `${IT_JOBS_TABLE_HEADER}\n${sortAndFormatRows(done)}`, progress });
       emit(jobId, 'progress', job);
     }
 
+    const rowBlocks = blocks.filter((b): b is string => !!b);
+    const missingChunks = blocks.map((b, i) => (b === null ? i : -1)).filter((i) => i >= 0);
     const content = rowBlocks.length > 0
       ? `${IT_JOBS_TABLE_HEADER}\n${sortAndFormatRows(rowBlocks)}`
       : `${IT_JOBS_TABLE_HEADER}\n| — | — | No verifiable open IT/Software Engineering roles found within the last 6 months. | — | — | — | — |`;
+    const incomplete = missingChunks.length > 0;
 
     job = update(jobId, {
       status: 'complete',
       progress: 100,
       currentStep: 'Complete',
       content,
+      missingChunks: incomplete ? missingChunks : undefined,
+      canContinue: incomplete,
+      incompleteReason: incomplete ? incompleteMessage(creditsOut) : undefined,
+      error: undefined,
       completedAt: new Date().toISOString(),
     });
+    if (creditsOut) queueAutoContinue('it-jobs', jobId, () => { continueItJobSearch(jobId); });
     emit(jobId, 'result', job);
 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'IT Jobs search failed';
     console.error(`[itJob] job ${jobId} failed:`, message);
-    const job = update(jobId, { status: 'error', error: message });
+    const job = update(jobId, { status: 'error', error: isCreditExhausted(err) ? incompleteMessage(err) : message, canContinue: true, incompleteReason: incompleteMessage(err) });
+    if (isCreditExhausted(err)) queueAutoContinue('it-jobs', jobId, () => { continueItJobSearch(jobId); });
     emit(jobId, 'error', job);
   }
+}
+
+export function continueItJobSearch(jobId: string): ContinueOutcome {
+  const blocked = checkContinuable(jobs.get(jobId));
+  if (blocked) return blocked;
+  const input = inputs.get(jobId);
+  if (!input) return { ok: false, status: 409, error: 'The original request for this search is no longer available. Start a new search.' };
+  dropAutoContinue(jobId);
+  update(jobId, { status: 'drafting', currentStep: 'Continuing…', error: undefined });
+  void draftRegions(jobId, input);
+  return { ok: true, started: true };
 }

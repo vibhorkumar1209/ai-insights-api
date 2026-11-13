@@ -10,6 +10,7 @@ import {
   abortJob,
   getJobManager as getIndustryJobManager,
 } from '../services/industryReportService';
+import { continueIndustryReport } from '../services/industryReportService';
 import { handleJobError } from '../utils/jobErrorHandler';
 import { registerJobStart, extractLabel } from '../services/reportRegistry';
 import { dedupeJobStart } from '../services/jobDedupe';
@@ -129,6 +130,15 @@ router.post('/:jobId/abort', (req: Request, res: Response) => {
 });
 
 // GET /api/industry-report/:jobId — Snapshot
+
+// POST /:jobId/continue — finish a report that stopped part-way (e.g. AI
+// credits ran out). Keeps everything already written; writes only the rest.
+router.post('/:jobId/continue', aiLimiter, (req: Request, res: Response) => {
+  const outcome = continueIndustryReport(req.params.jobId);
+  if ('error' in outcome) { res.status(outcome.status).json({ error: outcome.error }); return; }
+  res.status(outcome.started ? 202 : 200).json({ jobId: req.params.jobId, continued: outcome.started });
+});
+
 router.get('/:jobId', (req: Request, res: Response) => {
   const job = getIndustryReportJob(req.params.jobId);
   if (!job) {

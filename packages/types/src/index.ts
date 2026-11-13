@@ -600,6 +600,10 @@ export interface ExecutiveSummary {
 }
 
 export interface IndustryReportResult {
+  // Set when the run stopped part-way (e.g. AI credits ran out). The parts
+  // already written are kept; POST /:jobId/continue writes only the rest.
+  canContinue?: boolean;
+  incompleteReason?: string;
   jobId: string;
   status: 'pending' | 'scoping' | 'researching' | 'sizing' | 'drafting' | 'summarizing' | 'complete' | 'error';
   progress: number;
@@ -1457,6 +1461,11 @@ export interface ItJobInput {
 }
 
 export interface ItJobResult {
+  // Set when the run stopped part-way (e.g. AI credits ran out). The parts
+  // already written are kept; POST /:jobId/continue writes only the rest.
+  canContinue?: boolean;
+  incompleteReason?: string;
+  missingChunks?: number[];
   jobId: string;
   status: 'pending' | 'researching' | 'drafting' | 'complete' | 'error';
   progress: number;
@@ -1855,6 +1864,11 @@ export interface OutsourcingReportInput {
 }
 
 export interface OutsourcingReportResult {
+  // Set when the run stopped part-way (e.g. AI credits ran out). The parts
+  // already written are kept; POST /:jobId/continue writes only the rest.
+  canContinue?: boolean;
+  incompleteReason?: string;
+  chunksDone?: number;
   jobId: string;
   status: 'pending' | 'drafting' | 'complete' | 'error';
   progress: number;
@@ -1880,6 +1894,11 @@ export interface GccSalesPlayInput {
 }
 
 export interface GccSalesPlayResult {
+  // Set when the run stopped part-way (e.g. AI credits ran out). The parts
+  // already written are kept; POST /:jobId/continue writes only the rest.
+  canContinue?: boolean;
+  incompleteReason?: string;
+  chunksDone?: number;
   jobId: string;
   status: 'pending' | 'drafting' | 'complete' | 'error';
   progress: number;
